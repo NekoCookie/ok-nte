@@ -89,6 +89,7 @@ class BaseChar:
         self.cycle_start_time = 0.0
         self.combo_label = "default"
         self.element = Element.DEFAULT
+        self.role = Role.DEFAULT
 
     def cycle_start(self):
         self.cycle_start_time = time.time()
