@@ -22,17 +22,17 @@ class Requiem(MainDps):
     def perform_free_skill_chain(self):
         self.logger.info("requiem free skill chain start")
         while time.time() < self.free_skill_expires_at:
-            if self.should_yield_to_support():
-                self.logger.info("support resource ready during requiem free skill window")
-                self.continues_normal_attack(0.1)
-                return
-
             if self.skill_available():
                 if self.click_skill(time_out=1.0)[0]:
                     self.free_skill_pending = False
                     self.free_skill_expires_at = 0.0
                     self.continues_normal_attack(0.3)
                     return
+
+            if self.should_yield_to_support(include_probe=False):
+                self.logger.info("support confirmed resource during requiem free skill window")
+                self.continues_normal_attack(0.1)
+                return
 
             self.normal_attack()
             self.sleep(self.FREE_SKILL_ATTACK_INTERVAL)
@@ -44,11 +44,6 @@ class Requiem(MainDps):
 
     def do_perform(self):
         self.wait_intro()
-        if self.should_yield_to_support():
-            self.logger.info("support resource ready before requiem action, yielding")
-            self.continues_normal_attack(0.2)
-            return
-
         if self.free_skill_pending:
             self.perform_free_skill_chain()
             return
@@ -63,8 +58,15 @@ class Requiem(MainDps):
             self.logger.info("requiem skill cast, enabling off-field overlap switch")
             return
 
-        if not used_ultimate:
-            self.idle_normal_attack()
+        if used_ultimate:
+            return
+
+        if self.should_yield_to_support():
+            self.logger.info("support resource ready after requiem action check, yielding")
+            self.continues_normal_attack(0.2)
+            return
+
+        self.idle_normal_attack()
 
     def reset_state(self):
         super().reset_state()
