@@ -9,6 +9,7 @@ class Requiem(MainDps):
     SKILL_OFF_FIELD_DURATION = 3.0
     FREE_SKILL_WINDOW = 12.0
     FREE_SKILL_ATTACK_INTERVAL = 0.18
+    FREE_SKILL_FOLLOWUP_ATTACK_DURATION = 0.85
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -22,11 +23,15 @@ class Requiem(MainDps):
     def perform_free_skill_chain(self):
         self.logger.info("requiem free skill chain start")
         while time.time() < self.free_skill_expires_at:
+            if self.ultimate_available():
+                if self.click_ultimate():
+                    return
+
             if self.skill_available():
                 if self.click_skill(time_out=1.0)[0]:
                     self.free_skill_pending = False
                     self.free_skill_expires_at = 0.0
-                    self.continues_normal_attack(0.3)
+                    self.free_skill_followup_attack()
                     return
 
             if self.should_yield_to_support(include_probe=False):
@@ -41,6 +46,18 @@ class Requiem(MainDps):
         self.free_skill_pending = False
         self.free_skill_expires_at = 0.0
         self.continues_normal_attack(0.3)
+
+    def free_skill_followup_attack(self):
+        start = time.time()
+        while time.time() - start < self.FREE_SKILL_FOLLOWUP_ATTACK_DURATION:
+            if self.ultimate_available():
+                if self.click_ultimate():
+                    return
+            if self.should_yield_to_support(include_probe=False):
+                self.logger.info("support confirmed resource during requiem follow-up attack")
+                return
+            self.normal_attack()
+            self.sleep(self.FREE_SKILL_ATTACK_INTERVAL)
 
     def do_perform(self):
         self.wait_intro()
