@@ -7,7 +7,7 @@ from src.char.BaseChar import BaseChar, Element
 from src.char.Chiz import Chiz
 from src.char.Hotori import Hotori
 from src.char.Jiuyuan import Jiuyuan
-from src.char.MainDps import BuffSupport, MainDps
+from src.char.MainDps import BuffSupport, MainDps, SakiriBuffSupport
 from src.char.Mint import Mint
 from src.char.Nanally import Nanally
 from src.char.Requiem import Requiem
@@ -32,7 +32,8 @@ char_dict: dict[str, dict[str, Any]] = {
     "char_chiz": {"cls": Chiz, "cn_name": "小吱", "element": Element.WHITE},
     "template_main_dps": {"cls": MainDps, "cn_name": "主C模板"},
     "template_buff_support": {"cls": BuffSupport, "cn_name": "辅助模板"},
-    "char_requiem": {"cls": Requiem, "cn_name": "安魂曲"},
+    "template_sakiri_buff_support": {"cls": SakiriBuffSupport, "cn_name": "早雾辅助"},
+    "char_requiem": {"cls": Requiem, "cn_name": "安魂曲主C"},
 }
 
 char_names = char_dict.keys()
