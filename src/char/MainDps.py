@@ -152,3 +152,23 @@ class BuffSupport(BaseChar):
         if self.needs_resource_probe():
             return self.RESOURCE_PROBE_PRIORITY
         return Priority.BASE_MINUS_1
+
+
+class SakiriBuffSupport(BuffSupport):
+    """Buff support variant for Sakiri that holds skill."""
+
+    SKILL_DOWN_TIME = 0.25
+
+    def do_perform(self):
+        self.wait_intro()
+        used_ultimate = self.click_ultimate()
+        used_skill = self.click_skill(down_time=self.SKILL_DOWN_TIME)[0]
+        now = time.time()
+        self.last_resource_probe = now
+        if used_ultimate or used_skill:
+            self.last_resource_use = now
+            self.resource_cache_confirmed = False
+        else:
+            self.resource_cache_confirmed = self.has_resource()
+        if not used_ultimate and not used_skill:
+            self.continues_normal_attack(0.2)
