@@ -45,8 +45,8 @@ class MainDps(BaseChar):
             if char != self
         )
 
-    def should_yield_to_support(self):
-        return self.support_has_resource() or self.support_needs_probe()
+    def should_yield_to_support(self, include_probe=True):
+        return self.support_has_resource() or (include_probe and self.support_needs_probe())
 
     def should_stay_on_field(self):
         return (
@@ -98,12 +98,14 @@ class BuffSupport(BaseChar):
 
     RESOURCE_PRIORITY_BONUS = Priority.SKILL_AVAILABLE
     RESOURCE_PROBE_INTERVAL = 10.0
+    RESOURCE_RECHECK_AFTER_USE_INTERVAL = 18.0
     RESOURCE_PROBE_PRIORITY = Priority.BASE
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.role = Role.SUB_DPS
         self.last_resource_probe = 0.0
+        self.last_resource_use = 0.0
         self.resource_cache_confirmed = False
 
     def has_resource(self):
@@ -113,21 +115,31 @@ class BuffSupport(BaseChar):
         return self.index in self.task.cds
 
     def has_confirmed_resource(self):
+        if self.recently_used_resource():
+            return False
         if self.is_current_char:
             return self.has_resource()
         return self.resource_cache_confirmed and self.has_cd_cache() and self.has_resource()
 
+    def recently_used_resource(self):
+        return time.time() - self.last_resource_use < self.RESOURCE_RECHECK_AFTER_USE_INTERVAL
+
     def needs_resource_probe(self):
-        if self.is_current_char or self.has_confirmed_resource():
+        if self.is_current_char or self.has_confirmed_resource() or self.recently_used_resource():
             return False
         return time.time() - self.last_resource_probe >= self.RESOURCE_PROBE_INTERVAL
 
     def do_perform(self):
         self.wait_intro()
-        self.last_resource_probe = time.time()
         used_ultimate = self.click_ultimate()
         used_skill = self.click_skill()[0]
-        self.resource_cache_confirmed = used_ultimate or used_skill
+        now = time.time()
+        self.last_resource_probe = now
+        if used_ultimate or used_skill:
+            self.last_resource_use = now
+            self.resource_cache_confirmed = False
+        else:
+            self.resource_cache_confirmed = self.has_resource()
         if not used_ultimate and not used_skill:
             self.continues_normal_attack(0.2)
 
