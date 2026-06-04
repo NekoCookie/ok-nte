@@ -475,10 +475,16 @@ class BaseChar:
                 return True
         return self.task.in_animation
 
+    def _click_during_ultimate_unfreeze(self):
+        self.check_combat()
+        self.click_with_interval()
+
     def _wait_ultimate_unfreeze(self, start):
         self.logger.debug("waiting for time unfrozen")
         self.task.wait_until(
-            lambda: self.has_cd("ultimate"), post_action=self.click_with_interval, time_out=2
+            lambda: self.has_cd("ultimate"),
+            post_action=self._click_during_ultimate_unfreeze,
+            time_out=2,
         )
         box_ultimate = self.task.get_box_by_name(Labels.box_ultimate)
         snapshot = box_ultimate.crop_frame(self.task.frame)
@@ -501,7 +507,7 @@ class BaseChar:
         self.task.wait_until(
             condition,
             time_out=10,
-            post_action=self.click_with_interval,
+            post_action=self._click_during_ultimate_unfreeze,
         )
         duration = time.time() - start - 0.1
         self.add_freeze_duration(start, duration)
