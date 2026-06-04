@@ -33,6 +33,10 @@ class CharDeadException(NotInCombatException):
     pass
 
 
+class CharUnavailableException(NotInCombatException):
+    pass
+
+
 class TeamChangedException(NotInCombatException):
     pass
 
@@ -60,6 +64,8 @@ class BaseCombatTask(CombatCheck):
     TEAM_SIGNATURE_CHECK_INTERVAL = 1.0
     TEAM_SIGNATURE_CONFIRM_INTERVAL = 0.5
     TEAM_SIGNATURE_MATCH_THRESHOLD = 0.6
+    CHAR_UNAVAILABLE_BASE_COOLDOWN = 8.0
+    CHAR_UNAVAILABLE_MAX_COOLDOWN = 30.0
 
     def __init__(self, *args, **kwargs):
         """初始化战斗任务。
@@ -83,6 +89,8 @@ class BaseCombatTask(CombatCheck):
         self._pending_team_change = None
         self._pending_team_signature_change = None
         self._team_change_checking = False
+        self.unavailable_char_until = {}
+        self.unavailable_char_failures = {}
         self.clear_element_ring_reactions()
 
     @property
@@ -115,10 +123,42 @@ class BaseCombatTask(CombatCheck):
         min_time = float("inf")
         min_index = -1
         for char in self.chars:
+            if char is None or self.is_char_unavailable(char):
+                continue
             if char.last_switch_time < min_time:
                 min_time = char.last_switch_time
                 min_index = char.index
         return min_index
+
+    def reset_unavailable_chars(self):
+        self.unavailable_char_until.clear()
+        self.unavailable_char_failures.clear()
+
+    def is_char_unavailable(self, char: "BaseChar | None") -> bool:
+        if char is None:
+            return False
+        until = self.unavailable_char_until.get(char.index)
+        if until is None:
+            return False
+        if time.time() < until:
+            return True
+        self.unavailable_char_until.pop(char.index, None)
+        return False
+
+    def mark_char_unavailable(self, char: "BaseChar | None", reason: str):
+        if char is None:
+            return
+        failures = self.unavailable_char_failures.get(char.index, 0) + 1
+        cooldown = min(
+            self.CHAR_UNAVAILABLE_BASE_COOLDOWN * failures,
+            self.CHAR_UNAVAILABLE_MAX_COOLDOWN,
+        )
+        self.unavailable_char_failures[char.index] = failures
+        self.unavailable_char_until[char.index] = time.time() + cooldown
+        self.log_info(
+            f"mark char unavailable {self._get_char_log_name(char)} "
+            f"slot {char.index + 1} for {cooldown:.1f}s: {reason}"
+        )
 
     def _get_element_ring_pair(self, element_a: Element, element_b: Element):
         index_a = self.element_ring_index.get(element_a)
@@ -317,6 +357,7 @@ class BaseCombatTask(CombatCheck):
         self.wait_until(
             self.in_combat, time_out=wait_combat_time, raise_if_not_found=raise_if_not_found
         )
+        self.reset_unavailable_chars()
         self.load_chars()
         self.switch_to_combat_start_char()
         self.info["Combat Count"] = self.info.get("Combat Count", 0) + 1
@@ -351,6 +392,9 @@ class BaseCombatTask(CombatCheck):
         for char in self.chars:
             if char is None:
                 continue
+            if char != current_char and self.is_char_unavailable(char):
+                logger.debug(f"skip unavailable char {char}")
+                continue
 
             if char == current_char:
                 priority = Priority.CURRENT_CHAR
@@ -368,7 +412,7 @@ class BaseCombatTask(CombatCheck):
 
         if has_intro and max_priority < Priority.FAST_SWITCH:
             reaction_target = self.find_element_ring_reaction_target(current_char)
-            if reaction_target:
+            if reaction_target and not self.is_char_unavailable(reaction_target):
                 return reaction_target, has_intro
 
         return switch_to, has_intro
@@ -389,6 +433,7 @@ class BaseCombatTask(CombatCheck):
                         f"after repeated self selection"
                     )
                     return switch_to, has_intro
+                return current_char, has_intro
 
             logger.warning(
                 f"{current_char} can't find next char to switch to, "
@@ -398,6 +443,8 @@ class BaseCombatTask(CombatCheck):
 
     def _set_current_char(self, current_char: "BaseChar | None", switch_to: "BaseChar", has_intro):
         self.in_animation = False
+        self.unavailable_char_until.pop(switch_to.index, None)
+        self.unavailable_char_failures.pop(switch_to.index, None)
         if current_char:
             current_char.switch_out()
             if has_intro:
@@ -470,7 +517,8 @@ class BaseCombatTask(CombatCheck):
             if current_time - start_time > time_out:
                 if self.debug:
                     self.screenshot(f"switch_not_detected_{current_char_name}_to_{switch_to_name}")
-                self.raise_not_in_combat(f"{log_prefix} failed {switch_to_name}")
+                self.mark_char_unavailable(switch_to, f"{log_prefix} failed")
+                raise CharUnavailableException(f"{log_prefix} failed {switch_to_name}")
 
             self.sleep(0.01)
 

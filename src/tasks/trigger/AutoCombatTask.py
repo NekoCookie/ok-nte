@@ -9,6 +9,7 @@ from src.char.custom.CustomCharManager import CustomCharManager
 from src.combat.BaseCombatTask import (
     BaseCombatTask,
     CharDeadException,
+    CharUnavailableException,
     NotInCombatException,
     TeamChangedException,
 )
@@ -56,8 +57,12 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
 
     def _reload_combat_team(self) -> bool:
         if self.load_chars():
+            self.reset_unavailable_chars()
             self._in_combat = True
-            self.switch_to_combat_start_char()
+            try:
+                self.switch_to_combat_start_char()
+            except CharUnavailableException as e:
+                logger.info(f"combat start char unavailable after team reload {e}")
             return True
 
         self.log_info("team reload pending, skip combat action this tick")
@@ -91,6 +96,7 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
             return
 
         self._last_team_recheck = 0.0
+        self.reset_unavailable_chars()
         combat_start = time.time()
         while self.in_combat():
             try:
@@ -104,6 +110,12 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
             except CharDeadException:
                 self.log_error("Characters dead", notify=True)
                 break
+            except CharUnavailableException as e:
+                logger.info(
+                    f"auto_combat_task_char_unavailable "
+                    f"{int(time.time() - combat_start)} {e}"
+                )
+                continue
             except TeamChangedException as e:
                 logger.info(f"auto_combat_task_team_changed {int(time.time() - combat_start)} {e}")
                 if not self._reload_combat_team():
