@@ -60,6 +60,8 @@ class BaseChar:
     """角色基类，定义了游戏角色的通用属性和行为。"""
 
     INTRO_MOTION_FREEZE_DURATION = 1.5
+    ULTIMATE_COMBAT_SETTLE_TIMEOUT = 3.0
+    ULTIMATE_COMBAT_SETTLE_CLICK = True
 
     def __init__(self, task, index, char_name=None, confidence=1):
         """初始化角色基础属性。
@@ -293,6 +295,7 @@ class BaseChar:
                     result["action_time"] = time.time()
 
             self.task.next_frame()
+            self.check_combat()
 
     def _check_available_action_result(
         self,
@@ -327,6 +330,26 @@ class BaseChar:
             return "released" if result["clicked"] else "unavailable"
         return "continue"
 
+    def wait_ultimate_combat_settle(self):
+        if self.task._combat_settle.time is None:
+            return True
+
+        self.logger.info("click_ultimate blocked by combat_detect_settle")
+        start = time.time()
+        while self.task._combat_settle.time is not None:
+            if time.time() - start >= self.ULTIMATE_COMBAT_SETTLE_TIMEOUT:
+                self.logger.info(
+                    f"click_ultimate skipped by combat_detect_settle timeout "
+                    f"{self.ULTIMATE_COMBAT_SETTLE_TIMEOUT}s"
+                )
+                return False
+            self.task.next_frame()
+            self.check_combat()
+            if self.ULTIMATE_COMBAT_SETTLE_CLICK:
+                self.click_with_interval()
+            self.sleep(0.1)
+        return True
+
     def click_ultimate(self, send_click=True, wait_if_cd_ready=0.1):
         """尝试释放终结技。
 
@@ -341,13 +364,8 @@ class BaseChar:
             return False
 
         if self.ultimate_available():
-            if self.task._combat_settle.time is not None:
-                self.logger.info("click_ultimate blocked by combat_detect_settle")
-            while self.task._combat_settle.time is not None:
-                self.task.next_frame()
-                self.check_combat()
-                self.click_with_interval()
-                self.sleep(0.1)
+            if not self.wait_ultimate_combat_settle():
+                return False
 
         self.logger.debug("click_ultimate start")
         if not self.task.in_animation:

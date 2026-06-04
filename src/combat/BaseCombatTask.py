@@ -33,6 +33,10 @@ class CharDeadException(NotInCombatException):
     pass
 
 
+class TeamChangedException(NotInCombatException):
+    pass
+
+
 class BaseCombatTask(CombatCheck):
     """基础战斗任务类，封装了游戏"鸣潮"中角色自动化操作的通用逻辑。"""
 
@@ -49,6 +53,13 @@ class BaseCombatTask(CombatCheck):
     )
     element_ring_index = {element: index for index, element in enumerate(element_ring)}
     _element_template_cache = {}
+    LOAD_CHARS_WEAK_RETRY = 2
+    LOAD_CHARS_WEAK_RETRY_INTERVAL = 0.25
+    TEAM_CHANGE_CHECK_INTERVAL = 0.3
+    TEAM_CHANGE_CONFIRM_INTERVAL = 0.2
+    TEAM_SIGNATURE_CHECK_INTERVAL = 1.0
+    TEAM_SIGNATURE_CONFIRM_INTERVAL = 0.5
+    TEAM_SIGNATURE_MATCH_THRESHOLD = 0.6
 
     def __init__(self, *args, **kwargs):
         """初始化战斗任务。
@@ -67,6 +78,11 @@ class BaseCombatTask(CombatCheck):
         self.vibrate_chars_index: list[int] = []
         self.chars_slot_mat = [None, None, None, None]
         self.element_ring_reaction_counts = {}
+        self._last_team_change_check = 0.0
+        self._last_team_signature_check = 0.0
+        self._pending_team_change = None
+        self._pending_team_signature_change = None
+        self._team_change_checking = False
         self.clear_element_ring_reactions()
 
     @property
@@ -602,9 +618,115 @@ class BaseCombatTask(CombatCheck):
             SoundCombatContext.wait_for_resume()
 
         if self._in_combat:
+            self.check_team_changed_during_combat()
             self.next_frame()
             if not self.in_combat():
                 self.raise_not_in_combat("sleep check not in combat")
+
+    def check_team_changed_during_combat(self, force=False):
+        if (
+            not self._in_combat
+            or self.team_size <= 0
+            or self._team_change_checking
+            or self.in_sleep_check
+        ):
+            return False
+
+        now = time.time()
+        if not force and now - self._last_team_change_check < self.TEAM_CHANGE_CHECK_INTERVAL:
+            return False
+        self._last_team_change_check = now
+
+        self._team_change_checking = True
+        previous_skip_sleep_check = self.skip_sleep_check
+        self.skip_sleep_check = True
+        try:
+            in_team, current_index, count = self.in_team()
+        finally:
+            self.skip_sleep_check = previous_skip_sleep_check
+            self._team_change_checking = False
+
+        if not in_team or current_index == -1 or count <= 0:
+            self._pending_team_change = None
+            return False
+
+        if count > 4:
+            count = 4
+        if count == self.team_size:
+            self._pending_team_change = None
+            return self.check_team_signature_changed_during_combat(now)
+
+        previous = self._pending_team_change
+        if previous is None or previous[0] != count:
+            self._pending_team_change = (count, now)
+            self.log_info(f"team size change candidate during action {self.team_size} -> {count}")
+            return False
+
+        if now - previous[1] < self.TEAM_CHANGE_CONFIRM_INTERVAL:
+            return False
+
+        self._pending_team_change = None
+        self.log_info(f"team size changed during action {self.team_size} -> {count}")
+        raise TeamChangedException(f"team size changed {self.team_size} -> {count}")
+
+    def check_team_signature_changed_during_combat(self, now=None):
+        now = now or time.time()
+        if now - self._last_team_signature_check < self.TEAM_SIGNATURE_CHECK_INTERVAL:
+            return False
+        self._last_team_signature_check = now
+
+        manager = CustomCharManager()
+        mismatches = []
+        verified = 0
+        frame = self.frame
+
+        for char in self.chars:
+            if char is None or not char.char_name or char.char_name == "unknown":
+                continue
+
+            char_info = manager.get_character_info(char.char_name) or {}
+            if not char_info.get("feature_ids"):
+                continue
+
+            mat = self.get_char_box(char.index).scale(1.1, 1.1).crop_frame(frame)
+            if mat is None or mat.size == 0:
+                continue
+
+            verified += 1
+            is_match, match_name, confidence = manager.match_feature(
+                self,
+                mat,
+                threshold=self.TEAM_SIGNATURE_MATCH_THRESHOLD,
+                target_char=char.char_name,
+            )
+            if not is_match or match_name != char.char_name:
+                mismatches.append((char.index, char.char_name, confidence))
+
+        if not verified:
+            self._pending_team_signature_change = None
+            return False
+
+        if not mismatches:
+            self._pending_team_signature_change = None
+            return False
+
+        signature = tuple((index, name) for index, name, _ in mismatches)
+        previous = self._pending_team_signature_change
+        if previous is None or previous[0] != signature:
+            self._pending_team_signature_change = (signature, now)
+            mismatch_text = ", ".join(
+                f"{index + 1}:{name}({confidence:.2f})"
+                for index, name, confidence in mismatches
+            )
+            self.log_info(f"team signature change candidate during action {mismatch_text}")
+            return False
+
+        if now - previous[1] < self.TEAM_SIGNATURE_CONFIRM_INTERVAL:
+            return False
+
+        self._pending_team_signature_change = None
+        self.log_info(f"team signature changed during action {signature}")
+        raise TeamChangedException("team signature changed")
 
     def _apply_sound_config(self):
         if self.sound_config:
@@ -621,6 +743,7 @@ class BaseCombatTask(CombatCheck):
 
     def check_combat(self):
         """检查当前是否处于战斗状态, 如果不是则抛出异常。"""
+        self.check_team_changed_during_combat()
         if self._in_combat and not self.in_combat():
             # if self.debug:
             #     self.screenshot('not_in_combat_calling_check_combat')
@@ -664,7 +787,49 @@ class BaseCombatTask(CombatCheck):
 
         return get_char_by_pos(self, box_scaled, index, safe_get(self.chars, index))
 
-    def load_chars(self) -> bool:
+    def _fixed_slot_has_char(self, fixed_slots, index: int) -> bool:
+        fixed_slot = safe_get(fixed_slots, index)
+        if not isinstance(fixed_slot, dict):
+            return False
+        return bool(str(fixed_slot.get("char_name", "") or "").strip())
+
+    def _is_weak_single_unknown_team(self, chars: list["BaseChar"], fixed_slots) -> bool:
+        if len(chars) != 1 or self._fixed_slot_has_char(fixed_slots, 0):
+            return False
+        char = chars[0]
+        return type(char) is BaseChar and char.char_name == "unknown"
+
+    def _commit_loaded_chars(self, chars: list["BaseChar"], current_index: int):
+        self._pending_team_change = None
+        self._pending_team_signature_change = None
+        self._last_team_change_check = 0.0
+        self._last_team_signature_check = 0.0
+        self.clear_element_ring_reactions()
+        elements = [char.element for char in chars]
+        self.chars = chars
+        self.info_set("char elements", elements)
+
+        healer_count = 0
+        self.info_set("chars", [])
+        for char in self.chars:
+            if char is not None:
+                char.reset_state()
+                if isinstance(char, Healer):
+                    healer_count += 1
+                char.is_current_char = char.index == current_index
+                name = char.char_name
+                conf = char.confidence
+                elem = char.element
+                self.log_info(f"load char success {char} {name} {conf:.2f} {elem}")
+                self.info_add_to_list("chars", f"{char.char_name}: {char.combo_label}")
+
+        if self.team_size > 0:
+            self.combat_start = time.time()
+            self._apply_sound_config()
+            return True
+        return False
+
+    def load_chars(self, preserve_on_weak=True) -> bool:
         """加载队伍中的角色信息。"""
         ret = False
         now = time.perf_counter()
@@ -678,47 +843,38 @@ class BaseCombatTask(CombatCheck):
             count = 4
         self.log_info(f"load_chars count {count} current_index {current_index}")
 
-        self.clear_element_ring_reactions()
         fixed_team = CustomCharManager().get_fixed_team()
         fixed_slots = fixed_team.get("slots", []) if fixed_team.get("enabled", False) else []
-        new_chars = []
-        indices_to_detect = []
-        for i in range(count):
-            char = self._do_load_char(i, fixed_slots)
-            new_chars.append(char)
-            if char.element is Element.DEFAULT:
-                indices_to_detect.append(i)
+        for attempt in range(self.LOAD_CHARS_WEAK_RETRY + 1):
+            new_chars = []
+            indices_to_detect = []
+            for i in range(count):
+                char = self._do_load_char(i, fixed_slots)
+                new_chars.append(char)
+                if char.element is Element.DEFAULT:
+                    indices_to_detect.append(i)
 
-        if indices_to_detect:
-            detected_elements = self.load_chars_element(indices_to_detect)
-            for i in indices_to_detect:
-                new_chars[i].element = detected_elements.get(i, Element.DEFAULT)
+            if indices_to_detect:
+                detected_elements = self.load_chars_element(indices_to_detect)
+                for i in indices_to_detect:
+                    new_chars[i].element = detected_elements.get(i, Element.DEFAULT)
 
-        elements = [char.element for char in new_chars]
-        self.chars = new_chars
-        self.info_set("char elements", elements)
+            weak_single_unknown = self._is_weak_single_unknown_team(new_chars, fixed_slots)
+            if weak_single_unknown and attempt < self.LOAD_CHARS_WEAK_RETRY:
+                self.log_info(
+                    f"load_chars weak single unknown retry {attempt + 1}/{self.LOAD_CHARS_WEAK_RETRY}"
+                )
+                time.sleep(self.LOAD_CHARS_WEAK_RETRY_INTERVAL)
+                continue
 
-        healer_count = 0
-        self.info_set("chars", [])
-        for char in self.chars:
-            if char is not None:
-                char.reset_state()
-                if isinstance(char, Healer):
-                    healer_count += 1
-                if char.index == current_index:
-                    char.is_current_char = True
-                else:
-                    char.is_current_char = False
-                name = char.char_name
-                conf = char.confidence
-                elem = char.element
-                self.log_info(f"load char success {char} {name} {conf:.2f} {elem}")
-                self.info_add_to_list("chars", f"{char.char_name}: {char.combo_label}")
+            if weak_single_unknown and preserve_on_weak and self.chars:
+                self.log_info("load_chars weak single unknown ignored, keep previous team")
+                ret = False
+                break
 
-        if self.team_size > 0:
-            self.combat_start = time.time()
-            ret = True
-            self._apply_sound_config()
+            ret = self._commit_loaded_chars(new_chars, current_index)
+            break
+
         logger.debug(f"load_chars cost {time.perf_counter() - now:.3f}s")
         return ret
 

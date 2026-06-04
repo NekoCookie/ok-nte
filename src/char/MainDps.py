@@ -100,6 +100,8 @@ class BuffSupport(BaseChar):
     RESOURCE_PROBE_INTERVAL = 10.0
     RESOURCE_RECHECK_AFTER_USE_INTERVAL = 18.0
     RESOURCE_PROBE_PRIORITY = Priority.BASE
+    ULTIMATE_COMBAT_SETTLE_TIMEOUT = 0.8
+    ULTIMATE_COMBAT_SETTLE_CLICK = True
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -108,13 +110,23 @@ class BuffSupport(BaseChar):
         self.last_resource_use = 0.0
         self.resource_cache_confirmed = False
 
+    def team_has_main_dps(self):
+        return any(
+            char is not None and char is not self and isinstance(char, MainDps)
+            for char in self.task.chars
+        )
+
     def has_resource(self):
+        if not self.team_has_main_dps():
+            return super().skill_available() or super().ultimate_available()
         return self.skill_available() or self.ultimate_available()
 
     def has_cd_cache(self):
         return self.index in self.task.cds
 
     def has_confirmed_resource(self):
+        if not self.team_has_main_dps():
+            return False
         if self.recently_used_resource():
             return False
         if self.is_current_char:
@@ -125,25 +137,42 @@ class BuffSupport(BaseChar):
         return time.time() - self.last_resource_use < self.RESOURCE_RECHECK_AFTER_USE_INTERVAL
 
     def needs_resource_probe(self):
+        if not self.team_has_main_dps():
+            return False
         if self.is_current_char or self.has_confirmed_resource() or self.recently_used_resource():
             return False
         return time.time() - self.last_resource_probe >= self.RESOURCE_PROBE_INTERVAL
 
+    def update_resource_after_perform(self, used_ultimate, used_skill):
+        now = time.time()
+        self.last_resource_probe = now
+
+        if used_ultimate or not self.ultimate_available():
+            if used_ultimate or used_skill:
+                self.last_resource_use = now
+            self.resource_cache_confirmed = False
+            return
+
+        if used_skill:
+            self.logger.info("support skill used while ultimate remains available")
+        self.resource_cache_confirmed = self.has_resource()
+
     def do_perform(self):
+        if not self.team_has_main_dps():
+            super().do_perform()
+            return
+
         self.wait_intro()
         used_ultimate = self.click_ultimate()
         used_skill = self.click_skill()[0]
-        now = time.time()
-        self.last_resource_probe = now
-        if used_ultimate or used_skill:
-            self.last_resource_use = now
-            self.resource_cache_confirmed = False
-        else:
-            self.resource_cache_confirmed = self.has_resource()
+        self.update_resource_after_perform(used_ultimate, used_skill)
         if not used_ultimate and not used_skill:
             self.continues_normal_attack(0.2)
 
     def do_get_switch_priority(self, current_char, has_intro=False):
+        if not self.team_has_main_dps():
+            return super().do_get_switch_priority(current_char, has_intro)
+
         if self.has_confirmed_resource():
             return (
                 super().do_get_switch_priority(current_char, has_intro)
@@ -163,12 +192,11 @@ class SakiriBuffSupport(BuffSupport):
         self.wait_intro()
         used_ultimate = self.click_ultimate()
         used_skill = self.click_skill(down_time=self.SKILL_DOWN_TIME)[0]
-        now = time.time()
-        self.last_resource_probe = now
-        if used_ultimate or used_skill:
-            self.last_resource_use = now
-            self.resource_cache_confirmed = False
-        else:
-            self.resource_cache_confirmed = self.has_resource()
+        if not self.team_has_main_dps():
+            if not used_ultimate and not used_skill:
+                self.continues_normal_attack(0.2)
+            return
+
+        self.update_resource_after_perform(used_ultimate, used_skill)
         if not used_ultimate and not used_skill:
             self.continues_normal_attack(0.2)

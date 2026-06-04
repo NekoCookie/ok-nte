@@ -6,7 +6,12 @@ from qfluentwidgets import FluentIcon
 
 from src.char.CharFactory import get_char_feature_by_pos
 from src.char.custom.CustomCharManager import CustomCharManager
-from src.combat.BaseCombatTask import BaseCombatTask, CharDeadException, NotInCombatException
+from src.combat.BaseCombatTask import (
+    BaseCombatTask,
+    CharDeadException,
+    NotInCombatException,
+    TeamChangedException,
+)
 
 
 class ScannerSignals(QObject):
@@ -20,6 +25,9 @@ logger = Logger.get_logger(__name__)
 
 
 class AutoCombatTask(BaseCombatTask, TriggerTask):
+    TEAM_RECHECK_INTERVAL = 1.0
+    TEAM_RELOAD_WAIT_INTERVAL = 0.2
+
     txt_team_not_exist = "队伍不存在"
     txt_team_not_enough = "队伍人数少于2人"
 
@@ -41,25 +49,61 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         }
         self.op_index = 0
         self.origin_func = {}
+        self._last_team_recheck = 0.0
         if self._app is not None:
             self.tr(self.txt_team_not_exist)
             self.tr(self.txt_team_not_enough)
+
+    def _reload_combat_team(self) -> bool:
+        if self.load_chars():
+            self._in_combat = True
+            self.switch_to_combat_start_char()
+            return True
+
+        self.log_info("team reload pending, skip combat action this tick")
+        return False
+
+    def _reload_if_team_size_changed(self) -> bool:
+        now = time.time()
+        if now - self._last_team_recheck < self.TEAM_RECHECK_INTERVAL:
+            return True
+        self._last_team_recheck = now
+
+        in_team, current_index, count = self.in_team()
+        if not in_team or current_index == -1:
+            return True
+        if count > 4:
+            count = 4
+        if self.team_size == 0 or count == self.team_size:
+            return True
+
+        self.log_info(f"team size changed during combat {self.team_size} -> {count}, reload chars")
+        return self._reload_combat_team()
 
     def run(self):
         ret = False
         if not self.scene.is_in_team(self.is_in_team):
             return
 
+        self._last_team_recheck = 0.0
         combat_start = time.time()
         while self.in_combat():
             try:
                 if not ret:
                     ret = True
                     self.switch_to_combat_start_char()
+                if not self._reload_if_team_size_changed():
+                    time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
+                    continue
                 self.get_current_char().perform()
             except CharDeadException:
                 self.log_error("Characters dead", notify=True)
                 break
+            except TeamChangedException as e:
+                logger.info(f"auto_combat_task_team_changed {int(time.time() - combat_start)} {e}")
+                if not self._reload_combat_team():
+                    time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
+                continue
             except NotInCombatException as e:
                 logger.info(f"auto_combat_task_out_of_combat {int(time.time() - combat_start)} {e}")
                 break
