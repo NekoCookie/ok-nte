@@ -60,8 +60,10 @@ class BaseChar:
     """角色基类，定义了游戏角色的通用属性和行为。"""
 
     INTRO_MOTION_FREEZE_DURATION = 1.5
-    ULTIMATE_COMBAT_SETTLE_TIMEOUT = 3.0
+    ULTIMATE_COMBAT_SETTLE_TIMEOUT = 2.5
     ULTIMATE_COMBAT_SETTLE_CLICK = True
+    ULTIMATE_COMBAT_SETTLE_FORCE_ON_TIMEOUT = True
+    ULTIMATE_COMBAT_SETTLE_FORCE_RETARGET = True
 
     def __init__(self, task, index, char_name=None, confidence=1):
         """初始化角色基础属性。
@@ -330,6 +332,42 @@ class BaseChar:
             return "released" if result["clicked"] else "unavailable"
         return "continue"
 
+    def _force_ultimate_after_combat_settle_timeout(self):
+        if not self.ULTIMATE_COMBAT_SETTLE_FORCE_ON_TIMEOUT:
+            self.logger.info(
+                f"click_ultimate skipped by combat_detect_settle timeout "
+                f"{self.ULTIMATE_COMBAT_SETTLE_TIMEOUT}s"
+            )
+            return False
+
+        current_char = self.task.get_current_char(raise_exception=False)
+        if current_char is not self:
+            self.logger.info("click_ultimate skipped because current char changed during settle")
+            return False
+        if not self.task.is_in_team():
+            return self.task.in_animation
+        if not self.ultimate_available():
+            self.logger.info("click_ultimate skipped because ultimate is no longer available")
+            return False
+
+        if self.ULTIMATE_COMBAT_SETTLE_FORCE_RETARGET:
+            has_target = self.task.combat_detect()
+            if not has_target and self.click(
+                key="middle", action_name="ultimate_settle_retarget", interval=0.35
+            ):
+                self.task.openvino_clear_cache()
+            self.task.next_frame()
+
+        if not self.ultimate_available():
+            self.logger.info("click_ultimate skipped after retarget because ultimate is no longer available")
+            return False
+
+        self.logger.info(
+            f"click_ultimate forced after combat_detect_settle timeout "
+            f"{self.ULTIMATE_COMBAT_SETTLE_TIMEOUT}s"
+        )
+        return True
+
     def wait_ultimate_combat_settle(self):
         if self.task._combat_settle.time is None:
             return True
@@ -338,11 +376,7 @@ class BaseChar:
         start = time.time()
         while self.task._combat_settle.time is not None:
             if time.time() - start >= self.ULTIMATE_COMBAT_SETTLE_TIMEOUT:
-                self.logger.info(
-                    f"click_ultimate skipped by combat_detect_settle timeout "
-                    f"{self.ULTIMATE_COMBAT_SETTLE_TIMEOUT}s"
-                )
-                return False
+                return self._force_ultimate_after_combat_settle_timeout()
             self.task.next_frame()
             self.check_combat()
             if self.ULTIMATE_COMBAT_SETTLE_CLICK:
