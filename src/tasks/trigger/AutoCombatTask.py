@@ -76,6 +76,11 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
             count = 4
         if self.team_size == 0 or count == self.team_size:
             return True
+        if count > self.team_size and not self.is_reliable_team_expansion(count):
+            self.log_info(
+                f"team size expansion ignored during combat {self.team_size} -> {count}"
+            )
+            return True
 
         self.log_info(f"team size changed during combat {self.team_size} -> {count}, reload chars")
         return self._reload_combat_team()

@@ -56,7 +56,7 @@ class BaseCombatTask(CombatCheck):
     LOAD_CHARS_WEAK_RETRY = 2
     LOAD_CHARS_WEAK_RETRY_INTERVAL = 0.25
     TEAM_CHANGE_CHECK_INTERVAL = 0.3
-    TEAM_CHANGE_CONFIRM_INTERVAL = 0.2
+    TEAM_CHANGE_CONFIRM_INTERVAL = 0.8
     TEAM_SIGNATURE_CHECK_INTERVAL = 1.0
     TEAM_SIGNATURE_CONFIRM_INTERVAL = 0.5
     TEAM_SIGNATURE_MATCH_THRESHOLD = 0.6
@@ -665,6 +665,14 @@ class BaseCombatTask(CombatCheck):
         if now - previous[1] < self.TEAM_CHANGE_CONFIRM_INTERVAL:
             return False
 
+        if count > self.team_size and not self.is_reliable_team_expansion(count):
+            self._pending_team_change = None
+            self.log_info(
+                f"team size expansion ignored because added slots are unknown "
+                f"{self.team_size} -> {count}"
+            )
+            return False
+
         self._pending_team_change = None
         self.log_info(f"team size changed during action {self.team_size} -> {count}")
         raise TeamChangedException(f"team size changed {self.team_size} -> {count}")
@@ -793,11 +801,43 @@ class BaseCombatTask(CombatCheck):
             return False
         return bool(str(fixed_slot.get("char_name", "") or "").strip())
 
+    def _is_unknown_char(self, char: "BaseChar") -> bool:
+        return type(char) is BaseChar and char.char_name == "unknown"
+
+    def _get_fixed_slots(self):
+        fixed_team = CustomCharManager().get_fixed_team()
+        return fixed_team.get("slots", []) if fixed_team.get("enabled", False) else []
+
     def _is_weak_single_unknown_team(self, chars: list["BaseChar"], fixed_slots) -> bool:
         if len(chars) != 1 or self._fixed_slot_has_char(fixed_slots, 0):
             return False
         char = chars[0]
-        return type(char) is BaseChar and char.char_name == "unknown"
+        return self._is_unknown_char(char)
+
+    def _is_weak_unknown_expansion(
+        self,
+        chars: list["BaseChar"],
+        fixed_slots,
+        previous_count: int,
+    ) -> bool:
+        if previous_count <= 0 or len(chars) <= previous_count:
+            return False
+        for index in range(previous_count, len(chars)):
+            if not self._fixed_slot_has_char(fixed_slots, index) and self._is_unknown_char(
+                chars[index]
+            ):
+                return True
+        return False
+
+    def is_reliable_team_expansion(self, count: int) -> bool:
+        fixed_slots = self._get_fixed_slots()
+        for index in range(self.team_size, count):
+            if self._fixed_slot_has_char(fixed_slots, index):
+                continue
+            char = self._do_load_char(index, fixed_slots)
+            if self._is_unknown_char(char):
+                return False
+        return True
 
     def _commit_loaded_chars(self, chars: list["BaseChar"], current_index: int):
         self._pending_team_change = None
@@ -843,8 +883,7 @@ class BaseCombatTask(CombatCheck):
             count = 4
         self.log_info(f"load_chars count {count} current_index {current_index}")
 
-        fixed_team = CustomCharManager().get_fixed_team()
-        fixed_slots = fixed_team.get("slots", []) if fixed_team.get("enabled", False) else []
+        fixed_slots = self._get_fixed_slots()
         for attempt in range(self.LOAD_CHARS_WEAK_RETRY + 1):
             new_chars = []
             indices_to_detect = []
@@ -860,15 +899,25 @@ class BaseCombatTask(CombatCheck):
                     new_chars[i].element = detected_elements.get(i, Element.DEFAULT)
 
             weak_single_unknown = self._is_weak_single_unknown_team(new_chars, fixed_slots)
-            if weak_single_unknown and attempt < self.LOAD_CHARS_WEAK_RETRY:
+            weak_unknown_expansion = self._is_weak_unknown_expansion(
+                new_chars,
+                fixed_slots,
+                previous_count=self.team_size,
+            )
+            if (weak_single_unknown or weak_unknown_expansion) and attempt < self.LOAD_CHARS_WEAK_RETRY:
                 self.log_info(
-                    f"load_chars weak single unknown retry {attempt + 1}/{self.LOAD_CHARS_WEAK_RETRY}"
+                    f"load_chars weak unknown retry {attempt + 1}/{self.LOAD_CHARS_WEAK_RETRY}"
                 )
                 time.sleep(self.LOAD_CHARS_WEAK_RETRY_INTERVAL)
                 continue
 
             if weak_single_unknown and preserve_on_weak and self.chars:
                 self.log_info("load_chars weak single unknown ignored, keep previous team")
+                ret = False
+                break
+
+            if weak_unknown_expansion and preserve_on_weak and self.chars:
+                self.log_info("load_chars weak unknown expansion ignored, keep previous team")
                 ret = False
                 break
 
