@@ -10,7 +10,10 @@ from src.char.Jiuyuan import Jiuyuan
 from src.char.MainDps import BuffSupport, MainDps, SakiriBuffSupport
 from src.char.Mint import Mint
 from src.char.Nanally import Nanally
-from src.char.Requiem import Requiem
+from src.char.Requiem import (
+    Requiem,
+    RequiemJumpAttackTest,
+)
 from src.char.Sakiri import Sakiri
 from src.char.Zero import Zero
 
@@ -34,6 +37,7 @@ char_dict: dict[str, dict[str, Any]] = {
     "template_buff_support": {"cls": BuffSupport, "cn_name": "辅助模板"},
     "template_sakiri_buff_support": {"cls": SakiriBuffSupport, "cn_name": "早雾辅助"},
     "char_requiem": {"cls": Requiem, "cn_name": "安魂曲主C"},
+    "template_requiem_4a_jump_test": {"cls": RequiemJumpAttackTest, "cn_name": "安魂曲4a跳a测试"},
 }
 
 char_names = char_dict.keys()
