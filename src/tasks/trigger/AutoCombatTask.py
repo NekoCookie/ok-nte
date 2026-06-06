@@ -79,6 +79,12 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
             return True
         if count > 4:
             count = 4
+        if current_index >= count:
+            self.log_info(
+                f"team size check ignored invalid snapshot "
+                f"count {count} current_index {current_index}"
+            )
+            return True
         if self.team_size == 0 or count == self.team_size:
             return True
         if count > self.team_size and not self.is_reliable_team_expansion(count):
@@ -106,7 +112,13 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
                 if not self._reload_if_team_size_changed():
                     time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
                     continue
-                self.get_current_char().perform()
+                current_char = self.get_current_char()
+                if current_char is None:
+                    self.log_info("current char missing during combat, reload chars")
+                    if not self._reload_combat_team():
+                        time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
+                    continue
+                current_char.perform()
             except CharDeadException:
                 self.log_error("Characters dead", notify=True)
                 break

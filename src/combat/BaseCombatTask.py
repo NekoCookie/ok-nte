@@ -648,6 +648,23 @@ class BaseCombatTask(CombatCheck):
             self.raise_not_in_combat("can find current char!!")
         return None
 
+    def _normalize_team_snapshot(self, in_team, current_index, count, source="team"):
+        if not in_team or current_index == -1 or count <= 0:
+            return None
+
+        if count > 4:
+            logger.warning(f"{source} char count {count} larger than 4, set to 4")
+            count = 4
+
+        if current_index >= count:
+            self.log_info(
+                f"{source} invalid team snapshot ignored: "
+                f"count {count} current_index {current_index}"
+            )
+            return None
+
+        return current_index, count
+
     def combat_end(self):
         """战斗结束时调用的清理方法。"""
         SoundCombatContext().clear_task_if(self)
@@ -694,12 +711,14 @@ class BaseCombatTask(CombatCheck):
             self.skip_sleep_check = previous_skip_sleep_check
             self._team_change_checking = False
 
-        if not in_team or current_index == -1 or count <= 0:
+        snapshot = self._normalize_team_snapshot(
+            in_team, current_index, count, source="team change check"
+        )
+        if snapshot is None:
             self._pending_team_change = None
             return False
 
-        if count > 4:
-            count = 4
+        current_index, count = snapshot
         if count == self.team_size:
             self._pending_team_change = None
             return self.check_team_signature_changed_during_combat(now)
@@ -923,12 +942,13 @@ class BaseCombatTask(CombatCheck):
         now = time.perf_counter()
         self.load_hotkey()
         in_team, current_index, count = self.in_team()
-        if not in_team or current_index == -1:
+        snapshot = self._normalize_team_snapshot(
+            in_team, current_index, count, source="load_chars"
+        )
+        if snapshot is None:
             return ret
 
-        if count > 4:
-            logger.warning(f"char count {count} larger than 4, set to 4")
-            count = 4
+        current_index, count = snapshot
         self.log_info(f"load_chars count {count} current_index {current_index}")
 
         fixed_slots = self._get_fixed_slots()
