@@ -65,6 +65,10 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
                 logger.info(f"combat start char unavailable after team reload {e}")
             return True
 
+        if self.chars and self.get_current_char() is not None:
+            self.log_info("team reload failed, keep previous valid team")
+            return True
+
         self.log_info("team reload pending, skip combat action this tick")
         return False
 
@@ -75,16 +79,12 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         self._last_team_recheck = now
 
         in_team, current_index, count = self.in_team()
-        if not in_team or current_index == -1:
+        snapshot = self._normalize_team_snapshot(
+            in_team, current_index, count, source="team size check"
+        )
+        if snapshot is None:
             return True
-        if count > 4:
-            count = 4
-        if current_index >= count:
-            self.log_info(
-                f"team size check ignored invalid snapshot "
-                f"count {count} current_index {current_index}"
-            )
-            return True
+        current_index, count = snapshot
         if self.team_size == 0 or count == self.team_size:
             return True
         if count > self.team_size and not self.is_reliable_team_expansion(count):

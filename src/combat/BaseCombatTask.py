@@ -59,6 +59,8 @@ class BaseCombatTask(CombatCheck):
     _element_template_cache = {}
     LOAD_CHARS_WEAK_RETRY = 2
     LOAD_CHARS_WEAK_RETRY_INTERVAL = 0.25
+    LOAD_CHARS_SNAPSHOT_RETRY_WINDOW = 0.8
+    LOAD_CHARS_SNAPSHOT_RETRY_INTERVAL = 0.08
     TEAM_CHANGE_CHECK_INTERVAL = 0.3
     TEAM_CHANGE_CONFIRM_INTERVAL = 0.8
     TEAM_SIGNATURE_CHECK_INTERVAL = 1.0
@@ -665,6 +667,23 @@ class BaseCombatTask(CombatCheck):
 
         return current_index, count
 
+    def _get_valid_team_snapshot(self, source="team", retry=False, reject_snapshot=None):
+        end_time = time.perf_counter() + self.LOAD_CHARS_SNAPSHOT_RETRY_WINDOW
+        attempt = 0
+        while True:
+            in_team, current_index, count = self.in_team()
+            snapshot = self._normalize_team_snapshot(in_team, current_index, count, source=source)
+            if snapshot is not None and not (reject_snapshot and reject_snapshot(snapshot)):
+                if attempt:
+                    self.log_info(f"{source} valid snapshot recovered after {attempt} retries")
+                return snapshot
+
+            if not retry or time.perf_counter() >= end_time:
+                return None
+
+            attempt += 1
+            time.sleep(self.LOAD_CHARS_SNAPSHOT_RETRY_INTERVAL)
+
     def combat_end(self):
         """战斗结束时调用的清理方法。"""
         SoundCombatContext().clear_task_if(self)
@@ -941,10 +960,7 @@ class BaseCombatTask(CombatCheck):
         ret = False
         now = time.perf_counter()
         self.load_hotkey()
-        in_team, current_index, count = self.in_team()
-        snapshot = self._normalize_team_snapshot(
-            in_team, current_index, count, source="load_chars"
-        )
+        snapshot = self._get_valid_team_snapshot(source="load_chars", retry=True)
         if snapshot is None:
             return ret
 
@@ -952,44 +968,67 @@ class BaseCombatTask(CombatCheck):
         self.log_info(f"load_chars count {count} current_index {current_index}")
 
         fixed_slots = self._get_fixed_slots()
-        for attempt in range(self.LOAD_CHARS_WEAK_RETRY + 1):
-            new_chars = []
-            indices_to_detect = []
-            for i in range(count):
-                char = self._do_load_char(i, fixed_slots)
-                new_chars.append(char)
-                if char.element is Element.DEFAULT:
-                    indices_to_detect.append(i)
+        resnap_weak_single_unknown = True
+        while True:
+            restart_with_new_snapshot = False
+            for attempt in range(self.LOAD_CHARS_WEAK_RETRY + 1):
+                new_chars = []
+                indices_to_detect = []
+                for i in range(count):
+                    char = self._do_load_char(i, fixed_slots)
+                    new_chars.append(char)
+                    if char.element is Element.DEFAULT:
+                        indices_to_detect.append(i)
 
-            if indices_to_detect:
-                detected_elements = self.load_chars_element(indices_to_detect)
-                for i in indices_to_detect:
-                    new_chars[i].element = detected_elements.get(i, Element.DEFAULT)
+                if indices_to_detect:
+                    detected_elements = self.load_chars_element(indices_to_detect)
+                    for i in indices_to_detect:
+                        new_chars[i].element = detected_elements.get(i, Element.DEFAULT)
 
-            weak_single_unknown = self._is_weak_single_unknown_team(new_chars, fixed_slots)
-            weak_unknown_expansion = self._is_weak_unknown_expansion(
-                new_chars,
-                fixed_slots,
-                previous_count=self.team_size,
-            )
-            if (weak_single_unknown or weak_unknown_expansion) and attempt < self.LOAD_CHARS_WEAK_RETRY:
-                self.log_info(
-                    f"load_chars weak unknown retry {attempt + 1}/{self.LOAD_CHARS_WEAK_RETRY}"
+                weak_single_unknown = self._is_weak_single_unknown_team(new_chars, fixed_slots)
+                if weak_single_unknown and resnap_weak_single_unknown:
+                    resnap_weak_single_unknown = False
+                    recovered_snapshot = self._get_valid_team_snapshot(
+                        source="load_chars weak single unknown",
+                        retry=True,
+                        reject_snapshot=lambda team_snapshot: team_snapshot[1] == 1,
+                    )
+                    if recovered_snapshot is not None:
+                        current_index, count = recovered_snapshot
+                        self.log_info(
+                            f"load_chars weak single unknown recovered team snapshot "
+                            f"count {count} current_index {current_index}"
+                        )
+                        restart_with_new_snapshot = True
+                        break
+
+                weak_unknown_expansion = self._is_weak_unknown_expansion(
+                    new_chars,
+                    fixed_slots,
+                    previous_count=self.team_size,
                 )
-                time.sleep(self.LOAD_CHARS_WEAK_RETRY_INTERVAL)
+                if (weak_single_unknown or weak_unknown_expansion) and attempt < self.LOAD_CHARS_WEAK_RETRY:
+                    self.log_info(
+                        f"load_chars weak unknown retry {attempt + 1}/{self.LOAD_CHARS_WEAK_RETRY}"
+                    )
+                    time.sleep(self.LOAD_CHARS_WEAK_RETRY_INTERVAL)
+                    continue
+
+                if weak_single_unknown and preserve_on_weak and self.chars:
+                    self.log_info("load_chars weak single unknown ignored, keep previous team")
+                    ret = False
+                    break
+
+                if weak_unknown_expansion and preserve_on_weak and self.chars:
+                    self.log_info("load_chars weak unknown expansion ignored, keep previous team")
+                    ret = False
+                    break
+
+                ret = self._commit_loaded_chars(new_chars, current_index)
+                break
+
+            if restart_with_new_snapshot:
                 continue
-
-            if weak_single_unknown and preserve_on_weak and self.chars:
-                self.log_info("load_chars weak single unknown ignored, keep previous team")
-                ret = False
-                break
-
-            if weak_unknown_expansion and preserve_on_weak and self.chars:
-                self.log_info("load_chars weak unknown expansion ignored, keep previous team")
-                ret = False
-                break
-
-            ret = self._commit_loaded_chars(new_chars, current_index)
             break
 
         logger.debug(f"load_chars cost {time.perf_counter() - now:.3f}s")

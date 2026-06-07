@@ -117,6 +117,9 @@ class CombatCheck(BaseNTETask):
                     return True
                 if self.is_in_team():
                     self.middle_click()
+                    current_char = self.get_current_char(raise_exception=False)
+                    if current_char is not None:
+                        current_char.fill_idle_attack()
                     self.sleep(0.25)
                     self.next_frame()
                     if self.combat_detect(lv=lv):

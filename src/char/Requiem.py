@@ -10,6 +10,7 @@ class Requiem(MainDps):
     """Main DPS template with off-field skill overlap after skill cast."""
 
     SKILL_OFF_FIELD_DURATION = 3.0
+    PRE_SKILL_ULTIMATE_WAIT = 0.3
     FREE_SKILL_WINDOW = 12.0
     FREE_SKILL_ATTACK_INTERVAL = 0.18
     FREE_SKILL_FOLLOWUP_ATTACK_DURATION = 0.85
@@ -68,7 +69,7 @@ class Requiem(MainDps):
             self.perform_free_skill_chain()
             return
 
-        used_ultimate = self.click_ultimate()
+        used_ultimate = self.click_ultimate(wait_if_cd_ready=self.PRE_SKILL_ULTIMATE_WAIT)
         used_skill = self.click_skill()[0]
         if used_skill:
             now = time.time()

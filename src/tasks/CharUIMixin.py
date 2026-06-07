@@ -42,6 +42,7 @@ class CharUIMixin(_TaskProxy):
     CURRENT_CHAR_CORE_STRONG_SCORE = 0.70
     CURRENT_CHAR_CORE_STRONG_MARGIN = 0.08
     CURRENT_CHAR_STICKY_SECONDS = 0.8
+    CURRENT_CHAR_STABLE_ACCEPT_REASONS = {"raw_core_agree", "core_strong", "raw_strong"}
 
     def _init_char_ui_state(self):
         self._char_ui_offset = False
@@ -274,7 +275,11 @@ class CharUIMixin(_TaskProxy):
         detection = self._get_current_char_detection(frame=frame)
         score = detection.scores[index]
         new = f"idx {index} conf {score:.3f} {detection.reason}"
-        if detection.accepted and detection.index == index and score < threshold:
+        stable_target = (
+            detection.reason in self.CURRENT_CHAR_STABLE_ACCEPT_REASONS
+            and score <= self.CURRENT_CHAR_REJECT_SCORE
+        )
+        if detection.accepted and detection.index == index and (score < threshold or stable_target):
             self.info_set("current char", new)
             return True
         self.run_with_interval(lambda: self.info_set("current char", new), 0.5)

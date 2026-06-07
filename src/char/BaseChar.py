@@ -64,6 +64,7 @@ class BaseChar:
     ULTIMATE_COMBAT_SETTLE_CLICK = True
     ULTIMATE_COMBAT_SETTLE_FORCE_ON_TIMEOUT = True
     ULTIMATE_COMBAT_SETTLE_FORCE_RETARGET = True
+    IDLE_FILL_ATTACK_INTERVAL = 0.18
 
     def __init__(self, task, index, char_name=None, confidence=1):
         """初始化角色基础属性。
@@ -167,6 +168,15 @@ class BaseChar:
             interval (float, optional): 点击间隔。默认为 0.1。
         """
         self.click(interval=interval)
+
+    def fill_idle_attack(self, interval=None):
+        current_char = self.task.get_current_char(raise_exception=False)
+        if current_char is not self:
+            return False
+        if self.task.in_animation or not self.task.is_in_team():
+            return False
+        interval = self.IDLE_FILL_ATTACK_INTERVAL if interval is None else interval
+        return self.click(action_name=f"{self.name}_idle_fill_attack", interval=interval)
 
     @property
     def click(self):
@@ -380,7 +390,7 @@ class BaseChar:
             self.task.next_frame()
             self.check_combat()
             if self.ULTIMATE_COMBAT_SETTLE_CLICK:
-                self.click_with_interval()
+                self.fill_idle_attack()
             self.sleep(0.1)
         return True
 
@@ -788,11 +798,14 @@ class BaseChar:
         """
         start = time.time()
         while time.time() - start < duration:
+            current_char = self.task.get_current_char(raise_exception=False)
+            if current_char is not self or not self.task.is_in_team():
+                return
             if click_skill_if_ready_and_return and self.skill_available():
                 return self.click_skill()
             # if until_cycle_full and self.is_cycle_full():
             #     return
-            self.click()
+            self.fill_idle_attack(interval=interval)
             self.sleep(interval)
         self.sleep(after_sleep)
 
