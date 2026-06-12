@@ -64,7 +64,8 @@ class BaseChar:
     ULTIMATE_COMBAT_SETTLE_CLICK = True
     ULTIMATE_COMBAT_SETTLE_FORCE_ON_TIMEOUT = True
     ULTIMATE_COMBAT_SETTLE_FORCE_RETARGET = True
-    IDLE_FILL_ATTACK_INTERVAL = 0.18
+    IDLE_FILL_ATTACK_INTERVAL = 0.1
+    SKILL_INPUT_MODE_RETRY_DELAY = 0.12
 
     def __init__(self, task, index, char_name=None, confidence=1):
         """初始化角色基础属性。
@@ -546,12 +547,27 @@ class BaseChar:
         """
         self.logger.debug("click_skill start")
         the_time_out = SKILL_TIME_OUT if time_out == 0 else time_out
+        input_mode_retry_used = False
+
+        def send_skill_action():
+            nonlocal input_mode_retry_used
+            sent = self.send_skill_key(
+                down_time=down_time, action_name="skill_send", interval=0.25
+            )
+            if sent is False or input_mode_retry_used:
+                return sent
+            if not self._skill_still_available_after_input_mode_delay():
+                return sent
+
+            input_mode_retry_used = True
+            self.logger.info("skill still available after first key press, retry input mode once")
+            self._skill_available = False
+            return self.send_skill_key(down_time=down_time)
+
         result = self._try_available_action(
             "skill",
             self.skill_available,
-            lambda: self.send_skill_key(
-                down_time=down_time, action_name="skill_send", interval=0.25
-            ),
+            send_skill_action,
             send_click=send_click,
             time_out=the_time_out,
             has_animation=has_animation,
@@ -591,6 +607,20 @@ class BaseChar:
                 break
             self.task.next_frame()
             self.check_combat()
+
+    def _current_char_still_self(self):
+        return self.task.get_current_char(raise_exception=False) is self
+
+    def _skill_still_available_after_input_mode_delay(self):
+        self.sleep(self.SKILL_INPUT_MODE_RETRY_DELAY, sleep_check=False)
+        self.task.next_frame()
+        self.check_combat()
+        return (
+            self._current_char_still_self()
+            and not self.task.in_animation
+            and self.task.is_in_team()
+            and self.skill_available()
+        )
 
     def click_arc(self):
         self.send_arc_key()
