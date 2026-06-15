@@ -66,6 +66,10 @@ class BaseChar:
     ULTIMATE_COMBAT_SETTLE_FORCE_RETARGET = True
     IDLE_FILL_ATTACK_INTERVAL = 0.1
     SKILL_INPUT_MODE_RETRY_DELAY = 0.12
+    # 大招演出结束(已回到队伍画面)后,等"时停解除/CD 开始走"的精确确认超时。
+    # 正常 1~2s 内 condition 就满足;深渊换层等场景下大招图标区识别会失效,会一直空等到
+    # 超时,导致角色卡住十几秒不切人。这第二段只用来算 freeze 时长,缩短它纯止血、不影响放招。
+    ULTIMATE_UNFREEZE_TIMEOUT = 4
 
     def __init__(self, task, index, char_name=None, confidence=1):
         """初始化角色基础属性。
@@ -517,7 +521,7 @@ class BaseChar:
 
         self.task.wait_until(
             condition,
-            time_out=10,
+            time_out=self.ULTIMATE_UNFREEZE_TIMEOUT,
             post_action=self._click_during_ultimate_unfreeze,
         )
         duration = time.time() - start - 0.1

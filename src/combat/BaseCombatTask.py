@@ -564,6 +564,10 @@ class BaseCombatTask(CombatCheck):
         )
 
     def switch_to_combat_start_char(self):
+        # 进入/重启战斗(含深渊换层 reload)时,清掉可能从上一场残留的大招动画标志。
+        # 否则起始角色已在场时本方法会提前 return,残留的 in_animation=True 会让该角色的
+        # click_ultimate 误判"正在大招动画中"、不发招直接空等 unfreeze,卡住十几秒。
+        self.in_animation = False
         start_chars = [
             char for char in self.chars if char is not None and getattr(char, "start_combat", False)
         ]
