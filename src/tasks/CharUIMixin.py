@@ -44,6 +44,17 @@ class CharUIMixin(_TaskProxy):
     CURRENT_CHAR_STICKY_SECONDS = 0.8
     CURRENT_CHAR_STABLE_ACCEPT_REASONS = {"raw_core_agree", "core_strong", "raw_strong"}
 
+    # 下场角色头像右侧的"大招就绪菱形"格:大招随充能"渐显",菱形越亮 lap 越高。
+    # 实战实测:真满(能放出)lap>18000,快满未满(放不出)lap 12000~16500,没满<7000。
+    # 用边缘能量(Laplacian 方差)判:≥PRESENT 才算真满(避免快满误切空放);
+    # ≤ABSENT 算没满;中间是"快满未满"返回 None(不当大招,回退原逻辑,不切)。
+    # 坐标实测自 2560x1440(slot1 菱形格 x2440 y312 32x32),按角色竖直间距复制到各槽。
+    ULT_DIAMOND_X = 2440
+    ULT_DIAMOND_Y = 312
+    ULT_DIAMOND_SIZE = 32
+    ULT_DIAMOND_LAP_PRESENT = 17000
+    ULT_DIAMOND_LAP_ABSENT = 8000
+
     def _init_char_ui_state(self):
         self._char_ui_offset = False
         self._current_char_tracker = {
@@ -63,6 +74,57 @@ class CharUIMixin(_TaskProxy):
         )
         box = self._shift_char_ui_box(box, expend=True)
         return box
+
+    def get_ultimate_diamond_box(self, index: int) -> Box:
+        """第 index 个角色头像右侧"大招就绪菱形"格的区域框(随分辨率缩放、跟 UI 偏移)。"""
+        box = self.box_of_screen_scaled(
+            2560,
+            1440,
+            self.ULT_DIAMOND_X,
+            self.ULT_DIAMOND_Y,
+            width_original=self.ULT_DIAMOND_SIZE,
+            height_original=self.ULT_DIAMOND_SIZE,
+        )
+        if self._char_ui_offset:
+            box = self._shift_char_ui_box(box)
+        return self.get_box_by_char_spacing(box, index)
+
+    def off_field_ultimate_ready(self, index: int, frame=None):
+        """看下场角色头像的元素菱形是否亮起 => 大招就绪。
+
+        菱形是硬描边几何图标(高边缘能量),没大招时该格是空背景/头像光晕(平滑、低边缘能量),
+        用 Laplacian 方差区分,属性无关、亮/暗背景通吃。返回 True(就绪)/ False(未就绪)/
+        None(介于阈值之间不确定,或裁帧失败 —— 调用方回退到原时间推算)。
+        """
+        try:
+            if frame is None:
+                frame = self.frame
+            if frame is None:
+                return None
+            crop = self.get_ultimate_diamond_box(index).crop_frame(frame)
+            if crop is None or crop.size == 0:
+                return None
+            gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+            lap_var = float(cv2.Laplacian(gray, cv2.CV_64F, ksize=3).var())
+            if lap_var >= self.ULT_DIAMOND_LAP_PRESENT:
+                result = True
+            elif lap_var <= self.ULT_DIAMOND_LAP_ABSENT:
+                result = False
+            else:
+                result = None
+            # 诊断日志:每角色每秒最多一条,便于验证识别准度/调阈值(验证稳后可删)
+            log_times = getattr(self, "_ult_diamond_log_times", None)
+            if log_times is None:
+                log_times = {}
+                self._ult_diamond_log_times = log_times
+            now = time.time()
+            if now - log_times.get(index, 0) > 1.0:
+                log_times[index] = now
+                self.log_info(f"ult diamond char{index + 1} lap={lap_var:.0f} -> {result}")
+            return result
+        except Exception as e:
+            self.log_debug(f"off_field_ultimate_ready failed: {e}")
+            return None
 
     def _shift_char_ui_box(self, box: Box, expend=False):
         offset = -9 * self.width / 2560

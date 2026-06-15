@@ -116,10 +116,20 @@ class BuffSupport(BaseChar):
             for char in self.task.chars
         )
 
+    def ultimate_ready_now(self):
+        """大招就绪判定:在场看底部大招图标;下场看头像元素菱形(视觉)。
+        视觉不确定(None)时回退到 ultimate_available 的时间推算。"""
+        if self.is_current_char:
+            return self.ultimate_available()
+        visual = self.task.off_field_ultimate_ready(self.index)
+        if visual is None:
+            return self.ultimate_available()
+        return visual
+
     def has_resource(self):
         if not self.team_has_main_dps():
             return super().skill_available() or super().ultimate_available()
-        return self.skill_available() or self.ultimate_available()
+        return self.skill_available() or self.ultimate_ready_now()
 
     def has_cd_cache(self):
         return self.index in self.task.cds
@@ -131,7 +141,11 @@ class BuffSupport(BaseChar):
             return False
         if self.is_current_char:
             return self.has_resource()
-        return self.resource_cache_confirmed and self.has_cd_cache() and self.has_resource()
+        # 下场:大招直接看头像菱形(可靠,不受缓存门槛限制),只有视觉明确"有"才算确认。
+        if self.task.off_field_ultimate_ready(self.index) is True:
+            return True
+        # 技能下场读不到图标,仍靠在场时缓存的 CD 时间推算。
+        return self.resource_cache_confirmed and self.has_cd_cache() and self.skill_available()
 
     def recently_used_resource(self):
         return time.time() - self.last_resource_use < self.RESOURCE_RECHECK_AFTER_USE_INTERVAL
