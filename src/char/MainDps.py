@@ -97,7 +97,7 @@ class BuffSupport(BaseChar):
     """Generic buff/support template that takes priority when resources are ready."""
 
     RESOURCE_PRIORITY_BONUS = Priority.SKILL_AVAILABLE
-    RESOURCE_PROBE_INTERVAL = 10.0
+    RESOURCE_PROBE_INTERVAL = 20.0
     RESOURCE_RECHECK_AFTER_USE_INTERVAL = 18.0
     RESOURCE_PROBE_PRIORITY = Priority.BASE
     ULTIMATE_COMBAT_SETTLE_TIMEOUT = 0.8
