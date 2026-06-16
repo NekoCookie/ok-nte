@@ -44,13 +44,15 @@ class CharUIMixin(_TaskProxy):
     CURRENT_CHAR_STICKY_SECONDS = 0.8
     CURRENT_CHAR_STABLE_ACCEPT_REASONS = {"raw_core_agree", "core_strong", "raw_strong"}
 
-    # 下场角色头像右侧的"大招就绪菱形"格:大招随充能"渐显",菱形越亮 lap 越高。
-    # 实战实测:真满(能放出)lap>18000,快满未满(放不出)lap 12000~16500,没满<7000。
-    # 用边缘能量(Laplacian 方差)判:≥PRESENT 才算真满(避免快满误切空放);
-    # ≤ABSENT 算没满;中间是"快满未满"返回 None(不当大招,回退原逻辑,不切)。
-    # 坐标实测自 2560x1440(slot1 菱形格 x2440 y312 32x32),按角色竖直间距复制到各槽。
+    # 下场(后台)角色头像右侧的"大招就绪菱形"格:有大招才亮菱形,前台角色无菱形。
+    # 菱形下面还有个常驻圆形(技能图标),框千万别骑到圆形上,否则判的是"在不在后台"而非"有无大招"。
+    # 用边缘能量(Laplacian 方差)判:≥PRESENT 算有大招;≤ABSENT 算没有;中间 None(回退原逻辑)。
+    # 坐标实测自 2560x1440:扫描 lap 峰值定位 4 个菱形中心 y≈312/496/666/840,线性拟合=
+    # 起点中心 312、竖直间距 176 → 32x32 框顶 ULT_DIAMOND_Y=296(中心-16),按 176 间距复制到各槽。
+    # 实测(框居中菱形后):后台有大招 lap 2.8w~4.6w,后台无大招 ~4.5k,前台/空槽 <0.7k,
+    # 8000~17000 几乎不出现(早期 12000~16500"快满"假象其实是框偏低 16px、骑到了下面的圆形上)。
     ULT_DIAMOND_X = 2440
-    ULT_DIAMOND_Y = 312
+    ULT_DIAMOND_Y = 296
     ULT_DIAMOND_SIZE = 32
     ULT_DIAMOND_LAP_PRESENT = 17000
     ULT_DIAMOND_LAP_ABSENT = 8000
@@ -112,7 +114,7 @@ class CharUIMixin(_TaskProxy):
                 result = False
             else:
                 result = None
-            # 诊断日志:每角色每秒最多一条,便于验证识别准度/调阈值(验证稳后可删)
+            # 诊断日志:每角色每秒最多一条,便于验证识别准度/调阈值
             log_times = getattr(self, "_ult_diamond_log_times", None)
             if log_times is None:
                 log_times = {}
