@@ -11,6 +11,7 @@ class NanallySuperJumpTask(BaseNTETask, TriggerTask):
     CONF_TRIGGER_KEY = "触发按键"
     CONF_JUMP_DELAY = "起跳延迟(s)"
     CONF_SECOND_JUMP_DELAY = "第二跳延迟(s)"
+    CONF_MODE_SWITCH_DELAY = "切模式诱饵延迟(ms)"
     CHECK_INTERVAL = 0.03
     KEY_MAP = {
         "space": win32con.VK_SPACE,
@@ -39,8 +40,14 @@ class NanallySuperJumpTask(BaseNTETask, TriggerTask):
         ("click", 0.05),
     ]
     DEFAULT_JUMP_DELAY = 0.48
-    DEFAULT_SECOND_JUMP_DELAY = 0.5
+    DEFAULT_SECOND_JUMP_DELAY = 0.45
     JUMP_KEY_DOWN_TIME = 0.05
+    # 手柄经 Steam Input 映射成触发键时,触发瞬间游戏可能还在手柄模式,
+    # bot 发的第一下键鼠输入只用来切回键鼠模式、被吞掉。开跑真宏前先补发
+    # 一下"诱饵 click"把这次切模式吃掉,再隔这么久(ms)让模式注册完,真宏 3 连点才全落地。
+    # 单位毫秒;设为 0 = 关闭补偿(键鼠触发、或实测不掉第一下时就设 0,免得多点一下反而坏时机)。
+    DEFAULT_MODE_SWITCH_DELAY_MS = 10
+    MODE_SWITCH_DECOY_DOWN_TIME = 0.05
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -50,6 +57,7 @@ class NanallySuperJumpTask(BaseNTETask, TriggerTask):
                 self.CONF_TRIGGER_KEY: "mouse4",
                 self.CONF_JUMP_DELAY: self.DEFAULT_JUMP_DELAY,
                 self.CONF_SECOND_JUMP_DELAY: self.DEFAULT_SECOND_JUMP_DELAY,
+                self.CONF_MODE_SWITCH_DELAY: self.DEFAULT_MODE_SWITCH_DELAY_MS,
             }
         )
         self.config_description.update(
@@ -57,6 +65,7 @@ class NanallySuperJumpTask(BaseNTETask, TriggerTask):
                 self.CONF_TRIGGER_KEY: "按下该键执行一次娜娜莉超级跳宏",
                 self.CONF_JUMP_DELAY: "第3次左键结束后，到按下空格前的等待时间",
                 self.CONF_SECOND_JUMP_DELAY: "第一次空格结束后，到按下第二次空格前的等待时间；设为0表示禁用第二跳",
+                self.CONF_MODE_SWITCH_DELAY: "手柄触发时,跑真宏前先补一下诱饵左键吃掉切输入模式,再等这么久(毫秒)让模式注册完;设为0关闭(键鼠触发就设0)",
             }
         )
         self.name = "娜娜莉超级跳"
@@ -96,6 +105,7 @@ class NanallySuperJumpTask(BaseNTETask, TriggerTask):
     def _run_macro(self):
         self._macro_running = True
         self.log_info("nanally super jump macro start")
+        self._compensate_input_mode_switch()
         start = time.perf_counter()
         try:
             for step_index, step in enumerate(self._get_macro_steps(), start=1):
@@ -120,6 +130,25 @@ class NanallySuperJumpTask(BaseNTETask, TriggerTask):
             elapsed = time.perf_counter() - start
             self.log_info(f"nanally super jump macro end elapsed={elapsed:.3f}s")
             self._macro_running = False
+
+    def _compensate_input_mode_switch(self):
+        """跑真宏前补一下诱饵 click,吃掉手柄→键鼠的切模式(否则真宏第一下被吞)。
+        延迟单位毫秒,设为 0 时整段跳过(键鼠触发不需要)。"""
+        delay_ms = self._get_mode_switch_delay_ms()
+        if delay_ms <= 0:
+            return
+        self.log_info(f"input-mode decoy click, settle {delay_ms}ms before real macro")
+        self.click(down_time=self.MODE_SWITCH_DECOY_DOWN_TIME)
+        time.sleep(delay_ms / 1000.0)
+
+    def _get_mode_switch_delay_ms(self):
+        try:
+            delay_ms = float(
+                self.config.get(self.CONF_MODE_SWITCH_DELAY, self.DEFAULT_MODE_SWITCH_DELAY_MS)
+            )
+        except (TypeError, ValueError):
+            delay_ms = self.DEFAULT_MODE_SWITCH_DELAY_MS
+        return max(0.0, delay_ms)
 
     def _get_macro_steps(self):
         jump_delay = self._get_jump_delay()
