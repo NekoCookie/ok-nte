@@ -413,11 +413,25 @@ class BaseCombatTask(CombatCheck):
                 switch_to = char
 
         if has_intro and max_priority < Priority.FAST_SWITCH:
-            reaction_target = self.find_element_ring_reaction_target(current_char)
-            if reaction_target and not self.is_char_unavailable(reaction_target):
-                return reaction_target, has_intro
+            # 辅助大招就绪待铺时,先上场铺大招 buff,不被环合反应覆盖
+            # (按优先级切到该辅助开大);没有大招待铺时环合照常走。
+            if not self._any_support_ultimate_pending(current_char):
+                reaction_target = self.find_element_ring_reaction_target(current_char)
+                if reaction_target and not self.is_char_unavailable(reaction_target):
+                    return reaction_target, has_intro
 
         return switch_to, has_intro
+
+    def _any_support_ultimate_pending(self, current_char):
+        """是否有(非当前场上的)辅助大招就绪待铺,用于让"先铺大招 buff"压过环合反应。"""
+        from src.char.MainDps import BuffSupport
+
+        for char in self.chars:
+            if char is None or char is current_char:
+                continue
+            if isinstance(char, BuffSupport) and char.ultimate_buff_pending():
+                return True
+        return False
 
     def _find_switch_target(self, current_char: "BaseChar", free_intro=False):
         switch_to_self_count = 0

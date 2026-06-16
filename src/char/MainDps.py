@@ -147,6 +147,17 @@ class BuffSupport(BaseChar):
         # 技能下场读不到图标,仍靠在场时缓存的 CD 时间推算。
         return self.resource_cache_confirmed and self.has_cd_cache() and self.skill_available()
 
+    def ultimate_buff_pending(self):
+        """大招就绪、待上场铺 —— 用于让"先铺大招 buff"压过环合反应优先切人。
+        只看大招(技能就绪不打断环合);在场看底部图标、下场看头像菱形;刚用过不算。"""
+        if not self.team_has_main_dps():
+            return False
+        if self.recently_used_resource():
+            return False
+        if self.is_current_char:
+            return self.ultimate_available()
+        return self.task.off_field_ultimate_ready(self.index) is True
+
     def recently_used_resource(self):
         return time.time() - self.last_resource_use < self.RESOURCE_RECHECK_AFTER_USE_INTERVAL
 

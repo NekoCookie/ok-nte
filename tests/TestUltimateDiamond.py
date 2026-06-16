@@ -111,6 +111,25 @@ class TestBuffSupportUltimateWiring(unittest.TestCase):
         self.assertTrue(make_support(skill=False, off_field=True).has_resource())
         self.assertFalse(make_support(skill=False, off_field=False).has_resource())
 
+    # ---- ultimate_buff_pending:只看大招,用于压过环合优先铺大招 buff ----
+    def test_ultimate_buff_pending_only_ultimate(self):
+        # 下场大招就绪 → 待铺
+        self.assertTrue(make_support(off_field=True).ultimate_buff_pending())
+        self.assertFalse(make_support(off_field=False).ultimate_buff_pending())
+        self.assertFalse(make_support(off_field=None).ultimate_buff_pending())
+        # 只看大招:技能就绪但大招没好 → 不算待铺(不打断环合)
+        self.assertFalse(make_support(off_field=False, skill=True).ultimate_buff_pending())
+
+    def test_ultimate_buff_pending_recently_used(self):
+        s = make_support(off_field=True)
+        s.recently_used_resource = mock.MagicMock(return_value=True)
+        self.assertFalse(s.ultimate_buff_pending(), "刚用过大招不算待铺")
+
+    def test_ultimate_buff_pending_on_field_uses_icon(self):
+        s = make_support(off_field=False, is_current=True, ult=True)
+        self.assertTrue(s.ultimate_buff_pending(), "在场看底部大招图标")
+        s.task.off_field_ultimate_ready.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
