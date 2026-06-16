@@ -132,7 +132,7 @@ class Requiem(MainDps):
         used_ultimate = self.click_ultimate(wait_if_cd_ready=self.PRE_SKILL_ULTIMATE_WAIT)
 
         if self.skill_available():
-            # 主依据:技能图标视觉判定真/免费;识别不可靠时回退到 16s 时间锚点。
+            # 真/免费只看技能图标(is_real_skill_now);识别不到按真技能处理。
             if self.is_real_skill_now():
                 # 先平A出手进入交战,再放真技能,否则开战瞬间直接放会打空。
                 engage = self.engage_attack_duration()
