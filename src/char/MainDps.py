@@ -97,8 +97,10 @@ class BuffSupport(BaseChar):
     """Generic buff/support template that takes priority when resources are ready."""
 
     RESOURCE_PRIORITY_BONUS = Priority.SKILL_AVAILABLE
-    RESOURCE_PROBE_INTERVAL = 20.0
-    RESOURCE_RECHECK_AFTER_USE_INTERVAL = 18.0
+    RESOURCE_PROBE_INTERVAL = 30.0
+    # 刚用过资源后的防抖间隔(秒): 仅防止"切出瞬间又被判有资源"的抖动。
+    # 不再用大间隔掩盖 CD 推算误差 —— 大招就绪由头像菱形精确判定、技能由可靠锚点的 CD 推算判定。
+    RESOURCE_RECHECK_AFTER_USE_INTERVAL = 4.0
     RESOURCE_PROBE_PRIORITY = Priority.BASE
     ULTIMATE_COMBAT_SETTLE_TIMEOUT = 0.8
     ULTIMATE_COMBAT_SETTLE_CLICK = True

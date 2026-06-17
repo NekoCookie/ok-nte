@@ -46,6 +46,9 @@ class BaseCombatTask(CombatCheck):
 
     hot_key_verified = False  # 热键是否已验证
     freeze_durations = []  # 记录冻结/卡肉的持续时间
+    # 锚定技能/大招 CD 时, 若 OCR 读不到数字且图标不亮(无旧锚点)的保守占位:
+    # 当成仍在冷却, 宁可多冷却也不误判可用(避免空切)。
+    UNKNOWN_CD_SECONDS = 20.0
 
     element_ring = (
         Element.WHITE,
@@ -280,18 +283,32 @@ class BaseCombatTask(CombatCheck):
         if cds is None:
             cds = {}
             self.cds[index] = cds
-        cds["time"] = time.time()
-        cds["skill"] = 0
-        cds["ultimate"] = 0
+        now = time.time()
+        cds["time"] = now  # 兼容旧字段; 实际推算用每个 box 独立的 <box>_time
         texts = self.ocr(
             0.8594, 0.8847, 0.9578, 0.9139, frame_processor=gf.isolate_cd_to_black, match=cd_regex
         )
+        ocr_cds = {"skill": None, "ultimate": None}
         for text in texts:
             cd = convert_cd(text)
             if text.x < self.width_of_screen(0.89):
-                cds["skill"] = cd
+                ocr_cds["skill"] = cd
             elif text.x > self.width_of_screen(0.925):
-                cds["ultimate"] = cd
+                ocr_cds["ultimate"] = cd
+        # 关键: 不要把"OCR 没读到数字"当成 CD=0。读不到时用图标高亮区分:
+        #   图标亮 = 已就绪 -> 锚 0; 图标暗 = 仍在冷却但数字没识别(坏帧) -> 保留上次可信锚点。
+        for box, ocr_cd in ocr_cds.items():
+            if ocr_cd is not None:
+                cds[box] = ocr_cd
+                cds[box + "_time"] = now
+            elif self.box_highlighted(box):
+                cds[box] = 0
+                cds[box + "_time"] = now
+            elif box not in cds:
+                # 从未成功锚定过 + 此刻坏帧: 保守占位为冷却中, 等下一帧重锚。
+                cds[box] = self.UNKNOWN_CD_SECONDS
+                cds[box + "_time"] = now
+            # else: 保留 cds[box] / cds[box+"_time"] 不变, 继续按上次锚点倒计时
         self.scene.cd_refreshed = True
         # self.log_debug(f"cd refreshed: {cds} {time.time() - cds['time']}")
 
@@ -300,10 +317,56 @@ class BaseCombatTask(CombatCheck):
         if char_index is None:
             char_index = self.get_current_char().index
         if cds := self.cds.get(char_index):
-            time_elapsed = self.time_elapsed_accounting_for_freeze(cds["time"])
-            return cds[box_name] - time_elapsed
+            if box_name not in cds:
+                return self.UNKNOWN_CD_SECONDS
+            anchor_time = cds.get(box_name + "_time", cds.get("time"))
+            time_elapsed = self.time_elapsed_accounting_for_freeze(anchor_time)
+            result = cds[box_name] - time_elapsed
+            self._log_cd_estimate(box_name, char_index, cds, result)
+            return result
         else:
             return 0
+
+    def _log_cd_estimate(self, box_name, char_index, cds, result):
+        """临时诊断:打印技能/大招 CD 时间推算的每个环节,定位推算误差来源。
+        节流(每角色每 box 2s 一条)。验证完即删。
+        口径与 time_elapsed_accounting_for_freeze 完全一致:
+          剩余CD = 锚点CD - (墙钟流逝 - 冻结扣除)
+        """
+        try:
+            now = time.time()
+            log_times = getattr(self, "_cd_estimate_log_times", None)
+            if log_times is None:
+                log_times = {}
+                self._cd_estimate_log_times = log_times
+            key = (char_index, box_name)
+            if now - log_times.get(key, 0) < 2.0:
+                return
+            log_times[key] = now
+            anchor = cds.get(box_name + "_time", cds.get("time", 0))
+            raw_elapsed = now - anchor
+            anchor_cd = cds.get(box_name, 0)
+            parts = []
+            to_minus = 0.0
+            for fs, dur, ft in self.freeze_durations:
+                if anchor < fs:
+                    if ft == -100:
+                        parts.append(f"入场@{now - fs:.1f}s前(dur{dur:.2f},跳过不扣)")
+                        continue
+                    deduct = dur - ft
+                    to_minus += deduct
+                    parts.append(f"@{now - fs:.1f}s前 dur{dur:.2f} 扣{deduct:.2f}")
+            detail = "; ".join(parts) if parts else "无"
+            on_field = "在场OCR" if raw_elapsed < 1.0 else "下场推算"
+            self.log_info(
+                f"cd-est char{char_index + 1} {box_name}({on_field}): "
+                f"锚CD={anchor_cd:.1f} 锚于{raw_elapsed:.1f}s前 "
+                f"墙钟流逝={raw_elapsed:.1f} 冻结扣={to_minus:.2f} "
+                f"有效流逝={raw_elapsed - to_minus:.1f} => 剩余CD={result:.1f} "
+                f"{'可用' if result <= 0 else '冷却'} | 冻结明细[{detail}]"
+            )
+        except Exception as e:
+            self.log_debug(f"cd estimate log failed: {e}")
 
     def revive_action(self):
         # TODO: 復活邏輯
