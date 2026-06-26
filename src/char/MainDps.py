@@ -210,6 +210,49 @@ class BuffSupport(BaseChar):
         return Priority.BASE_MINUS_1
 
 
+class HealSupport(BuffSupport):
+    """治疗模板:机制与辅助(`BuffSupport`)完全一样——探测间隔 + CD/大招就绪都看,
+    上场放治疗技能/大招后即下场。**唯一区别是优先级最低**:只有当主C没爆发(技能/大招
+    都没就绪)、且别的辅助也没资源(含待探测)时,才轮到治疗被切上来。
+
+    实现:在辅助原有"有没有资源"判定外再加一道闸 `_higher_priority_busy()`——只要主C或
+    别的辅助还有事干,治疗一律视为没资源(优先级压到 BASE_MINUS_1),自然让位;两者都空了
+    才放行。无需改 MainDps/BaseCombatTask:治疗 role=HEALER 也算"辅助",会被 MainDps
+    的 should_yield_to_support 纳入,但因为这道闸,主C只会在自己空闲时才给治疗让场。
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.role = Role.HEALER
+
+    def _higher_priority_busy(self):
+        """主C有爆发(技能/大招就绪),或别的非治疗辅助有资源/待探测 = 有更高优先级要上,治疗让位。"""
+        for char in self.task.chars:
+            if char is None or char is self:
+                continue
+            if isinstance(char, MainDps):
+                if char.skill_available() or char.ultimate_available():
+                    return True
+            elif isinstance(char, BuffSupport) and not isinstance(char, HealSupport):
+                if char.has_confirmed_resource() or char.needs_resource_probe():
+                    return True
+        return False
+
+    def has_confirmed_resource(self):
+        if self._higher_priority_busy():
+            return False
+        return super().has_confirmed_resource()
+
+    def needs_resource_probe(self):
+        if self._higher_priority_busy():
+            return False
+        return super().needs_resource_probe()
+
+    def ultimate_buff_pending(self):
+        # 治疗不参与"先铺大招 buff 压过环合"那条抢线(那是辅助专属);治疗优先级最低。
+        return False
+
+
 class SakiriBuffSupport(BuffSupport):
     """Buff support variant for Sakiri that holds skill."""
 
