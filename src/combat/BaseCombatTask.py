@@ -440,7 +440,11 @@ class BaseCombatTask(CombatCheck):
                 e_rdy, r_rdy = e <= 0, real <= 0
                 flag = "准"
                 if e_rdy and not r_rdy:
-                    flag = "切早(推算可用·实际冷却=空切)"
+                    # 主C overlap 强制切人拉上来的(非因资源)→ 不算CD误报, 单独标注。
+                    if box == "skill" and self.main_dps_overlapping():
+                        flag = "overlap切人(主C真技能强制切, 非CD误)"
+                    else:
+                        flag = "切早(推算可用·实际冷却=空切)"
                 elif not e_rdy and r_rdy:
                     flag = "切晚(推算冷却·实际就绪=浪费)"
                 self.log_info(
@@ -686,6 +690,17 @@ class BaseCombatTask(CombatCheck):
             if char is None or char is current_char:
                 continue
             if isinstance(char, BuffSupport) and char.ultimate_buff_pending():
+                return True
+        return False
+
+    def main_dps_overlapping(self):
+        """是否有主C正处于"真技能 off-field overlap"强制下场窗口(刚放完真技能、被强制让场)。
+        这期间主C必须切给别人, 切上来的支援是来接 overlap 平A的(平A本身有输出), 不该被算成
+        "空切/切早"。用于诊断排除这种误报。"""
+        from src.char.MainDps import MainDps
+
+        for char in self.chars:
+            if isinstance(char, MainDps) and char.should_force_off_field():
                 return True
         return False
 

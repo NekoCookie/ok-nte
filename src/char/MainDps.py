@@ -205,9 +205,9 @@ class BuffSupport(BaseChar):
         used_ultimate, used_skill = self._cast_ult_and_skill(skill_down_time=self.SKILL_DOWN_TIME)
         self.update_resource_after_perform(used_ultimate, used_skill)
         if not used_ultimate and not used_skill:
-            if not self.has_intro:
-                # 非环合切入却大招/技能都没放 = 真空切(资源误判切早/探测落空)。
-                # 环合反应切入(has_intro)本就为元素反应、不为放招,不算空切。
+            if not self.has_intro and not self.task.main_dps_overlapping():
+                # 真空切(资源误判切早/探测落空)。排除两类非空切:环合反应切入(has_intro,
+                # 为元素反应)、主C真技能 overlap 强制切人(来接平A,本身有输出)。
                 self.logger.info(
                     f"support empty-switch 空切: {type(self).__name__} 切上场但啥都没放"
                 )
