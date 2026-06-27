@@ -496,6 +496,17 @@ class BaseCombatTask(CombatCheck):
                 return True
         return False
 
+    def _committing_to_ready_support(self, switch_to):
+        """正在切向的目标若是支援(辅助/治疗),就不让环合在它落地前把它改道走——它既然赢了
+        决策被选中切过去,就让它落地放完大招/技能再被抢,避免落地前被薅走形成空切。环合反应
+        留到下一次切人再走。决策层优先级不受影响(治疗仍最低,不会越级抢初次决策)。
+
+        注意:不能用 has_confirmed_resource() 判——治疗的资源判定会随别的辅助资源实时翻转,
+        切到一半就翻成 False、守卫失效,正是之前没修好的原因。"""
+        from src.char.MainDps import BuffSupport
+
+        return isinstance(switch_to, BuffSupport)
+
     def _find_switch_target(self, current_char: "BaseChar", free_intro=False):
         switch_to_self_count = 0
         while True:
@@ -561,7 +572,12 @@ class BaseCombatTask(CombatCheck):
                 self._set_current_char(current_char, switch_to, has_intro)
                 break
 
-            if retry_intro and not has_intro and current_time - last_decide_time > 0.12:
+            if (
+                retry_intro
+                and not has_intro
+                and current_time - last_decide_time > 0.12
+                and not self._committing_to_ready_support(switch_to)
+            ):
                 last_decide_time = current_time
                 new_switch_to, new_has_intro = self._decide_switch_to(
                     current_char, free_intro, require_intro=True

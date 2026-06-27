@@ -104,6 +104,7 @@ class BuffSupport(BaseChar):
     RESOURCE_PROBE_PRIORITY = Priority.BASE
     ULTIMATE_COMBAT_SETTLE_TIMEOUT = 0.8
     ULTIMATE_COMBAT_SETTLE_CLICK = True
+    SKILL_DOWN_TIME = 0.01  # 技能按下时长;子类(如早雾)改这个常量即可改长按,无需重写 do_perform
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -184,16 +185,32 @@ class BuffSupport(BaseChar):
             self.logger.info("support skill used while ultimate remains available")
         self.resource_cache_confirmed = self.has_resource()
 
+    def _cast_ult_and_skill(self, skill_down_time=0.01):
+        """放大招 + 技能。放完技能后大招常刚好充满就绪,**同一次站场内补放一次大招**,
+        避免"放完技能→大招才就绪→切走又立刻切回来开大招"的来回切。切走前的这次
+        `ultimate_available` 检查很便宜(读一次图标),就绪就直接开、不就绪秒过。
+        共享给 BuffSupport / 治疗 / 早雾,改一处全生效。"""
+        used_ultimate = self.click_ultimate()
+        used_skill = self.click_skill(down_time=skill_down_time)[0]
+        if not used_ultimate and self.ultimate_available():
+            used_ultimate = self.click_ultimate()
+        return used_ultimate, used_skill
+
     def do_perform(self):
         if not self.team_has_main_dps():
             super().do_perform()
             return
 
         self.wait_intro()
-        used_ultimate = self.click_ultimate()
-        used_skill = self.click_skill()[0]
+        used_ultimate, used_skill = self._cast_ult_and_skill(skill_down_time=self.SKILL_DOWN_TIME)
         self.update_resource_after_perform(used_ultimate, used_skill)
         if not used_ultimate and not used_skill:
+            if not self.has_intro:
+                # 非环合切入却大招/技能都没放 = 真空切(资源误判切早/探测落空)。
+                # 环合反应切入(has_intro)本就为元素反应、不为放招,不算空切。
+                self.logger.info(
+                    f"support empty-switch 空切: {type(self).__name__} 切上场但啥都没放"
+                )
             self.continues_normal_attack(0.2)
 
     def do_get_switch_priority(self, current_char, has_intro=False):
@@ -254,19 +271,17 @@ class HealSupport(BuffSupport):
 
 
 class SakiriBuffSupport(BuffSupport):
-    """Buff support variant for Sakiri that holds skill."""
+    """早雾辅助:**有主C时**与辅助模板完全一致,仅技能改为长按(SKILL_DOWN_TIME);
+    **无主C时**回退到 RU 的早雾(`Sakiri`)逻辑,而不是辅助那套资源/补大招。"""
 
     SKILL_DOWN_TIME = 0.25
 
     def do_perform(self):
-        self.wait_intro()
-        used_ultimate = self.click_ultimate()
-        used_skill = self.click_skill(down_time=self.SKILL_DOWN_TIME)[0]
         if not self.team_has_main_dps():
-            if not used_ultimate and not used_skill:
-                self.continues_normal_attack(0.2)
-            return
+            # 无主C体系:用 RU 的早雾(Sakiri)逻辑(辅助模板此处是退化成通用 BaseChar)。
+            from src.char.Sakiri import Sakiri
 
-        self.update_resource_after_perform(used_ultimate, used_skill)
-        if not used_ultimate and not used_skill:
-            self.continues_normal_attack(0.2)
+            Sakiri.do_perform(self)
+            return
+        # 有主C体系:走辅助模板逻辑;长按由 SKILL_DOWN_TIME=0.25 自动生效,无需重写出招。
+        super().do_perform()
