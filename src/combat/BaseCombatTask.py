@@ -52,6 +52,9 @@ class BaseCombatTask(CombatCheck):
     # 技能就绪模板匹配阈值: OCR 读不到数字时, 拿当前技能图标和该角色"就绪模板"带遮罩匹配,
     # 置信度 >= 此值判就绪(锚 0)。实测就绪 0.95~1.00 / CD 0.07~0.22, 0.7 两边大余量。
     SKILL_READY_TEMPLATE_THRESHOLD = 0.7
+    # CD 诊断开关: 平时 False(不影响实战); 想观察"切早/切晚/空切"或采技能样本时翻成 True。
+    # 开启后会打 cd-truth 切上场对照日志, 并把技能图标存到 logs/box_debug(含同步磁盘写)。
+    SKILL_CD_DIAG = False
 
     element_ring = (
         Element.WHITE,
@@ -286,6 +289,9 @@ class BaseCombatTask(CombatCheck):
         if cds is None:
             cds = {}
             self.cds[index] = cds
+        # 诊断(SKILL_CD_DIAG):切上场瞬间(覆盖锚点前)记下"下场最后推算",待在场首次读到真实CD对照。
+        if self.SKILL_CD_DIAG and getattr(self, "_last_refresh_index", None) != index:
+            self._capture_switch_in_estimate(index, cds)
         now = time.time()
         cds["time"] = now  # 兼容旧字段; 实际推算用每个 box 独立的 <box>_time
         texts = self.ocr(
@@ -301,6 +307,8 @@ class BaseCombatTask(CombatCheck):
         # 关键: 不要把"OCR 没读到数字"当成 CD=0。读不到时用图标高亮区分:
         #   图标亮 = 已就绪 -> 锚 0; 图标暗 = 仍在冷却但数字没识别(坏帧) -> 保留上次可信锚点。
         for box, ocr_cd in ocr_cds.items():
+            if self.SKILL_CD_DIAG:
+                self._dump_box_debug(box, ocr_cd)
             if ocr_cd is not None:
                 cds[box] = ocr_cd
                 cds[box + "_time"] = now
@@ -312,6 +320,9 @@ class BaseCombatTask(CombatCheck):
                 cds[box] = self.UNKNOWN_CD_SECONDS
                 cds[box + "_time"] = now
             # else: 保留 cds[box] / cds[box+"_time"] 不变, 继续按上次锚点倒计时
+        if self.SKILL_CD_DIAG:
+            self._report_switch_in_cd_truth(index, cds, now)
+            self._last_refresh_index = index
         self.scene.cd_refreshed = True
         # self.log_debug(f"cd refreshed: {cds} {time.time() - cds['time']}")
 
@@ -398,6 +409,101 @@ class BaseCombatTask(CombatCheck):
             self.log_debug(f"load skill ready template {char_name} failed: {e}")
         cache[char_name] = entry
         return entry
+
+    def _capture_switch_in_estimate(self, index, cds):
+        """临时诊断:切上场瞬间,用覆盖前的下场锚点算出"下场最后推算 CD",挂起待对照。验证完即删。"""
+        try:
+            est = {}
+            for box in ("skill", "ultimate"):
+                if box in cds and (box + "_time") in cds:
+                    elapsed = self.time_elapsed_accounting_for_freeze(cds[box + "_time"])
+                    est[box] = cds[box] - elapsed
+            self._switch_in_pending = {"index": index, "est": est} if est else None
+        except Exception as e:
+            self.log_debug(f"capture switch-in est failed: {e}")
+            self._switch_in_pending = None
+
+    def _report_switch_in_cd_truth(self, index, cds, now):
+        """临时诊断:角色切上场后,在场首次读到真实 CD 的那一刻,把"下场最后推算"与"在场真实"
+        并排打出,直接暴露切早(推算可用·实际仍冷却=空切)/切晚(推算冷却·实际已就绪=浪费)。
+        每个 box 只在确实重锚到在场真实读数(本帧 _time==now)时对照一次。验证完即删。"""
+        pending = getattr(self, "_switch_in_pending", None)
+        if not pending or pending.get("index") != index:
+            return
+        try:
+            est = pending["est"]
+            for box in list(est.keys()):
+                if cds.get(box + "_time") != now:
+                    continue  # 本帧没读到在场真实(坏帧),留到下一帧再对照
+                e = est[box]
+                real = cds.get(box, 0)
+                e_rdy, r_rdy = e <= 0, real <= 0
+                flag = "准"
+                if e_rdy and not r_rdy:
+                    flag = "切早(推算可用·实际冷却=空切)"
+                elif not e_rdy and r_rdy:
+                    flag = "切晚(推算冷却·实际就绪=浪费)"
+                self.log_info(
+                    f"cd-truth char{index + 1} {box} 切上场对照: "
+                    f"下场推算={e:.1f}({'可用' if e_rdy else '冷却'}) vs "
+                    f"在场真实={real:.1f}({'就绪' if r_rdy else '冷却'}) "
+                    f"误差={e - real:+.1f}s [{flag}]"
+                )
+                del est[box]
+            if not est:
+                self._switch_in_pending = None
+        except Exception as ex:
+            self.log_debug(f"switch-in cd truth log failed: {ex}")
+            self._switch_in_pending = None
+
+    def _dump_box_debug(self, box, ocr_cd):
+        """诊断(SKILL_CD_DIAG 开关下才调用):把当前在场角色的技能/大招图标(扩到整个圆形)截图存盘,
+        文件名带角色名/OCR结果/白占比, 用来采就绪模板或研究就绪/CD区分。节流每角色每 box 1.5s、
+        总数封顶。含同步磁盘写, 所以只在开关开启时跑。"""
+        try:
+            import os
+
+            import cv2
+
+            n = getattr(self, "_box_dbg_n", 0)
+            if n >= 300:
+                return
+            cur = self.get_current_char()
+            idx = cur.index
+            cname = (getattr(cur, "char_name", "") or type(cur).__name__).replace("/", "_")
+            now = time.time()
+            times = getattr(self, "_box_dbg_times", None)
+            if times is None:
+                times = {}
+                self._box_dbg_times = times
+            key = (idx, box)
+            if now - times.get(key, 0) < 1.5:
+                return
+            times[key] = now
+            box_obj = self.get_box_by_name("box_" + box)
+            pct = self.calculate_color_percentage(text_white_color, box_obj)
+            frame = self.frame
+            if frame is None:
+                return
+            fh, fw = frame.shape[:2]
+            cx = box_obj.x + box_obj.width / 2.0
+            cy = box_obj.y + box_obj.height / 2.0
+            half = box_obj.width * 1.1
+            x1, x2 = max(0, int(cx - half)), min(fw, int(cx + half))
+            y1, y2 = max(0, int(cy - half)), min(fh, int(cy + half))
+            crop = frame[y1:y2, x1:x2]
+            if crop is None or crop.size == 0:
+                return
+            self._box_dbg_n = n + 1
+            ocr_tag = f"cd{ocr_cd}" if ocr_cd is not None else "cdNONE"
+            d = os.path.join("logs", "box_debug")
+            os.makedirs(d, exist_ok=True)
+            path = os.path.join(
+                d, f"{self._box_dbg_n:04d}_char{idx + 1}_{cname}_{box}_{ocr_tag}_w{pct:.3f}.png"
+            )
+            cv2.imwrite(path, crop)
+        except Exception as e:
+            self.log_debug(f"box debug dump failed: {e}")
 
     def get_cd(self, box_name, char_index=None):
         self.refresh_cd()
