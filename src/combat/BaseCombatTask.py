@@ -49,6 +49,9 @@ class BaseCombatTask(CombatCheck):
     # 锚定技能/大招 CD 时, 若 OCR 读不到数字且图标不亮(无旧锚点)的保守占位:
     # 当成仍在冷却, 宁可多冷却也不误判可用(避免空切)。
     UNKNOWN_CD_SECONDS = 20.0
+    # 技能就绪模板匹配阈值: OCR 读不到数字时, 拿当前技能图标和该角色"就绪模板"带遮罩匹配,
+    # 置信度 >= 此值判就绪(锚 0)。实测就绪 0.95~1.00 / CD 0.07~0.22, 0.7 两边大余量。
+    SKILL_READY_TEMPLATE_THRESHOLD = 0.7
 
     element_ring = (
         Element.WHITE,
@@ -301,7 +304,7 @@ class BaseCombatTask(CombatCheck):
             if ocr_cd is not None:
                 cds[box] = ocr_cd
                 cds[box + "_time"] = now
-            elif self.box_highlighted(box):
+            elif self._box_ready_no_number(box):
                 cds[box] = 0
                 cds[box + "_time"] = now
             elif box not in cds:
@@ -311,6 +314,90 @@ class BaseCombatTask(CombatCheck):
             # else: 保留 cds[box] / cds[box+"_time"] 不变, 继续按上次锚点倒计时
         self.scene.cd_refreshed = True
         # self.log_debug(f"cd refreshed: {cds} {time.time() - cds['time']}")
+
+    def _box_ready_no_number(self, box):
+        """OCR 读不到 CD 数字时判该格是否就绪。
+        技能: 该角色有就绪模板 → 带遮罩模板匹配(只比白图标、忽略透明区透出的场景, 准且场景鲁棒);
+              无模板的角色 → 退回原 box_highlighted。
+        大招: 仍用 box_highlighted(大招实际走头像菱形, 这条线不改)。"""
+        if box == "skill":
+            ready = self._skill_ready_by_template()
+            if ready is not None:
+                return ready
+        return bool(self.box_highlighted(box))
+
+    def _skill_ready_by_template(self):
+        """当前在场角色的技能图标(扩到整圆)与其就绪模板带遮罩匹配, 返回 True/False;
+        无模板或异常返回 None(调用方退回 box_highlighted)。
+        匹配原生裁块(不缩放裁块, 否则 1px 缩放就会把分数打废); 小模板在大裁块上滑动,
+        只有当前分辨率比模板还低、模板放不下时才把模板缩小。"""
+        try:
+            char = self.get_current_char()
+            if char is None:
+                return None
+            entry = self._load_skill_ready_template(getattr(char, "char_name", ""))
+            if entry is None:
+                return None
+            inner, mask = entry
+            frame = self.frame
+            if frame is None:
+                return None
+            box_obj = self.get_box_by_name("box_skill")
+            fh, fw = frame.shape[:2]
+            cx = box_obj.x + box_obj.width / 2.0
+            cy = box_obj.y + box_obj.height / 2.0
+            half = box_obj.width * 1.1
+            x1, x2 = max(0, int(cx - half)), min(fw, int(cx + half))
+            y1, y2 = max(0, int(cy - half)), min(fh, int(cy + half))
+            crop = frame[y1:y2, x1:x2]
+            if crop is None or crop.size == 0:
+                return None
+            ch, cw = crop.shape[:2]
+            ih, iw = inner.shape[:2]
+            if ih >= ch or iw >= cw:  # 分辨率比模板低, 模板放不下 → 把模板缩到能滑动
+                s = min((ch - 4) / ih, (cw - 4) / iw)
+                if s <= 0:
+                    return None
+                inner = cv2.resize(inner, (max(8, int(iw * s)), max(8, int(ih * s))))
+                mask = cv2.resize(mask, (inner.shape[1], inner.shape[0]))
+            r = cv2.matchTemplate(crop, inner, cv2.TM_CCOEFF_NORMED, mask=mask)
+            r[~np.isfinite(r)] = 0
+            return float(r.max()) >= self.SKILL_READY_TEMPLATE_THRESHOLD
+        except Exception as e:
+            self.log_debug(f"skill ready template match failed: {e}")
+            return None
+
+    def _load_skill_ready_template(self, char_name):
+        """加载并缓存角色技能就绪模板: 返回 (内裁模板, 白图标遮罩) 或 None。
+        遮罩 = 模板里的白色图标像素(亮度阈值), 匹配时只比图标、不比透明区(场景)。"""
+        cache = getattr(self, "_skill_ready_tmpl_cache", None)
+        if cache is None:
+            cache = {}
+            self._skill_ready_tmpl_cache = cache
+        if char_name in cache:
+            return cache[char_name]
+        entry = None
+        try:
+            import os
+
+            if char_name:
+                path = os.path.join("assets", "skill_ready", f"{char_name}.png")
+                if os.path.exists(path):
+                    # 中文路径 cv2.imread 读不了(Windows), 用 np.fromfile + imdecode。
+                    full = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
+                    if full is not None and full.size > 0:
+                        th, tw = full.shape[:2]
+                        m = max(6, int(min(tw, th) * 0.08))
+                        inner = full[m:th - m, m:tw - m]
+                        g = cv2.cvtColor(inner, cv2.COLOR_BGR2GRAY)
+                        _, mk = cv2.threshold(g, 170, 255, cv2.THRESH_BINARY)
+                        mk3 = cv2.cvtColor(mk, cv2.COLOR_GRAY2BGR)
+                        entry = (inner, mk3)
+                        logger.info(f"loaded skill ready template for {char_name}")
+        except Exception as e:
+            self.log_debug(f"load skill ready template {char_name} failed: {e}")
+        cache[char_name] = entry
+        return entry
 
     def get_cd(self, box_name, char_index=None):
         self.refresh_cd()
