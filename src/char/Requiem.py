@@ -11,6 +11,7 @@ class Requiem(MainDps):
     """Main DPS template with off-field skill overlap after skill cast."""
 
     SKILL_OFF_FIELD_DURATION = 3.0
+    REAL_SKILL_CD = 16.0  # 真技能固定16s CD(从释放起算);免费技能不影响, 不锚。
     PRE_SKILL_ULTIMATE_WAIT = 0.3
     # 真技能放出"之前"先平A出手进入交战。开战瞬间安魂曲还没真正攻击,
     # 直接放技能会打空(技能消失);先平A一下交战,技能才稳。与切人时机无关。
@@ -144,6 +145,9 @@ class Requiem(MainDps):
                         self.logger.info("requiem REAL skill press did NOT land, skip switch")
                         return
                     self.skill_off_field_until = time.time() + self.SKILL_OFF_FIELD_DURATION
+                    # 真技能进16s CD: 当场锚上, 否则overlap切走后锚点停在放招前的"就绪",
+                    # 切回来时 cd-truth 误报"切早"(纯显示噪声, 但锚准了也无害)。
+                    self.task.note_skill_on_cd(self.index, cd=self.REAL_SKILL_CD)
                     self.logger.info("requiem REAL skill cast, off-field overlap switch")
                     return
             else:
