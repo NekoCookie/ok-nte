@@ -40,6 +40,12 @@ class SoundCombatContext:
         self._pending_config = None
         self._pending_action = None
 
+    def last_dodge_time(self):
+        """上次声音触发闪避的时刻(time.time()), 没触发过返回 0。
+        闪避是我方主动触发(记了时刻), 所以"放完技能是否立刻闪避"可确定性判断, 不必靠图标猜。"""
+        trigger = self._trigger
+        return getattr(trigger, "_last_dodge_time", 0.0) if trigger else 0.0
+
     @classmethod
     def enter_priority(cls, on_timeout=None):
         cls._action_complete.clear()

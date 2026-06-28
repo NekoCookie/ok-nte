@@ -146,7 +146,9 @@ class BaseChar:
         self.switch_next_char()
 
     def add_intro_motion_freeze(self, start):
-        self.add_freeze_duration(start, self.INTRO_MOTION_FREEZE_DURATION, freeze_time=-100)
+        self.add_freeze_duration(
+            start, self.INTRO_MOTION_FREEZE_DURATION, freeze_time=-100, cause="入场/环合"
+        )
 
     def wait_intro(self, time_out=-1, click=True):
         """等待角色入场动画结束。
@@ -525,7 +527,7 @@ class BaseChar:
             post_action=self._click_during_ultimate_unfreeze,
         )
         duration = time.time() - start - 0.1
-        self.add_freeze_duration(start, duration)
+        self.add_freeze_duration(start, duration, cause="大招时停")
         return duration
 
     def click_skill(
@@ -599,7 +601,9 @@ class BaseChar:
             self.sleep(post_sleep)
         duration = time.time() - skill_click_time if skill_click_time != 0 else 0
         if animation_start > 0:
-            self.add_freeze_duration(skill_click_time, time.time() - animation_start)
+            self.add_freeze_duration(
+                skill_click_time, time.time() - animation_start, cause="技能动画"
+            )
         return clicked, duration, animation_start > 0
 
     def _wait_skill_animation(self, animation_start, skill_click_time):

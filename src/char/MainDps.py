@@ -21,7 +21,12 @@ class MainDps(BaseChar):
         if char is None:
             return False
         if hasattr(char, "has_confirmed_resource"):
-            return char.has_confirmed_resource()
+            if char.has_confirmed_resource():
+                return True
+            # 技能就绪(可靠锚点)也算"有资源",让主C让位、就绪技能被及时服务。
+            if hasattr(char, "has_skill_resource") and char.has_skill_resource():
+                return True
+            return False
         return char.skill_available() or char.ultimate_available()
 
     def _needs_probe(self, char):
@@ -105,6 +110,7 @@ class BuffSupport(BaseChar):
     ULTIMATE_COMBAT_SETTLE_TIMEOUT = 0.8
     ULTIMATE_COMBAT_SETTLE_CLICK = True
     SKILL_DOWN_TIME = 0.01  # 技能按下时长;子类(如早雾)改这个常量即可改长按,无需重写 do_perform
+    SKILL_COOLDOWN = 20.0  # 技能CD(秒),放技能时当场锚定用;子类按角色改(早雾16)。默认20。
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -150,6 +156,18 @@ class BuffSupport(BaseChar):
         # 技能下场读不到图标,仍靠在场时缓存的 CD 时间推算。
         return self.resource_cache_confirmed and self.has_cd_cache() and self.skill_available()
 
+    def has_skill_resource(self):
+        """仅"技能"可靠就绪(放招当场已锚CD、下场推算可信)。用于让就绪技能也被服务:
+        优先级介于"大招菱形就绪"(高, has_confirmed_resource)和"主C没资源平A"(低)之间。
+        大招走菱形、不掺进来;不要求 resource_cache_confirmed(那是旧的脆弱门槛,现在锚点可靠)。"""
+        if not self.team_has_main_dps():
+            return False
+        if self.recently_used_resource():
+            return False
+        if self.is_current_char:
+            return self.skill_available()
+        return self.has_cd_cache() and self.skill_available()
+
     def ultimate_buff_pending(self):
         """大招就绪、待上场铺 —— 用于让"先铺大招 buff"压过环合反应优先切人。
         只看大招(技能就绪不打断环合);在场看底部图标、下场看头像菱形;刚用过不算。"""
@@ -192,6 +210,12 @@ class BuffSupport(BaseChar):
         共享给 BuffSupport / 治疗 / 早雾,改一处全生效。"""
         used_ultimate = self.click_ultimate()
         used_skill = self.click_skill(down_time=skill_down_time)[0]
+        if used_skill:
+            # 放技能即记日志(支援技能本来没日志) + 当场把技能CD锚上开始倒计时,
+            # 不等后续OCR——否则放完即走、OCR没读到新CD时锚点会残留"就绪"撒谎。
+            # 注意: 锚的是"点了技能"的标称CD; 真没放成功(闪避打断→短CD)由图标OCR识别纠正(见 refresh_cd)。
+            self.logger.info(f"{type(self).__name__} skill cast (anchor cd {self.SKILL_COOLDOWN}s)")
+            self.task.note_skill_on_cd(self.index, cd=self.SKILL_COOLDOWN)
         if not used_ultimate and self.ultimate_available():
             used_ultimate = self.click_ultimate()
         return used_ultimate, used_skill
@@ -222,6 +246,10 @@ class BuffSupport(BaseChar):
                 super().do_get_switch_priority(current_char, has_intro)
                 + self.RESOURCE_PRIORITY_BONUS
             )
+        if self.has_skill_resource():
+            # 技能就绪:中等优先级(不加 RESOURCE_PRIORITY_BONUS)→ 低于大招就绪、
+            # 高于主C没资源平A的闲置分。让就绪技能被及时服务、不必死等大招。
+            return super().do_get_switch_priority(current_char, has_intro)
         if self.needs_resource_probe():
             return self.RESOURCE_PROBE_PRIORITY
         return Priority.BASE_MINUS_1
@@ -251,7 +279,11 @@ class HealSupport(BuffSupport):
                 if char.skill_available() or char.ultimate_available():
                     return True
             elif isinstance(char, BuffSupport) and not isinstance(char, HealSupport):
-                if char.has_confirmed_resource() or char.needs_resource_probe():
+                if (
+                    char.has_confirmed_resource()
+                    or char.has_skill_resource()
+                    or char.needs_resource_probe()
+                ):
                     return True
         return False
 
@@ -259,6 +291,11 @@ class HealSupport(BuffSupport):
         if self._higher_priority_busy():
             return False
         return super().has_confirmed_resource()
+
+    def has_skill_resource(self):
+        if self._higher_priority_busy():
+            return False
+        return super().has_skill_resource()
 
     def needs_resource_probe(self):
         if self._higher_priority_busy():
@@ -275,6 +312,7 @@ class SakiriBuffSupport(BuffSupport):
     **无主C时**回退到 RU 的早雾(`Sakiri`)逻辑,而不是辅助那套资源/补大招。"""
 
     SKILL_DOWN_TIME = 0.25
+    SKILL_COOLDOWN = 16.0  # 早雾技能CD 16s
 
     def do_perform(self):
         if not self.team_has_main_dps():

@@ -49,12 +49,13 @@ class BaseCombatTask(CombatCheck):
     # 锚定技能/大招 CD 时, 若 OCR 读不到数字且图标不亮(无旧锚点)的保守占位:
     # 当成仍在冷却, 宁可多冷却也不误判可用(避免空切)。
     UNKNOWN_CD_SECONDS = 20.0
+    SKILL_CAST_READY_GRACE = 2.0  # 放完技能后 N 秒内, "图标就绪"必为坏帧, 不许冲掉刚锚的CD(过渡态撑不到2s)
     # 技能就绪模板匹配阈值: OCR 读不到数字时, 拿当前技能图标和该角色"就绪模板"带遮罩匹配,
     # 置信度 >= 此值判就绪(锚 0)。实测就绪 0.95~1.00 / CD 0.07~0.22, 0.7 两边大余量。
     SKILL_READY_TEMPLATE_THRESHOLD = 0.7
     # CD 诊断开关: 平时 False(不影响实战); 想观察"切早/切晚/空切"或采技能样本时翻成 True。
     # 开启后会打 cd-truth 切上场对照日志, 并把技能图标存到 logs/box_debug(含同步磁盘写)。
-    SKILL_CD_DIAG = False
+    SKILL_CD_DIAG = True
 
     element_ring = (
         Element.WHITE,
@@ -236,13 +237,14 @@ class BaseCombatTask(CombatCheck):
             return previous_target
         return next_target
 
-    def add_freeze_duration(self, start, duration=-1.0, freeze_time=0.1):
+    def add_freeze_duration(self, start, duration=-1.0, freeze_time=0.1, cause=""):
         """添加冻结持续时间。用于精确计算技能冷却等。
 
         Args:
             start (float): 冻结开始时间。
             duration (float, optional): 冻结持续时间。如果为-1.0, 则根据当前时间计算。默认为 -1.0。
             freeze_time (float, optional): 认为发生冻结的最小持续时间。默认为 0.1。
+            cause (str, optional): 冻结来源(大招时停/技能动画/入场环合/浔...),用于诊断归因CD漂移。
         """
         if duration < 0:
             duration = time.time() - start
@@ -251,7 +253,13 @@ class BaseCombatTask(CombatCheck):
             self.freeze_durations = [
                 item for item in self.freeze_durations if item[0] > current_time - 60
             ]
-            self.freeze_durations.append((start, duration, freeze_time))
+            self.freeze_durations.append((start, duration, freeze_time, cause))
+            if self.SKILL_CD_DIAG:
+                deduct = 0 if freeze_time == -100 else duration - freeze_time
+                self.log_info(
+                    f"freeze记录: 原因={cause or '?'} 时长={duration:.2f}s "
+                    f"扣CD={deduct:.2f}s{'(入场不扣)' if freeze_time == -100 else ''}"
+                )
 
     def time_elapsed_accounting_for_freeze(self, start, intro_motion_freeze=False):
         """计算扣除冻结时间后经过的时间。
@@ -266,7 +274,8 @@ class BaseCombatTask(CombatCheck):
         if start < 0:
             return 10000
         to_minus = 0
-        for freeze_start, duration, freeze_time in self.freeze_durations:
+        for item in self.freeze_durations:
+            freeze_start, duration, freeze_time = item[0], item[1], item[2]
             if start < freeze_start:
                 if intro_motion_freeze:
                     if freeze_time == -100:
@@ -307,14 +316,38 @@ class BaseCombatTask(CombatCheck):
         # 关键: 不要把"OCR 没读到数字"当成 CD=0。读不到时用图标高亮区分:
         #   图标亮 = 已就绪 -> 锚 0; 图标暗 = 仍在冷却但数字没识别(坏帧) -> 保留上次可信锚点。
         for box, ocr_cd in ocr_cds.items():
-            if self.SKILL_CD_DIAG:
+            # 只截技能图标做诊断;大招走头像菱形稳定判定、不靠这套, 截了纯属浪费。
+            if self.SKILL_CD_DIAG and box == "skill":
                 self._dump_box_debug(box, ocr_cd)
             if ocr_cd is not None:
+                # 闪避打断检测: 放招刚锚了标称大CD, 但图标紧接着读到明显更短的CD = 技能被打断、
+                # 没真放(进短CD ~3s)。闪避是我方主动触发(记了时刻), 所以用"放招后是否真闪避了"
+                # 确定性确认, 图标短CD作实证, 不靠动画/猜测。
+                noted = cds.get(box)
+                cast_at = cds.get("skill_cast_at", 0)
+                if (
+                    box == "skill"
+                    and 0 < now - cast_at < 2.5
+                    and isinstance(noted, (int, float))
+                    and ocr_cd < noted - 5
+                ):
+                    dodge_at = SoundCombatContext().last_dodge_time()
+                    dodged = cast_at < dodge_at <= now
+                    extra = f"(闪避@放招后{dodge_at - cast_at:.2f}s)" if dodged else ""
+                    self.log_info(
+                        f"技能被打断: char{index + 1} 放招锚{noted:.0f}s 图标实读{ocr_cd:.1f}s "
+                        f"(没真放, 约{ocr_cd:.0f}s后可重放) | 闪避确认={dodged}{extra}"
+                    )
                 cds[box] = ocr_cd
                 cds[box + "_time"] = now
             elif self._box_ready_no_number(box):
-                cds[box] = 0
-                cds[box + "_time"] = now
+                # 刚放完技能 grace 期内, OCR没数字+图标"就绪"必是坏帧(放完不可能立刻就绪),
+                # 不许冲掉 note_skill_on_cd 刚锚的真实CD, 否则下场误判就绪→空切。
+                if box == "skill" and now - cds.get("skill_cast_at", 0) < self.SKILL_CAST_READY_GRACE:
+                    pass
+                else:
+                    cds[box] = 0
+                    cds[box + "_time"] = now
             elif box not in cds:
                 # 从未成功锚定过 + 此刻坏帧: 保守占位为冷却中, 等下一帧重锚。
                 cds[box] = self.UNKNOWN_CD_SECONDS
@@ -474,7 +507,6 @@ class BaseCombatTask(CombatCheck):
                 return
             cur = self.get_current_char()
             idx = cur.index
-            cname = (getattr(cur, "char_name", "") or type(cur).__name__).replace("/", "_")
             now = time.time()
             times = getattr(self, "_box_dbg_times", None)
             if times is None:
@@ -500,14 +532,34 @@ class BaseCombatTask(CombatCheck):
                 return
             self._box_dbg_n = n + 1
             ocr_tag = f"cd{ocr_cd}" if ocr_cd is not None else "cdNONE"
+            # 时间戳(对得上日志的 cd-truth/freeze 记录) + 切上场前的缓存锚CD(一眼看 OCR vs 锚点)。
+            ts = time.strftime("%H-%M-%S", time.localtime(now)) + f"-{int((now % 1) * 1000):03d}"
+            prev = self.cds.get(idx, {}).get(box)
+            anchor_tag = f"a{prev:.1f}" if isinstance(prev, (int, float)) else "aNA"
             d = os.path.join("logs", "box_debug")
             os.makedirs(d, exist_ok=True)
+            # 去掉角色中文名(cv2 写非ASCII路径会乱码), 角色用 charN 标识即可。
             path = os.path.join(
-                d, f"{self._box_dbg_n:04d}_char{idx + 1}_{cname}_{box}_{ocr_tag}_w{pct:.3f}.png"
+                d,
+                f"{self._box_dbg_n:04d}_{ts}_char{idx + 1}_{box}_{ocr_tag}_{anchor_tag}_w{pct:.3f}.png",
             )
-            cv2.imwrite(path, crop)
+            ok, buf = cv2.imencode(".png", crop)
+            if ok:
+                buf.tofile(path)
         except Exception as e:
             self.log_debug(f"box debug dump failed: {e}")
+
+    def note_skill_on_cd(self, char_index, cd=None):
+        """角色主动放出技能后, 当场把技能锚点设成"在冷却"并开始倒计时(保守占位 UNKNOWN_CD_SECONDS,
+        或传入已知CD)。修复"放完技能不算CD、等后续OCR才倒计时"的不合理:放完即走、OCR没读到
+        新CD时, 锚点不再残留"就绪"撒谎。下次该角色在场时 OCR 会读到真实CD重锚、修正这个占位。"""
+        cds = self.cds.get(char_index)
+        if cds is None:
+            cds = {}
+            self.cds[char_index] = cds
+        cds["skill"] = cd if cd is not None else self.UNKNOWN_CD_SECONDS
+        cds["skill_time"] = time.time()
+        cds["skill_cast_at"] = cds["skill_time"]  # grace 标记: 刚放完, refresh 不许把它冲成就绪
 
     def get_cd(self, box_name, char_index=None):
         self.refresh_cd()
@@ -519,7 +571,8 @@ class BaseCombatTask(CombatCheck):
             anchor_time = cds.get(box_name + "_time", cds.get("time"))
             time_elapsed = self.time_elapsed_accounting_for_freeze(anchor_time)
             result = cds[box_name] - time_elapsed
-            self._log_cd_estimate(box_name, char_index, cds, result)
+            if self.SKILL_CD_DIAG:
+                self._log_cd_estimate(box_name, char_index, cds, result)
             return result
         else:
             return 0
@@ -545,14 +598,16 @@ class BaseCombatTask(CombatCheck):
             anchor_cd = cds.get(box_name, 0)
             parts = []
             to_minus = 0.0
-            for fs, dur, ft in self.freeze_durations:
+            for item in self.freeze_durations:
+                fs, dur, ft = item[0], item[1], item[2]
+                cause = item[3] if len(item) > 3 else ""
                 if anchor < fs:
                     if ft == -100:
-                        parts.append(f"入场@{now - fs:.1f}s前(dur{dur:.2f},跳过不扣)")
+                        parts.append(f"入场/环合@{now - fs:.1f}s前(dur{dur:.2f},跳过不扣)[{cause}]")
                         continue
                     deduct = dur - ft
                     to_minus += deduct
-                    parts.append(f"@{now - fs:.1f}s前 dur{dur:.2f} 扣{deduct:.2f}")
+                    parts.append(f"@{now - fs:.1f}s前 dur{dur:.2f} 扣{deduct:.2f}[{cause}]")
             detail = "; ".join(parts) if parts else "无"
             on_field = "在场OCR" if raw_elapsed < 1.0 else "下场推算"
             self.log_info(
@@ -642,6 +697,28 @@ class BaseCombatTask(CombatCheck):
         else:
             return char.name
 
+    def _switch_diag_str(self, char, priority):
+        """诊断(SKILL_CD_DIAG):某角色本次切人决策拿到的优先级 + (支援)资源判定明细,
+        用来定位"技能/大招就绪却没被选中=晚切"的原因(是确认不到资源、还是优先级被压)。"""
+        s = f"{self._get_char_log_name(char)}={int(priority)}"
+        try:
+            from src.char.MainDps import BuffSupport
+
+            if isinstance(char, BuffSupport) and not char.is_current_char:
+                conf = char.has_confirmed_resource()
+                sk = char.skill_available()
+                dia = self.off_field_ultimate_ready(char.index)
+                probe = char.needs_resource_probe()
+                rcc = getattr(char, "resource_cache_confirmed", None)
+                recent = char.recently_used_resource()
+                s += (
+                    f"[确认{conf} 技能{sk} 菱形{dia} 探测{probe} "
+                    f"缓存确认{rcc} 刚用过{recent}]"
+                )
+        except Exception:
+            pass
+        return s
+
     def _decide_switch_to(self, current_char: "BaseChar", free_intro=False, require_intro=False):
         has_intro = free_intro or current_char.is_cycle_full()
         switch_to = current_char
@@ -651,6 +728,8 @@ class BaseCombatTask(CombatCheck):
 
         max_priority = Priority.MIN
 
+        # 只在主决策打(retry_intro 那个 0.12s 重决策不打, 免刷屏)
+        diag = [] if (self.SKILL_CD_DIAG and not require_intro) else None
         for char in self.chars:
             if char is None:
                 continue
@@ -664,6 +743,9 @@ class BaseCombatTask(CombatCheck):
                 priority = char.get_switch_priority(current_char, has_intro)
                 logger.debug(f"switch_next_char priority: {char} {priority}")
 
+            if diag is not None:
+                diag.append(self._switch_diag_str(char, priority))
+
             if priority > max_priority or (
                 priority == max_priority and char.last_perform < switch_to.last_perform
             ):
@@ -671,6 +753,12 @@ class BaseCombatTask(CombatCheck):
                     logger.debug("switch priority equal, determine by last perform")
                 max_priority = priority
                 switch_to = char
+
+        if diag is not None:
+            self.log_info(
+                f"switch决策(has_intro={has_intro}): {' | '.join(diag)} "
+                f"=> 选 {self._get_char_log_name(switch_to)}"
+            )
 
         if has_intro and max_priority < Priority.FAST_SWITCH:
             # 辅助大招就绪待铺时,先上场铺大招 buff,不被环合反应覆盖
