@@ -111,6 +111,7 @@ class BuffSupport(BaseChar):
     ULTIMATE_COMBAT_SETTLE_CLICK = True
     SKILL_DOWN_TIME = 0.01  # 技能按下时长;子类(如早雾)改这个常量即可改长按,无需重写 do_perform
     SKILL_COOLDOWN = 20.0  # 技能CD(秒),放技能时当场锚定用;子类按角色改(早雾16)。默认20。
+    SKILL_ABOUT_READY_WAIT = 1.0  # 切走前若技能CD<=此值,多等一下平A放了再走
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -218,7 +219,29 @@ class BuffSupport(BaseChar):
             self.task.note_skill_on_cd(self.index, cd=self.SKILL_COOLDOWN)
         if not used_ultimate and self.ultimate_available():
             used_ultimate = self.click_ultimate()
+        # 技能差一点就绪(CD<=1s): 多等一下平A放了再走, 否则差0.5s被切走、这趟白跑。
+        if not used_skill and self._cast_skill_if_about_ready():
+            used_skill = True
         return used_ultimate, used_skill
+
+    def _cast_skill_if_about_ready(self):
+        """切走前看一眼: 技能CD<=SKILL_ABOUT_READY_WAIT 就平A等到就绪、放了再走。
+        不死等(上限 CD+0.4s); 等待期用平A不空耗。放成功返回 True。"""
+        cd = self.task.get_cd("skill", self.index)
+        if not (0 < cd <= self.SKILL_ABOUT_READY_WAIT):
+            return False
+        deadline = time.time() + cd + 0.4
+        while time.time() < deadline:
+            if self.skill_available():
+                if self.click_skill(down_time=self.SKILL_DOWN_TIME)[0]:
+                    self.logger.info(
+                        f"{type(self).__name__} 技能差{cd:.1f}s就绪, 等放完再走"
+                    )
+                    self.task.note_skill_on_cd(self.index, cd=self.SKILL_COOLDOWN)
+                    return True
+                return False
+            self.normal_attack()
+        return False
 
     def do_perform(self):
         if not self.team_has_main_dps():
