@@ -290,6 +290,10 @@ class BaseCombatTask(CombatCheck):
             )
         return time.time() - start - to_minus
 
+    def last_dodge_time(self):
+        """最近一次闪避(我方主动触发)的时刻; 没有则 0。供战斗循环判断"刚是否闪避了"。"""
+        return SoundCombatContext().last_dodge_time()
+
     def refresh_cd(self):
         if self.scene.cd_refreshed:
             return

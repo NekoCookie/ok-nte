@@ -66,6 +66,10 @@ class BaseChar:
     ULTIMATE_COMBAT_SETTLE_FORCE_RETARGET = True
     IDLE_FILL_ATTACK_INTERVAL = 0.1
     SKILL_INPUT_MODE_RETRY_DELAY = 0.12
+    # 触发闪避后留场平A的最长时间/间隔: 既把闪避反击打出来, 又留场让 refresh_cd 读到
+    # 刚放技能的真实CD(长=放进去了, 短=被打断)。0.5是上限——一旦读准CD判明长短就提前收, 不打满。
+    DODGE_FOLLOWUP_MAX_DURATION = 0.5
+    DODGE_FOLLOWUP_INTERVAL = 0.1
     # 大招演出结束(已回到队伍画面)后,等"时停解除/CD 开始走"的精确确认超时。
     # 正常 1~2s 内 condition 就满足;深渊换层等场景下大招图标区识别会失效,会一直空等到
     # 超时,导致角色卡住十几秒不切人。这第二段只用来算 freeze 时长,缩短它纯止血、不影响放招。
@@ -91,6 +95,7 @@ class BaseChar:
         self._ultimate_available = False
         self._skill_available = False
         self.last_perform = 0
+        self._dodge_followup_done_at = 0.0  # 已为哪次闪避补过场, 防同一次闪避重复补
         self.last_skill_time = -1
         self.last_outro_time = -1
         self.start_combat = False
@@ -142,8 +147,41 @@ class BaseChar:
             self.do_fast_perform()
         else:
             self.do_perform()
+        self.dodge_followup_attack()
         self.logger.debug(f"set current char false {self.index}")
         self.switch_next_char()
+
+    def dodge_followup_attack(self):
+        """战斗通用: 本轮行动期间若触发过闪避, 切人前先留场平A(最多 DODGE_FOLLOWUP_MAX_DURATION)。
+
+        一举两得: ①把闪避反击打出来(反击本就是平A/点击); ②这期间仍是当前角色, refresh_cd
+        能读到刚放技能的图标真实CD —— 长CD=技能真放进去了, 短CD=被闪避打断没放成。一旦图标
+        读准了CD(skill_time 越过本次放招时刻 skill_cast_at)就判明长短、提前收手, 不必打满0.5s。
+        不靠"放招后有没有闪避"去猜技能成败(那容易判反), 用实测的图标CD为准。"""
+        if self.has_intro or not self.is_current_char:
+            return
+        dodge_at = self.task.last_dodge_time()
+        # 只补"本轮 perform 期间"新触发、且还没补过的闪避; 陈旧闪避不补。
+        if dodge_at < self.last_perform or dodge_at <= self._dodge_followup_done_at:
+            return
+        self._dodge_followup_done_at = dodge_at
+        cds = self.task.cds.get(self.index) or {}
+        cast_at = cds.get("skill_cast_at", 0)
+        # 只有"这一轮 perform 里真放了招"(cast_at 落在本轮内)才去读CD判长短; 否则就是纯闪避反击,
+        # 老实打满。这样切人后是第二个角色自己 perform 里处理闪避, 不会把它算到上一个施法者头上。
+        judge_skill = cast_at >= self.last_perform
+        deadline = time.time() + self.DODGE_FOLLOWUP_MAX_DURATION
+        while time.time() < deadline:
+            self.normal_attack()
+            self.sleep(self.DODGE_FOLLOWUP_INTERVAL)
+            if judge_skill:
+                cd = self.task.get_cd("skill", self.index)  # 触发 refresh_cd 读图标
+                cds = self.task.cds.get(self.index) or {}
+                if cds.get("skill_time", 0) > cast_at + 0.01:
+                    # 放招后图标已读到真实CD → 已判明长短, 不用打满。
+                    self.logger.info(f"闪避后留场: 技能CD已判明={cd:.1f}s, 提前结束(未打满)")
+                    return
+        self.logger.info("闪避后留场: 平A满0.5s上限")
 
     def add_intro_motion_freeze(self, start):
         self.add_freeze_duration(
