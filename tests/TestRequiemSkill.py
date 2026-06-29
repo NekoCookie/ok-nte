@@ -35,6 +35,9 @@ def make_requiem(clock, skill_kind="real", skill_available=True,
     """
     r = Requiem.__new__(Requiem)
     r.skill_off_field_until = 0.0
+    r.index = 0
+    r.task = mock.MagicMock()
+    r.task.config = {}  # 空配置: engage_attack_duration 走默认 SKILL_ENGAGE_ATTACK(否则 MagicMock.__float__=1.0)
     r.logger = mock.MagicMock()
     r.wait_intro = mock.MagicMock()
     r.click_ultimate = mock.MagicMock(return_value=click_ultimate)
@@ -45,7 +48,8 @@ def make_requiem(clock, skill_kind="real", skill_available=True,
     r.continues_normal_attack = mock.MagicMock()
     r.idle_normal_attack = mock.MagicMock()
     r.normal_attack = mock.MagicMock()
-    r.sleep = mock.MagicMock()
+    # sleep 推进假时钟, 否则真技能重试循环(按时间 deadline)在测试里永不结束。
+    r.sleep = mock.MagicMock(side_effect=lambda *a, **k: clock.advance(a[0] if a else 0))
     r.free_skill_followup_attack = mock.MagicMock()
     r.engage_before_skill = mock.MagicMock()
     # 放完真技能后的"是否真进CD"确认:默认 False = 技能已落实(进了CD)
@@ -86,12 +90,32 @@ class TestRequiemSkillClassification(unittest.TestCase):
         self.assertTrue(r.should_force_off_field(), "识别不到应按真技能切人")
         r.free_skill_followup_attack.assert_not_called()
 
-    # ---- 真技能按键没落实(被吞/打断)→ 不切人 ----
-    def test_real_skill_not_landed_does_not_switch(self):
+    # ---- 真技能一直放不进(反复被打断)→ 重试到超时, 不切人, 期间持续平A ----
+    def test_real_skill_never_lands_retries_then_gives_up(self):
         r = make_requiem(self.clock, skill_kind="real")
+        # 始终"技能还可用" = 每次按键都没进CD; skill_available 也始终为真(没放成)。
         r._skill_still_available_after_input_mode_delay = mock.MagicMock(return_value=True)
         r.do_perform()
-        self.assertFalse(r.should_force_off_field(), "按键没落实就不应切下场")
+        self.assertFalse(r.should_force_off_field(), "一直没放进就不应切下场")
+        self.assertGreater(r.normal_attack.call_count, 1, "重试期间应持续平A打闪避反击")
+
+    # ---- 真技能首次被打断、重试时放进 → 切下场(真技能是伤害大头, 不放弃)----
+    def test_real_skill_lands_on_retry_then_switches(self):
+        r = make_requiem(self.clock, skill_kind="real")
+        # 第一次确认仍可用(被打断没进), 第二次确认已进CD。
+        r._skill_still_available_after_input_mode_delay = mock.MagicMock(side_effect=[True, False])
+        r.do_perform()
+        self.assertTrue(r.should_force_off_field(), "重试放进后应 overlap 下场")
+        self.assertGreaterEqual(r.normal_attack.call_count, 1, "重试前应平A打出闪避反击")
+
+    # ---- 重试期间技能图标转入CD(放成功的另一种确认)→ 切下场 ----
+    def test_real_skill_landed_detected_by_icon_on_cd(self):
+        r = make_requiem(self.clock, skill_kind="real")
+        # 首次确认仍可用(没进), 但下一帧技能图标已不可用 = 其实放进CD了。
+        r._skill_still_available_after_input_mode_delay = mock.MagicMock(return_value=True)
+        r.skill_available = mock.MagicMock(side_effect=[True, False])
+        r.do_perform()
+        self.assertTrue(r.should_force_off_field(), "图标进CD即视为放成功, 应 overlap 下场")
 
     # ---- 没技能可放(图标没亮)→ 不放技能,走 idle ----
     def test_no_skill_when_unavailable(self):
