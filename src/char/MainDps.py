@@ -329,6 +329,14 @@ class HealSupport(BuffSupport):
         # 治疗不参与"先铺大招 buff 压过环合"那条抢线(那是辅助专属);治疗优先级最低。
         return False
 
+    def do_get_switch_priority(self, current_char, has_intro=False):
+        p = super().do_get_switch_priority(current_char, has_intro)
+        # 没资源时(落到 BASE_MINUS_1)再降一档: overlap填场/平局时, 宁可选别的辅助,
+        # 也别按"最久没动"把治疗顶上来空放(治疗应是最后兜底)。
+        if p == Priority.BASE_MINUS_1:
+            return Priority.BASE_MINUS_1 - 1
+        return p
+
 
 class SakiriBuffSupport(BuffSupport):
     """早雾辅助:**有主C时**与辅助模板完全一致,仅技能改为长按(SKILL_DOWN_TIME);
