@@ -1,14 +1,60 @@
+import ctypes
 import time
 
 import cv2
 import numpy as np
+import win32con
 
 from src.char.MainDps import MainDps
+from src.combat import requiem_combo
 from src.Labels import Labels
+from src.sound_trigger.SoundCombatContext import SoundCombatContext
+
+
+class _RequiemCombatIO:
+    """实战里跑 4A跳A combo 的 io 适配器: 走框架后台 PostMessage(不动真实鼠键、游戏可不在前台)。
+    should_continue 用廉价标志位判断"闪避待执行/已不是当前角色", 命中即中止本轮 combo, 把控制权
+    交回战斗循环——待执行的闪避会在随后的 sleep_check 落地。intra-combo 用 raw sleep 保节奏。"""
+
+    def __init__(self, char):
+        self._char = char
+        self._itx = char.task.executor.interaction
+        try:
+            cx = round(self._itx.capture.width * 0.5)
+            cy = round(self._itx.capture.height * 0.5)
+            self._pos = self._itx.update_mouse_pos(cx, cy)
+        except Exception:
+            self._pos = self._itx.update_mouse_pos(-1, -1)
+
+    def should_continue(self):
+        return self._char.is_current_char and not SoundCombatContext.should_interrupt_combat()
+
+    def mouse_down(self):
+        self._itx.post(win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, self._pos)
+
+    def mouse_up(self):
+        self._itx.post(win32con.WM_LBUTTONUP, 0, self._pos)
+
+    def space_down(self):
+        self._itx.send_key_down("space")
+
+    def space_up(self):
+        self._itx.send_key_up("space")
+
+    def sleep_ms(self, ms):
+        time.sleep(ms / 1000.0)
 
 
 class Requiem(MainDps):
     """Main DPS template with off-field skill overlap after skill cast."""
+
+    # 主C站场输出改用一轮 4A跳A combo(时序见 requiem_combo, 与跳A宏方案一同源)。
+    # idle 原来是 2.5s 连点; 按需求改成"刚好打一轮"的时长。
+    IDLE_ATTACK_DURATION = requiem_combo.scheme_a_round_seconds()
+    # combo 伤害大头在结尾, 不打完丢很多伤害 → 只有技能"很快就绪"(剩余CD < 1s)才不开整轮、
+    # 改成 0.1 间隔平A盯着就绪; >= 1s 一律走完整轮 combo(输出不亏)。
+    IDLE_NEAR_SKILL_CD = 1.0
+    IDLE_NEAR_SKILL_INTERVAL = 0.1
 
     SKILL_OFF_FIELD_DURATION = 3.0
     REAL_SKILL_CD = 16.0  # 真技能固定16s CD(从释放起算);免费技能不影响, 不锚。
@@ -126,17 +172,44 @@ class Requiem(MainDps):
             self.sleep(self.FREE_SKILL_ATTACK_INTERVAL)
         self.logger.info(f"requiem pre-skill engage: {n} normal attack(s) over {duration:.2f}s")
 
+    def combo_attack(self):
+        """主C的普通攻击 = 跑一轮 4A跳A combo(时序见 requiem_combo, 与跳A宏方案一同源)。
+        走后台 PostMessage; 提 1ms 定时精度 + raw sleep 保节奏(self.sleep 会插帧截图, 打乱 combo);
+        每一下之前查 should_continue, 闪避待执行/已切走即中止, 交回战斗循环让闪避随后落地。"""
+        self.check_combat()  # 战斗已结束/切队则抛出, 不空打一轮
+        io = _RequiemCombatIO(self)
+        ctypes.windll.winmm.timeBeginPeriod(1)
+        try:
+            requiem_combo.run_scheme_a(io)
+        finally:
+            ctypes.windll.winmm.timeEndPeriod(1)
+
+    def idle_normal_attack(self, duration=None):
+        """主C站场输出: 用一轮 4A跳A combo 替代原连点(原 2.5s)。放完一轮即返回、交战斗循环
+        重新决策(下一圈再来一轮); 一轮内部可被闪避/切人打断。duration 参数忽略(一轮为准)。
+
+        技能快就绪(剩余CD < 一轮combo时长)时不开整轮 combo: 一轮会把 do_perform 焊死 ~2.1s、
+        期间技能就绪也不复检, 打完常和辅助资源撞一起→先切辅助把就绪技能晾着(浪费)。改用短平A
+        填充让 do_perform 尽快复检、技能一好立刻放; 技能还远时才打完整 combo(输出不亏)。"""
+        if self.should_yield_to_support():
+            self.logger.info("support ready before requiem combo idle")
+            return
+        skill_cd = self.task.get_cd("skill", self.index)
+        if 0 < skill_cd < self.IDLE_NEAR_SKILL_CD:
+            self.logger.info(f"requiem skill 快就绪({skill_cd:.1f}s<1s), 0.1间隔平A盯就绪, 不开整轮combo")
+            self.continues_normal_attack(skill_cd, interval=self.IDLE_NEAR_SKILL_INTERVAL)
+            return
+        self.combo_attack()
+
     def free_skill_followup_attack(self):
-        start = time.time()
-        while time.time() - start < self.FREE_SKILL_FOLLOWUP_ATTACK_DURATION:
-            if self.ultimate_available():
-                if self.click_ultimate():
-                    return
-            if self.should_yield_to_support(include_probe=False):
-                self.logger.info("support confirmed resource during requiem follow-up attack")
+        """免费技能后的后续输出: 大招好了先开、辅助有资源就让位, 否则打一轮 combo。"""
+        if self.ultimate_available():
+            if self.click_ultimate():
                 return
-            self.normal_attack()
-            self.sleep(self.FREE_SKILL_ATTACK_INTERVAL)
+        if self.should_yield_to_support(include_probe=False):
+            self.logger.info("support confirmed resource during requiem follow-up attack")
+            return
+        self.combo_attack()
 
     def _mark_real_skill_overlap(self, reason):
         """真技能确认进CD后: 安排 overlap 下场 + 当场锚16s CD。

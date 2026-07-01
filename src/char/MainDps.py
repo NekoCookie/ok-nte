@@ -53,6 +53,22 @@ class MainDps(BaseChar):
     def should_yield_to_support(self, include_probe=True):
         return self.support_has_resource() or (include_probe and self.support_needs_probe())
 
+    def _support_ultimate_ready(self, char):
+        """辅助的"大招"是否就绪(不含技能): 在场看底部图标、下场看头像菱形; 刚用过不算。"""
+        if char is None or char is self or not self._is_support(char):
+            return False
+        if getattr(char, "recently_used_resource", lambda: False)():
+            return False
+        ready = getattr(char, "ultimate_ready_now", None)
+        if ready is not None:
+            return ready()
+        return char.ultimate_available()
+
+    def support_has_ultimate(self):
+        """是否有辅助的大招就绪。用于让位判定: 只有辅助大招就绪才压低主C优先级、先让辅助放大招;
+        辅助仅技能就绪不让位(主C先放真技能, 放完 overlap 再切辅助放技能)。"""
+        return any(self._support_ultimate_ready(char) for char in self.task.chars)
+
     def should_stay_on_field(self):
         return (
             self.is_current_char
@@ -87,9 +103,12 @@ class MainDps(BaseChar):
             self.idle_normal_attack()
 
     def count_base_priority(self):
-        if not self.should_yield_to_support():
-            return self.IDLE_PRIORITY
-        return 0
+        # 只有辅助"大招"就绪才压低主C的idle分让位(→辅助大招 201 压过 Requiem技能 110)。
+        # 辅助仅技能就绪时保持 idle 分: Requiem 技能就绪的 +100 加成使其 115 > 辅助技能 110,
+        # 主C先放真技能、放完 overlap 再切辅助放技能; 主C没技能时(分5<110)自然让辅助技能上。
+        if self.support_has_ultimate():
+            return 0
+        return self.IDLE_PRIORITY
 
     def switch_next_char(self, post_action=None, free_intro=False):
         if self.should_stay_on_field():
