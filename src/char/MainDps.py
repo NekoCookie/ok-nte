@@ -217,6 +217,10 @@ class BuffSupport(BaseChar):
             # 注意: 锚的是"点了技能"的标称CD; 真没放成功(闪避打断→短CD)由图标OCR识别纠正(见 refresh_cd)。
             self.logger.info(f"{type(self).__name__} skill cast (anchor cd {self.SKILL_COOLDOWN}s)")
             self.task.note_skill_on_cd(self.index, cd=self.SKILL_COOLDOWN)
+            # 放招后紧接着闪避会打断释放(进3s短CD)或根本没按出去(还就绪)。切走前留场结算:
+            # 进CD就读真实CD校准(否则下场误当20s冷却→空切)、还就绪就补放。放招后没闪避则秒返回。
+            cast_at = self.task.cds.get(self.index, {}).get("skill_cast_at", 0)
+            self.settle_skill_after_cast(cast_at, self.SKILL_COOLDOWN)
         if not used_ultimate and self.ultimate_available():
             used_ultimate = self.click_ultimate()
         # 技能差一点就绪(CD<=1s): 多等一下平A放了再走, 否则差0.5s被切走、这趟白跑。
@@ -230,7 +234,9 @@ class BuffSupport(BaseChar):
         cd = self.task.get_cd("skill", self.index)
         if not (0 < cd <= self.SKILL_ABOUT_READY_WAIT):
             return False
-        deadline = time.time() + cd + 0.4
+        enter_at = time.time()
+        self.task.diag_cast(self.index, enter_at, f"辅助技能差{cd:.1f}s就绪, 留场等待")
+        deadline = enter_at + cd + 0.4
         while time.time() < deadline:
             if self.skill_available():
                 if self.click_skill(down_time=self.SKILL_DOWN_TIME)[0]:
@@ -238,9 +244,12 @@ class BuffSupport(BaseChar):
                         f"{type(self).__name__} 技能差{cd:.1f}s就绪, 等放完再走"
                     )
                     self.task.note_skill_on_cd(self.index, cd=self.SKILL_COOLDOWN)
+                    self.task.diag_cast(self.index, enter_at, "辅助技能等待→放成功")
                     return True
+                self.task.diag_cast(self.index, enter_at, "辅助技能等待→按键没发出, 放弃")
                 return False
             self.normal_attack()
+        self.task.diag_cast(self.index, enter_at, "辅助技能等待→超时仍没就绪, 放弃")
         return False
 
     def do_perform(self):

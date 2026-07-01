@@ -66,10 +66,13 @@ class BaseChar:
     ULTIMATE_COMBAT_SETTLE_FORCE_RETARGET = True
     IDLE_FILL_ATTACK_INTERVAL = 0.1
     SKILL_INPUT_MODE_RETRY_DELAY = 0.12
-    # 触发闪避后留场平A的最长时间/间隔: 既把闪避反击打出来, 又留场让 refresh_cd 读到
-    # 刚放技能的真实CD(长=放进去了, 短=被打断)。0.5是上限——一旦读准CD判明长短就提前收, 不打满。
-    DODGE_FOLLOWUP_MAX_DURATION = 0.5
-    DODGE_FOLLOWUP_INTERVAL = 0.1
+    # 放长CD技能后若"放招之后触发了闪避"(可能打断释放), 留场结算的最长时间/间隔:
+    # 期间看技能图标——进CD就读真实CD校准锚点, 还就绪就补发技能, 直到定下来或超时。
+    SKILL_SETTLE_MAX_DURATION = 0.5
+    SKILL_SETTLE_INTERVAL = 0.1
+    # settle 判"已进CD"的最小有效CD。图标抖动成"非就绪"但 OCR 读到 -0.2/0 这种(就绪/读数
+    # 未稳的噪声)不算真进CD, 否则会把"还没放成"误当进CD退出、不再补放。读到 <此值就继续补放。
+    SKILL_SETTLE_MIN_ON_CD = 1.0
     # 大招演出结束(已回到队伍画面)后,等"时停解除/CD 开始走"的精确确认超时。
     # 正常 1~2s 内 condition 就满足;深渊换层等场景下大招图标区识别会失效,会一直空等到
     # 超时,导致角色卡住十几秒不切人。这第二段只用来算 freeze 时长,缩短它纯止血、不影响放招。
@@ -95,7 +98,6 @@ class BaseChar:
         self._ultimate_available = False
         self._skill_available = False
         self.last_perform = 0
-        self._dodge_followup_done_at = 0.0  # 已为哪次闪避补过场, 防同一次闪避重复补
         self.last_skill_time = -1
         self.last_outro_time = -1
         self.start_combat = False
@@ -147,41 +149,49 @@ class BaseChar:
             self.do_fast_perform()
         else:
             self.do_perform()
-        self.dodge_followup_attack()
         self.logger.debug(f"set current char false {self.index}")
         self.switch_next_char()
 
-    def dodge_followup_attack(self):
-        """战斗通用: 本轮行动期间若触发过闪避, 切人前先留场平A(最多 DODGE_FOLLOWUP_MAX_DURATION)。
+    def settle_skill_after_cast(self, cast_at, cooldown, max_duration=None):
+        """放长CD技能后的收尾结算 —— 校准CD / 补放。放技能那一下若**紧接着触发了闪避**,
+        释放可能被打断: 要么按出去了但没生效、进了个 ~3s 短CD(以为是20s长CD就糟了), 要么
+        和闪避隔太近、键根本没按出去、技能还就绪。这里在切人前把它弄清楚。
 
-        一举两得: ①把闪避反击打出来(反击本就是平A/点击); ②这期间仍是当前角色, refresh_cd
-        能读到刚放技能的图标真实CD —— 长CD=技能真放进去了, 短CD=被闪避打断没放成。一旦图标
-        读准了CD(skill_time 越过本次放招时刻 skill_cast_at)就判明长短、提前收手, 不必打满0.5s。
-        不靠"放招后有没有闪避"去猜技能成败(那容易判反), 用实测的图标CD为准。"""
-        if self.has_intro or not self.is_current_char:
-            return
-        dodge_at = self.task.last_dodge_time()
-        # 只补"本轮 perform 期间"新触发、且还没补过的闪避; 陈旧闪避不补。
-        if dodge_at < self.last_perform or dodge_at <= self._dodge_followup_done_at:
-            return
-        self._dodge_followup_done_at = dodge_at
-        cds = self.task.cds.get(self.index) or {}
-        cast_at = cds.get("skill_cast_at", 0)
-        # 只有"这一轮 perform 里真放了招"(cast_at 落在本轮内)才去读CD判长短; 否则就是纯闪避反击,
-        # 老实打满。这样切人后是第二个角色自己 perform 里处理闪避, 不会把它算到上一个施法者头上。
-        judge_skill = cast_at >= self.last_perform
-        deadline = time.time() + self.DODGE_FOLLOWUP_MAX_DURATION
+        仅当"放招(cast_at)之后发生过闪避"才介入; 否则技能正常放出, 直接返回(不影响平常)。
+        介入后留场平A最多 SKILL_SETTLE_MAX_DURATION, 每 SKILL_SETTLE_INTERVAL 看技能图标:
+          A. OCR读到有意义CD数字 → 按出去了(放成功长CD / 被打断短CD): 锚点已被OCR校准, 结束;
+          B. 没读到数字 = 还就绪/没按出去: 底层补发技能(用 send_skill_key 绕过被刚锚CD挡住的
+             available), 放出去后下一圈转 A;
+          超时仍没数字 → 锚成就绪(别留标称CD撒谎, 下次再上来放)。
+
+        进CD与否只认 skill_ocr_raw(这帧OCR真读到的原始数字), 不读 skill_available/get_cd
+        ——后者会被刚 note 的标称CD + grace 污染。返回 True=确认进了CD(已校准); False=没介入/超时。"""
+        if not self.is_current_char:
+            return False
+        # 放招瞬间触发的闪避此刻可能还排在队列里没执行, last_dodge_time 尚未更新。先把它落地再判,
+        # 否则"放招→闪避(pending)→切人"贴太紧时会漏检(辅助没有起手平A 去顺手落地闪避)。
+        self.task.flush_pending_dodge()
+        if not (cast_at > 0 and self.task.last_dodge_time() >= cast_at):
+            return False  # 放招后没闪避 → 不介入
+        down_time = getattr(self, "SKILL_DOWN_TIME", 0.01)
+        self.logger.info("放招后触发闪避, 留场结算技能(校准/补放)")
+        deadline = time.time() + (max_duration or self.SKILL_SETTLE_MAX_DURATION)
         while time.time() < deadline:
+            self.task.next_frame()
+            # A: 这帧OCR真读到了够大的CD数字 → 已进CD(放成功长CD / 被打断短CD), 锚点已校准。
+            # 用 skill_ocr_raw 而非 get_cd: 后者没数字时会按刚 note 的标称CD 倒数、谎报进CD。
+            raw = self.task.skill_ocr_raw(self.index)
+            if raw is not None and raw >= self.SKILL_SETTLE_MIN_ON_CD:
+                self.logger.info(f"放招后结算: 技能已进CD, 校准为真实CD={raw:.1f}s")
+                return True
+            # B: 没读到数字 = 还就绪/没按出去 → 底层补发(绕过被note挡住的available检查)
+            self.send_skill_key(down_time=down_time)
+            self.task.note_skill_on_cd(self.index, cd=cooldown)  # 暂锚标称, 真值下圈A校准
             self.normal_attack()
-            self.sleep(self.DODGE_FOLLOWUP_INTERVAL)
-            if judge_skill:
-                cd = self.task.get_cd("skill", self.index)  # 触发 refresh_cd 读图标
-                cds = self.task.cds.get(self.index) or {}
-                if cds.get("skill_time", 0) > cast_at + 0.01:
-                    # 放招后图标已读到真实CD → 已判明长短, 不用打满。
-                    self.logger.info(f"闪避后留场: 技能CD已判明={cd:.1f}s, 提前结束(未打满)")
-                    return
-        self.logger.info("闪避后留场: 平A满0.5s上限")
+            self.sleep(self.SKILL_SETTLE_INTERVAL)
+        self.task.note_skill_ready(self.index)
+        self.logger.info("放招后结算: 超时仍就绪(没放出), 锚为就绪等下次")
+        return False
 
     def add_intro_motion_freeze(self, start):
         self.add_freeze_duration(

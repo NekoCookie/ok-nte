@@ -28,10 +28,11 @@ class FakeClock:
 
 
 def make_requiem(clock, skill_kind="real", skill_available=True,
-                 click_skill_ok=True, click_ultimate=False):
+                 click_skill_ok=True, click_ultimate=False, in_long_cd=True):
     """构造一个只保留决策逻辑、其余全部打桩的 Requiem 实例。
 
     skill_kind: 'real' / 'free' / None —— 视觉判定的固定返回(驱动 do_perform 分支)。
+    in_long_cd: 放招后图标是否在"长CD"(_real_skill_in_long_cd 的固定返回, 即是否真放成功)。
     """
     r = Requiem.__new__(Requiem)
     r.skill_off_field_until = 0.0
@@ -54,6 +55,10 @@ def make_requiem(clock, skill_kind="real", skill_available=True,
     r.engage_before_skill = mock.MagicMock()
     # 放完真技能后的"是否真进CD"确认:默认 False = 技能已落实(进了CD)
     r._skill_still_available_after_input_mode_delay = mock.MagicMock(return_value=False)
+    # 放招后图标是否在长CD(=真放成功);区分 16s 长CD vs 被打断的 ~3s 短CD。
+    r._real_skill_in_long_cd = mock.MagicMock(return_value=in_long_cd)
+    # settle_skill_after_cast 有独立单测(TestSettleSkill);这里 mock 掉只测 cast_real_skill 编排。
+    r.settle_skill_after_cast = mock.MagicMock(return_value=False)
     # 视觉判定打桩:固定返回 skill_kind(do_perform 经 is_real_skill_now 读取)
     r.classify_skill_visual = mock.MagicMock(return_value=skill_kind)
     return r
@@ -90,32 +95,65 @@ class TestRequiemSkillClassification(unittest.TestCase):
         self.assertTrue(r.should_force_off_field(), "识别不到应按真技能切人")
         r.free_skill_followup_attack.assert_not_called()
 
-    # ---- 真技能一直放不进(反复被打断)→ 重试到超时, 不切人, 期间持续平A ----
-    def test_real_skill_never_lands_retries_then_gives_up(self):
-        r = make_requiem(self.clock, skill_kind="real")
-        # 始终"技能还可用" = 每次按键都没进CD; skill_available 也始终为真(没放成)。
+    # ---- 一次放成功(进长CD)→ 不经 settle 直接 overlap ----
+    def test_real_skill_first_try_long_cd_switches(self):
+        r = make_requiem(self.clock, skill_kind="real", in_long_cd=True)
+        r.do_perform()
+        self.assertTrue(r.should_force_off_field(), "进长CD=放成功, 应 overlap 下场")
+        r.settle_skill_after_cast.assert_not_called()
+
+    # ---- 进的是短CD(被闪避打断的假成功)→ 不切, 修掉"短CD误当放成功" ----
+    def test_real_skill_short_cd_does_not_switch(self):
+        r = make_requiem(self.clock, skill_kind="real", in_long_cd=False)
+        r.do_perform()
+        self.assertFalse(r.should_force_off_field(), "短CD=被打断, 不该 overlap")
+        r.settle_skill_after_cast.assert_called_once()  # 没放成 → 交给 settle
+
+    # ---- 没按出去(还就绪)→ settle 补放进长CD → overlap ----
+    def test_real_skill_settle_lands_long_cd_switches(self):
+        r = make_requiem(self.clock, skill_kind="real", in_long_cd=True)
+        # 首次确认仍可用 = 没按出去 → _try_land 返回 False, 进 settle
         r._skill_still_available_after_input_mode_delay = mock.MagicMock(return_value=True)
         r.do_perform()
-        self.assertFalse(r.should_force_off_field(), "一直没放进就不应切下场")
-        self.assertGreater(r.normal_attack.call_count, 1, "重试期间应持续平A打闪避反击")
+        r.settle_skill_after_cast.assert_called_once()
+        self.assertTrue(r.should_force_off_field(), "settle 后进长CD应 overlap 下场")
 
-    # ---- 真技能首次被打断、重试时放进 → 切下场(真技能是伤害大头, 不放弃)----
-    def test_real_skill_lands_on_retry_then_switches(self):
-        r = make_requiem(self.clock, skill_kind="real")
-        # 第一次确认仍可用(被打断没进), 第二次确认已进CD。
-        r._skill_still_available_after_input_mode_delay = mock.MagicMock(side_effect=[True, False])
-        r.do_perform()
-        self.assertTrue(r.should_force_off_field(), "重试放进后应 overlap 下场")
-        self.assertGreaterEqual(r.normal_attack.call_count, 1, "重试前应平A打出闪避反击")
-
-    # ---- 重试期间技能图标转入CD(放成功的另一种确认)→ 切下场 ----
-    def test_real_skill_landed_detected_by_icon_on_cd(self):
-        r = make_requiem(self.clock, skill_kind="real")
-        # 首次确认仍可用(没进), 但下一帧技能图标已不可用 = 其实放进CD了。
+    # ---- 没按出去, settle 后仍没进长CD → 不切, 下轮重试 ----
+    def test_real_skill_settle_fails_no_switch(self):
+        r = make_requiem(self.clock, skill_kind="real", in_long_cd=False)
         r._skill_still_available_after_input_mode_delay = mock.MagicMock(return_value=True)
-        r.skill_available = mock.MagicMock(side_effect=[True, False])
         r.do_perform()
-        self.assertTrue(r.should_force_off_field(), "图标进CD即视为放成功, 应 overlap 下场")
+        r.settle_skill_after_cast.assert_called_once()
+        self.assertFalse(r.should_force_off_field(), "settle 后仍没进长CD, 不该 overlap")
+
+    # ---- _real_skill_in_long_cd 轮询: CD数字滞后, 几帧后刷出长CD → 提前判成功 ----
+    def test_real_skill_in_long_cd_polls_until_cd_appears(self):
+        r = make_requiem(self.clock)
+        del r._real_skill_in_long_cd  # 用真方法(make_requiem 默认 mock 掉了)
+        r.normal_attack = mock.MagicMock()
+        # 放招瞬间没数字/短CD, 第三帧才刷出 15 → 立即 True
+        r.task.skill_ocr_raw = mock.MagicMock(side_effect=[None, 3.0, 15.0])
+        r.task.next_frame = mock.MagicMock()
+        self.assertTrue(r._real_skill_in_long_cd())
+
+    # ---- _real_skill_in_long_cd 轮询: 窗口内始终只有短CD → 超时判失败 ----
+    def test_real_skill_in_long_cd_times_out_when_never_long(self):
+        r = make_requiem(self.clock)
+        del r._real_skill_in_long_cd
+        r.normal_attack = mock.MagicMock()
+        r.task.skill_ocr_raw = mock.MagicMock(return_value=3.0)  # 始终短CD(被打断)
+        r.task.next_frame = mock.MagicMock()
+        self.assertFalse(r._real_skill_in_long_cd())
+        self.assertGreater(r.normal_attack.call_count, 1, "轮询期间应持续平A, 不站着干等")
+
+    # ---- 没读到数字(就绪/没放出)→ 判失败, 不会被锚点/就绪图标误导 ----
+    def test_real_skill_in_long_cd_no_number_is_failure(self):
+        r = make_requiem(self.clock)
+        del r._real_skill_in_long_cd
+        r.normal_attack = mock.MagicMock()
+        r.task.skill_ocr_raw = mock.MagicMock(return_value=None)  # 全程没数字
+        r.task.next_frame = mock.MagicMock()
+        self.assertFalse(r._real_skill_in_long_cd())
 
     # ---- 没技能可放(图标没亮)→ 不放技能,走 idle ----
     def test_no_skill_when_unavailable(self):

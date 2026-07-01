@@ -50,6 +50,10 @@ class BaseCombatTask(CombatCheck):
     # 当成仍在冷却, 宁可多冷却也不误判可用(避免空切)。
     UNKNOWN_CD_SECONDS = 20.0
     SKILL_CAST_READY_GRACE = 2.0  # 放完技能后 N 秒内, "图标就绪"必为坏帧, 不许冲掉刚锚的CD(过渡态撑不到2s)
+    # 技能"连续没数字才判就绪"的平时去抖窗。OCR 数字识别可靠: 在CD时几乎每帧都有数字, 只偶发漏帧;
+    # 真就绪才会持续没数字。故没读到数字时, 连续没数字 < 此值当偶发坏帧(保留锚点倒数), >= 才判就绪。
+    # 放招后那段(grace 内)数字滞后更久, 用 SKILL_CAST_READY_GRACE 这个更长的窗口顶, 防滞后被误判就绪→空切。
+    READY_NO_NUMBER_DEBOUNCE = 0.5
     # 技能就绪模板匹配阈值: OCR 读不到数字时, 拿当前技能图标和该角色"就绪模板"带遮罩匹配,
     # 置信度 >= 此值判就绪(锚 0)。实测就绪 0.95~1.00 / CD 0.07~0.22, 0.7 两边大余量。
     SKILL_READY_TEMPLATE_THRESHOLD = 0.7
@@ -294,6 +298,19 @@ class BaseCombatTask(CombatCheck):
         """最近一次闪避(我方主动触发)的时刻; 没有则 0。供战斗循环判断"刚是否闪避了"。"""
         return SoundCombatContext().last_dodge_time()
 
+    def diag_cast(self, char_index, cast_at, tag):
+        """放招诊断(临时, 验证完删): 专门盯三条未实战验证的路径——真技能被闪避打断→重试、
+        放招后留场读CD、辅助技能差就绪等待。打印: 角色、走了哪条分支(tag)、当前技能图标
+        CD读数、最近闪避相对本次放招(cast_at)的时刻(标出是否邻近)。前缀 [放招诊断] 便于 grep。"""
+        dodge_at = self.last_dodge_time()
+        rel = dodge_at - cast_at if cast_at else None
+        if rel is not None and -0.5 <= rel < 2.5:
+            near = f"闪避@放招后{rel:+.2f}s"
+        else:
+            near = "无邻近闪避"
+        cd = self.get_cd("skill", char_index)
+        self.log_info(f"[放招诊断] char{char_index + 1} {tag} | 图标CD={cd:.1f}s | {near}")
+
     def refresh_cd(self):
         if self.scene.cd_refreshed:
             return
@@ -323,7 +340,10 @@ class BaseCombatTask(CombatCheck):
             # 只截技能图标做诊断;大招走头像菱形稳定判定、不靠这套, 截了纯属浪费。
             if self.SKILL_CD_DIAG and box == "skill":
                 self._dump_box_debug(box, ocr_cd)
+            # 记下这一帧 OCR 的原始读数(None=没读到数字), 供 settle / 真技能判定不受 note 标称CD 污染地判进CD/就绪。
+            cds[box + "_ocr_raw"] = ocr_cd
             if ocr_cd is not None:
+                # 读到数字 = 在CD, 数字即剩余CD(OCR 数字识别可靠, 作主判据)。
                 # 闪避打断检测: 放招刚锚了标称大CD, 但图标紧接着读到明显更短的CD = 技能被打断、
                 # 没真放(进短CD ~3s)。闪避是我方主动触发(记了时刻), 所以用"放招后是否真闪避了"
                 # 确定性确认, 图标短CD作实证, 不靠动画/猜测。
@@ -344,14 +364,32 @@ class BaseCombatTask(CombatCheck):
                     )
                 cds[box] = ocr_cd
                 cds[box + "_time"] = now
-            elif self._box_ready_no_number(box):
-                # 刚放完技能 grace 期内, OCR没数字+图标"就绪"必是坏帧(放完不可能立刻就绪),
-                # 不许冲掉 note_skill_on_cd 刚锚的真实CD, 否则下场误判就绪→空切。
-                if box == "skill" and now - cds.get("skill_cast_at", 0) < self.SKILL_CAST_READY_GRACE:
-                    pass
+                cds.pop(box + "_no_number_since", None)  # 读到数字 → 清空"连续没数字"计时
+            elif box == "skill":
+                # 技能没读到数字: 不再靠每角色就绪模板/图标高亮(高亮按"有白色像素"判, 会被CD白字骗→
+                # 安魂曲进CD也误判就绪)。改成"连续没数字够久才算就绪": 数字识别可靠→在CD几乎每帧有数字、
+                # 只偶发漏帧, 真就绪才持续没数字。去抖窗放招后(grace内)取更长的 grace(挡放招后数字滞后,
+                # 别把刚放出的技能误判就绪→空切), 平时取短的 READY_NO_NUMBER_DEBOUNCE。
+                since = cds.get("skill_no_number_since")
+                if since is None:
+                    since = now
+                    cds["skill_no_number_since"] = now
+                if "skill" not in cds:
+                    # 首次见该角色且没数字: 没历史可做"连续没数字"去抖, 用图标兜一帧定调
+                    # (就绪→锚0; 否则占位冷却, 下一帧读到数字再校准)。仅这一帧用图标, 之后走去抖。
+                    cds["skill"] = 0 if self._box_ready_no_number("skill") else self.UNKNOWN_CD_SECONDS
+                    cds["skill_time"] = now
                 else:
-                    cds[box] = 0
-                    cds[box + "_time"] = now
+                    in_post_cast = 0 < now - cds.get("skill_cast_at", 0) < self.SKILL_CAST_READY_GRACE
+                    debounce = self.SKILL_CAST_READY_GRACE if in_post_cast else self.READY_NO_NUMBER_DEBOUNCE
+                    if now - since >= debounce:
+                        cds["skill"] = 0
+                        cds["skill_time"] = now
+                    # else: 没数字但没到去抖窗 → 保留上次锚点继续倒数(偶发坏帧, 不动)
+            elif self._box_ready_no_number(box):
+                # 大招(ultimate): 维持原"图标就绪→锚0"判定(大招走头像菱形那条线, 不改)。
+                cds[box] = 0
+                cds[box + "_time"] = now
             elif box not in cds:
                 # 从未成功锚定过 + 此刻坏帧: 保守占位为冷却中, 等下一帧重锚。
                 cds[box] = self.UNKNOWN_CD_SECONDS
@@ -564,6 +602,22 @@ class BaseCombatTask(CombatCheck):
         cds["skill"] = cd if cd is not None else self.UNKNOWN_CD_SECONDS
         cds["skill_time"] = time.time()
         cds["skill_cast_at"] = cds["skill_time"]  # grace 标记: 刚放完, refresh 不许把它冲成就绪
+        # 重置"连续没数字"去抖计时: 放招前技能就绪时 since 已累计了几秒且只在读到数字时才清,
+        # 若不清, 放招后第一帧没数字(OCR约1s滞后)就会 now-since>>grace 立刻触发 → 把刚锚的CD
+        # 冲回就绪(0) → 下场推算恒可用 → 空切。清掉后去抖从放招后重新起算, grace 才真正生效。
+        cds.pop("skill_no_number_since", None)
+
+    def note_skill_ready(self, char_index):
+        """把技能锚点设成"就绪/可用"(CD=0)。用于放招后被闪避打断、补放仍没放出去时——
+        别留标称CD(20s)撒谎, 锚成就绪让下场判它可用、下次再上来放。清掉 skill_cast_at,
+        否则 grace 会把这个本就该就绪的锚点又保护成"刚放完不许就绪"。"""
+        cds = self.cds.get(char_index)
+        if cds is None:
+            cds = {}
+            self.cds[char_index] = cds
+        cds["skill"] = 0
+        cds["skill_time"] = time.time()
+        cds.pop("skill_cast_at", None)
 
     def get_cd(self, box_name, char_index=None):
         self.refresh_cd()
@@ -580,6 +634,23 @@ class BaseCombatTask(CombatCheck):
             return result
         else:
             return 0
+
+    def skill_ocr_raw(self, char_index=None):
+        """当前帧 OCR 对技能格读到的原始 CD 数字(None=没读到数字=就绪/坏帧)。
+        不经锚点推算、不受 note_skill_on_cd 刚锚的标称CD 污染——专供 settle / 真技能判定
+        确定"这一下到底进没进CD": 读到有意义数字才是真进了CD, 没数字就是没放成/还就绪。"""
+        self.refresh_cd()
+        if char_index is None:
+            char_index = self.get_current_char().index
+        return self.cds.get(char_index, {}).get("skill_ocr_raw")
+
+    def flush_pending_dodge(self):
+        """把声音线程已触发、但还排在队列里没执行的闪避立即落地, 使 last_dodge_time 更新。
+        供 settle 在判"放招后是否闪避"前调用: 否则"放招→闪避(还pending)→切人"贴太紧时,
+        闪避执行被排在判定之后, last_dodge_time 尚未更新 → settle 漏看这次闪避(哈尼娅实测)。
+        若 pending 是反击(counter)而非闪避, 执行后 last_dodge_time 不更新, settle 仍不介入。"""
+        if SoundCombatContext.should_interrupt_combat():
+            SoundCombatContext().execute_pending_action()
 
     def _log_cd_estimate(self, box_name, char_index, cds, result):
         """临时诊断:打印技能/大招 CD 时间推算的每个环节,定位推算误差来源。
