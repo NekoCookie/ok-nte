@@ -56,6 +56,12 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
     INPUT_HW = "前台(硬件)"
     INPUT_BG = "后台(发消息)"
     CONF_INPUT_MODE = "方案输入方式"
+    # 安魂曲实战: 触发闪避后强制平A的持续秒数(0.1间隔), 保证高伤闪避反击一定打出、
+    # 不被技能/大招/切人打断。放这里方便实时调; 实战侧(Requiem)读这个值。0=关闭。
+    CONF_DODGE_COUNTER = "安魂曲闪避反击强制平A(s)"
+    # combo 起手前, 若紧接在闪避反击之后, 额外等这么久让反击后摇走完再落第一下(否则 combo 顺序乱)。
+    # 只影响 combo 路径; 切人/技能/大招不等。0=不等。
+    CONF_DODGE_COMBO_WAIT = "combo前闪避反击后摇等待(s)"
 
     # 方案一/二的精确时序统一放在 src/combat/requiem_combo.py(宏与实战主C共用, 改一处两边同步)。
     # 一轮结束后, 若仍按着触发键, 停这么久再进下一轮(对齐参考的 Sleep(200))。
@@ -118,6 +124,8 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_TRIGGER_KEY: "mouse5",
                 self.CONF_MACRO_MODE: self.MODE_SCHEME_A,
                 self.CONF_INPUT_MODE: self.INPUT_BG,
+                self.CONF_DODGE_COUNTER: 0.3,
+                self.CONF_DODGE_COMBO_WAIT: 0.3,
             }
         )
         self.config_type.update(
@@ -140,6 +148,8 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                     "安魂曲(方案一) / 闪双4a(方案二) —— 后两者为长按循环, 松手即停"
                 ),
                 self.CONF_INPUT_MODE: "仅方案一/二: 前台(硬件, 已验证) / 后台(发消息, 游戏可不在前台, 实测)",
+                self.CONF_DODGE_COUNTER: "实战安魂曲触发闪避后强制平A的秒数(0.1间隔), 保证高伤闪避反击打出、不被打断; 0=关闭",
+                self.CONF_DODGE_COMBO_WAIT: "实战安魂曲: combo 起手前若紧接闪避反击, 额外等这么久让反击后摇走完(否则combo乱序); 只影响combo, 切人/技能/大招不等; 0=不等",
             }
         )
         self.name = "安魂曲跳A测试"

@@ -55,6 +55,13 @@ class Requiem(MainDps):
     # 改成 0.1 间隔平A盯着就绪; >= 1s 一律走完整轮 combo(输出不亏)。
     IDLE_NEAR_SKILL_CD = 1.0
     IDLE_NEAR_SKILL_INTERVAL = 0.1
+    # 闪避反击: 触发闪避后强制平A的默认秒数(配置读不到时用)与点击间隔。
+    # 实际秒数在 4A 测试任务(RequiemJumpAttackTestTask)里可配, 便于实时调。
+    DODGE_COUNTER_ATTACK = 0.3
+    DODGE_COUNTER_INTERVAL = 0.1
+    # combo 起手前, 若紧接在闪避反击之后, 额外等这么久让反击后摇走完再落第一下(否则 combo 顺序乱)。
+    # 只加在 combo 路径; 切人/技能/大招不等→立即执行取消后摇。默认值, 4A 任务里可配。
+    DODGE_COUNTER_COMBO_WAIT = 0.3
 
     SKILL_OFF_FIELD_DURATION = 3.0
     REAL_SKILL_CD = 16.0  # 真技能固定16s CD(从释放起算);免费技能不影响, 不锚。
@@ -92,6 +99,7 @@ class Requiem(MainDps):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.skill_off_field_until = 0.0
+        self._dodge_counter_at = 0.0  # 上次闪避反击出手时刻(供 combo 起手前等后摇)
 
     def should_force_off_field(self):
         return time.time() < self.skill_off_field_until
@@ -177,12 +185,64 @@ class Requiem(MainDps):
         走后台 PostMessage; 提 1ms 定时精度 + raw sleep 保节奏(self.sleep 会插帧截图, 打乱 combo);
         每一下之前查 should_continue, 闪避待执行/已切走即中止, 交回战斗循环让闪避随后落地。"""
         self.check_combat()  # 战斗已结束/切队则抛出, 不空打一轮
+        self._wait_dodge_counter_recovery()  # 若紧接闪避反击, 先等其后摇再起 combo(顺序不乱)
         io = _RequiemCombatIO(self)
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
             requiem_combo.run_scheme_a(io)
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
+
+    def _read_jump_task_conf(self, key, default):
+        """读 4A 测试任务(RequiemJumpAttackTestTask)的某个数值配置(可实时调), 读不到用默认。"""
+        try:
+            from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
+
+            task = self.task.get_task_by_class(RequiemJumpAttackTestTask)
+            if task is not None:
+                return max(0.0, float(task.config.get(key, default)))
+        except Exception as e:
+            self.logger.debug(f"read jump task config {key} failed: {e}")
+        return default
+
+    def _dodge_counter_duration(self):
+        from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
+        return self._read_jump_task_conf(
+            RequiemJumpAttackTestTask.CONF_DODGE_COUNTER, self.DODGE_COUNTER_ATTACK)
+
+    def _dodge_counter_combo_wait(self):
+        from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
+        return self._read_jump_task_conf(
+            RequiemJumpAttackTestTask.CONF_DODGE_COMBO_WAIT, self.DODGE_COUNTER_COMBO_WAIT)
+
+    def on_dodge_counter(self):
+        """触发闪避后强制平A一小段(0.1间隔), 保证安魂曲高伤闪避反击一定打出。
+        由 task.after_dodge_executed 在闪避键按下后(主线程内)同步调用。**刻意用 raw time.sleep +
+        直接点击、不走 self.sleep/sleep_check**: 这段期间不可被技能/大招/切人/新的sleep_check打断,
+        这正是"保证反击"的目的。时长可在 4A 测试任务里配, 0=关闭。
+        记下反击出手时刻: 若紧接着起 combo, combo 会先等这一下的后摇(见 _wait_dodge_counter_recovery);
+        接切人/技能/大招则不等(它们能取消后摇)。"""
+        duration = self._dodge_counter_duration()
+        if duration <= 0:
+            return
+        self.logger.info(f"安魂曲闪避反击: 强制平A {duration:.2f}s(不可打断)")
+        start = time.time()
+        while time.time() - start < duration:
+            self.click()
+            time.sleep(self.DODGE_COUNTER_INTERVAL)
+        self._dodge_counter_at = time.time()
+
+    def _wait_dodge_counter_recovery(self):
+        """combo 起手前: 若紧接在闪避反击之后(在后摇窗口内), 等后摇走完再落第一下, 否则 combo 顺序乱。
+        raw sleep 不插帧, 保 combo 起手时机。消费掉标记, 只对紧接反击的这一次 combo 生效。
+        切人/技能/大招不走这里→立即执行取消后摇。"""
+        if self._dodge_counter_at <= 0:
+            return
+        remaining = self._dodge_counter_combo_wait() - (time.time() - self._dodge_counter_at)
+        self._dodge_counter_at = 0.0
+        if remaining > 0:
+            self.logger.info(f"combo 起手前等闪避反击后摇 {remaining:.2f}s")
+            time.sleep(remaining)
 
     def idle_normal_attack(self, duration=None):
         """主C站场输出: 用一轮 4A跳A combo 替代原连点(原 2.5s)。放完一轮即返回、交战斗循环
@@ -299,3 +359,4 @@ class Requiem(MainDps):
     def reset_state(self):
         super().reset_state()
         self.skill_off_field_until = 0.0
+        self._dodge_counter_at = 0.0

@@ -1309,6 +1309,18 @@ class BaseCombatTask(CombatCheck):
             )
         SoundCombatContext().update_task(self)
 
+    def after_dodge_executed(self):
+        """闪避在主线程执行完(键已按下)后的钩子: 当前在场角色若定义了 on_dodge_counter
+        (目前仅安魂曲)就调用它强制平A打出闪避反击; 其它角色无此方法则不做。
+        由 DodgeCounterTrigger.execute_dodge 在闪避键按下后同步调用(主线程内)。"""
+        char = self.get_current_char(raise_exception=False)
+        hook = getattr(char, "on_dodge_counter", None)
+        if hook is not None:
+            try:
+                hook()
+            except Exception as e:
+                self.log_error(f"on_dodge_counter failed: {e}")
+
     def check_combat(self):
         """检查当前是否处于战斗状态, 如果不是则抛出异常。"""
         self.check_team_changed_during_combat()
