@@ -47,8 +47,6 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
     #     PostMessage 版狂点会被游戏判成"长按左键→进瞄准", 故这两个方案改用硬件输入。
     MODE_RECORDED = "原始录制"
     MODE_SCHEME_A = "安魂曲(方案一)"
-    MODE_SCHEME_B = "闪双4a(方案二)"
-    MODE_SCHEME_C = "精简4A跳A(方案三)"  # 从原始录制精简: 4下地面普攻 + 空格跳 + 跳A那下左键
     MODE_SCHEME_LS = "光速4a(方案四·时间驱动)"  # 方案一进化: 连点到"跳A时机"才跳, 改时机时跳A左键自动跟着走
     CONF_MACRO_MODE = "4A宏模式"
     # 触发方式: 长按循环(松手停) / 按一下开关循环(按一下开始一直循环, 再按一下停)。
@@ -90,7 +88,6 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
     CONF_DODGE_STYLE = "闪避反击方式"
     STYLE_CURRENT = "反击+主动闪避+方案一"
     STYLE_SCHEME_B = "闪双4a(方案二)"
-    STYLE_SCHEME_LS = "光速4a(方案四)"  # 闪反后直接接光速4a(时间驱动), 调跳A时机让第二个4a接出来
     # 双4a(声音闪避版)的可调时序(选"闪双4a"才显示): 声音闪避后 → 前段平A(打第一个4a) → 跳A(空格+
     # 左键同按)代替第二次闪避、续段 → 后段平A(接第二个4a)。三段时长各自可配, 前后平A共用连点按下/抬起
     # (逻辑同光速4a方案四)。精确时序在 requiem_combo.run_scheme_double_4a。
@@ -112,19 +109,6 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
     # 模拟声音闪避的测试键: 按一下=假装出现了声音闪避, 走一整轮完整流程[初始闪避→强制平A→主动闪避
     # →后摇→N轮combo], 整轮暂停声音自动闪避。不用真声音、不受敌人干扰, 最适合看清流程。留空=关闭。
     CONF_DODGE_TEST_KEY = "闪避反击模拟测试键"
-
-    # 方案三(精简4A跳A)的全部时序, 单位毫秒, 可实时调(默认见 requiem_combo.SCHEME_C_*)。
-    # 前3下普攻共用同一"按住/间隔"; 第4下(长动画)单独; 空格与跳A/后摇单独。
-    # 这堆配置多, 用一个开关按钮折叠: 默认关(收起), 打开才显示下面8个。
-    CONF_C_EXPAND = "方案三-展开时序配置"  # 布尔开关(SwitchButton), 开=展开8个配置
-    CONF_C_ATTACK_HOLD = "方案三-普攻按住(ms)"
-    CONF_C_ATTACK_GAP = "方案三-前3普攻间隔(ms)"
-    CONF_C_A4_HOLD = "方案三-第4下按住(ms)"
-    CONF_C_A4_WAIT = "方案三-第4下长动画(ms)"
-    CONF_C_JUMP_HOLD = "方案三-空格按住(ms)"
-    CONF_C_JUMP_GAP = "方案三-空格后间隔(ms)"
-    CONF_C_JUMPA_HOLD = "方案三-跳A按住(ms)"
-    CONF_C_RECOVERY = "方案三-后摇(ms)"
 
     # 方案四(光速4a·时间驱动)的可调时序, 单位毫秒(默认见 requiem_combo.SCHEME_LS_*)。
     # 核心是"跳A时机": 连点累计到这个时刻才左键+空格同跳, 改它时跳A那下左键自动跟着移动。
@@ -224,15 +208,6 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_D4_TAIL_FILL: 250,
                 self.CONF_FIRST_ATTACK_TEST_KEY: "6",
                 self.CONF_DODGE_TEST_KEY: "7",
-                self.CONF_C_EXPAND: False,
-                self.CONF_C_ATTACK_HOLD: 80,
-                self.CONF_C_ATTACK_GAP: 220,
-                self.CONF_C_A4_HOLD: 80,
-                self.CONF_C_A4_WAIT: 781,
-                self.CONF_C_JUMP_HOLD: 100,
-                self.CONF_C_JUMP_GAP: 2,
-                self.CONF_C_JUMPA_HOLD: 74,
-                self.CONF_C_RECOVERY: 275,
                 self.CONF_LS_EXPAND: True,
                 self.CONF_LS_JUMP_AT: 1800,
                 self.CONF_LS_JUMP_HOLD: 20,
@@ -262,12 +237,9 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 },
                 self.CONF_MACRO_MODE: {
                     "type": "drop_down",
-                    "options": [
-                        self.MODE_RECORDED, self.MODE_SCHEME_A,
-                        self.MODE_SCHEME_B, self.MODE_SCHEME_C, self.MODE_SCHEME_LS,
-                    ],
+                    "options": [self.MODE_RECORDED, self.MODE_SCHEME_A, self.MODE_SCHEME_LS],
                 },
-                # 方案四那5个时序配置同样用开关按钮折叠, 打开(True)才显示。
+                # 方案四那5个时序配置用开关按钮折叠, 打开(True)才显示。
                 self.CONF_LS_EXPAND: {
                     "sub_configs": {
                         True: [
@@ -277,25 +249,14 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                         ],
                     },
                 },
-                # 方案三那8个时序配置做成下级菜单: 用开关按钮折叠, 打开(True)才显示, 免得平时太挤。
-                self.CONF_C_EXPAND: {
-                    "sub_configs": {
-                        True: [
-                            self.CONF_C_ATTACK_HOLD, self.CONF_C_ATTACK_GAP,
-                            self.CONF_C_A4_HOLD, self.CONF_C_A4_WAIT,
-                            self.CONF_C_JUMP_HOLD, self.CONF_C_JUMP_GAP,
-                            self.CONF_C_JUMPA_HOLD, self.CONF_C_RECOVERY,
-                        ],
-                    },
-                },
                 self.CONF_TRIGGER_MODE: {
                     "type": "drop_down",
                     "options": [self.TRIGGER_HOLD, self.TRIGGER_TOGGLE],
                 },
                 self.CONF_DODGE_STYLE: {
                     "type": "drop_down",
-                    "options": [self.STYLE_CURRENT, self.STYLE_SCHEME_B, self.STYLE_SCHEME_LS],
-                    # 选"闪双4a"才显示它那5个专属时序; 光速4a的时序在方案四那个折叠开关里调。
+                    "options": [self.STYLE_CURRENT, self.STYLE_SCHEME_B],
+                    # 选"闪双4a"才显示它那5个专属时序。
                     "sub_configs": {self.STYLE_SCHEME_B: [
                         self.CONF_D4_FRONT, self.CONF_D4_JUMP_HOLD, self.CONF_D4_BACK,
                         self.CONF_D4_CLICK_HOLD, self.CONF_D4_CLICK_GAP,
@@ -314,10 +275,10 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
         )
         self.config_description.update(
             {
-                self.CONF_TRIGGER_KEY: "长按该键执行4A+跳A宏(方案一/二为长按循环, 松手即停)",
-                self.CONF_MACRO_MODE: "4A宏模式: 原始录制/方案一/方案二/方案三/光速4a(方案四)",
+                self.CONF_TRIGGER_KEY: "长按该键执行4A+跳A宏(松手即停)",
+                self.CONF_MACRO_MODE: "4A宏模式: 原始录制/方案一/光速4a(方案四)",
                 self.CONF_TRIGGER_MODE: "长按循环(松手停) 或 按一下开/关循环",
-                self.CONF_INPUT_MODE: "仅方案一/二/三: 前台(硬件) 或 后台(发消息)",
+                self.CONF_INPUT_MODE: "仅方案一/四: 前台(硬件) 或 后台(发消息)",
                 self.CONF_DODGE_COUNTER: "闪避反击强制平A秒数(0.1间隔), 保证反击打出; 0=关",
                 self.CONF_DODGE_COMBO_WAIT: "combo前若紧接闪避反击, 额外等这么久走完后摇; 0=不等",
                 self.CONF_DODGE_COUNT: "方案一反击后主动闪避几次: 2=重置连段让combo从a1对齐",
@@ -326,7 +287,7 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_ENGAGE_ATTACK: "放真技能前先平A进交战这么久, 防打空; 0=不补",
                 self.CONF_DODGE_TEST: "开=每次声音闪避走一整轮(关自动战斗后调时间用)",
                 self.CONF_DISABLE_SKILLS: "开=安魂曲只站场打combo、不放技能/大招(测手感/闪避用); 刷本记得关",
-                self.CONF_DODGE_STYLE: "闪避反击方式: 方案一 / 闪双4a / 光速4a(方案四)",
+                self.CONF_DODGE_STYLE: "闪避反击方式: 方案一 / 闪双4a",
                 self.CONF_D4_FRONT: "双4a 前段平A毫秒(打第一个4a); 太短会接不出第二个4a",
                 self.CONF_D4_JUMP_HOLD: "双4a 跳A空格+左键同按毫秒(代替闪避)",
                 self.CONF_D4_BACK: "双4a 后段平A毫秒(接第二个4a)",
@@ -336,15 +297,6 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_D4_TAIL_FILL: "双4a 闪避后补平A毫秒(替换延迟; 平A节拍复用光速4a连点按住/抬起)",
                 self.CONF_FIRST_ATTACK_TEST_KEY: "按此键→闪避→等后摇→打一个平A(调后摇用); 留空=关",
                 self.CONF_DODGE_TEST_KEY: "按此键=模拟一次声音闪避走整轮; 留空=关",
-                self.CONF_C_EXPAND: "开=展开方案三8个时序配置(默认收起)",
-                self.CONF_C_ATTACK_HOLD: "方案三 前3下普攻左键按住毫秒",
-                self.CONF_C_ATTACK_GAP: "方案三 前3下普攻间隔毫秒(太小被吞, 太大变慢)",
-                self.CONF_C_A4_HOLD: "方案三 第4下普攻左键按住毫秒",
-                self.CONF_C_A4_WAIT: "方案三 第4下长动画等待毫秒(决定空格落点)",
-                self.CONF_C_JUMP_HOLD: "方案三 空格(跳)按住毫秒",
-                self.CONF_C_JUMP_GAP: "方案三 空格到跳A左键的间隔毫秒",
-                self.CONF_C_JUMPA_HOLD: "方案三 跳A那下左键按住毫秒",
-                self.CONF_C_RECOVERY: "方案三 末尾后摇毫秒",
                 self.CONF_LS_EXPAND: "开=展开方案四(光速4a)5个时序配置(默认收起)",
                 self.CONF_LS_JUMP_AT: "方案四 跳A时机毫秒(核心); 大世界约1390其他约1470; 跳早出1a",
                 self.CONF_LS_JUMP_HOLD: "方案四 跳A左键+空格同按毫秒(参考18)",
@@ -414,10 +366,10 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
             return True
         self._last_seen_dodge = None  # 非测试模式复位, 下次开启重新同步基线
 
-        # 后台发消息模式(方案一/二/三)允许游戏不在前台时执行; 其余(硬件/原始录制)仍要求前台。
+        # 后台发消息模式(方案一/四)允许游戏不在前台时执行; 其余(硬件/原始录制)仍要求前台。
         bg_mode = (
             self.config.get(self.CONF_MACRO_MODE) in (
-                self.MODE_SCHEME_A, self.MODE_SCHEME_B, self.MODE_SCHEME_C, self.MODE_SCHEME_LS)
+                self.MODE_SCHEME_A, self.MODE_SCHEME_LS)
             and self.config.get(self.CONF_INPUT_MODE) == self.INPUT_BG
         )
         if not bg_mode and not self.is_foreground():
@@ -548,19 +500,6 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
         except Exception as e:
             self.log_error(f"导入失败: {e}")
 
-    def _scheme_c_params(self):
-        """方案三全部时序从配置读(可实时调): 前3下普攻共用按住/间隔, 第4下/空格/跳A/后摇各自。"""
-        hold = self._conf_num(self.CONF_C_ATTACK_HOLD, 80)
-        gap = self._conf_num(self.CONF_C_ATTACK_GAP, 220)
-        return dict(
-            ground=[(hold, gap), (hold, gap), (hold, gap),
-                    (self._conf_num(self.CONF_C_A4_HOLD, 80), self._conf_num(self.CONF_C_A4_WAIT, 781))],
-            jump_hold_ms=self._conf_num(self.CONF_C_JUMP_HOLD, 100),
-            jump_gap_ms=self._conf_num(self.CONF_C_JUMP_GAP, 2),
-            jumpa_click=(self._conf_num(self.CONF_C_JUMPA_HOLD, 74),
-                         self._conf_num(self.CONF_C_RECOVERY, 275)),
-        )
-
     def _scheme_d4_params(self):
         """双4a(声音闪避版)时序从配置读: 前段平A/跳A按住/后段平A + 前后共用的连点按下/抬起。"""
         return dict(
@@ -582,14 +521,9 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
         )
 
     def _scheme_runner(self, mode, io):
-        """mode → (跑一轮的可调用, 显示名)。方案三/四的时序由配置实时决定。"""
+        """mode → (跑一轮的可调用, 显示名)。方案四的时序由配置实时决定。"""
         if mode == self.MODE_SCHEME_A:
             return (lambda: requiem_combo.run_scheme_a(io)), "安魂曲(方案一)"
-        if mode == self.MODE_SCHEME_B:
-            return (lambda: requiem_combo.run_scheme_b(io)), "闪双4a(方案二)"
-        if mode == self.MODE_SCHEME_C:
-            params = self._scheme_c_params()
-            return (lambda: requiem_combo.run_scheme_c(io, **params)), "精简4A跳A(方案三)"
         if mode == self.MODE_SCHEME_LS:
             params = self._scheme_ls_params()
             return (lambda: requiem_combo.run_scheme_lightspeed(io, **params)), "光速4a(方案四)"
@@ -626,7 +560,7 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
         # 提高系统定时器精度到1ms, 否则 time.sleep 的几十ms被Windows默认~15ms粒度取整, 打乱连招节奏。
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
-            if mode in (self.MODE_SCHEME_A, self.MODE_SCHEME_B, self.MODE_SCHEME_C, self.MODE_SCHEME_LS):
+            if mode in (self.MODE_SCHEME_A, self.MODE_SCHEME_LS):
                 self._prepare_input()
                 io = _MacroIO(self)
                 run_once, name = self._scheme_runner(mode, io)
@@ -716,14 +650,6 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.log_info(
                     f"闪避反击测试(双4a): 前段{p['front_ms']}→跳A{p['jump_hold_ms']}→后段{p['back_ms']}ms "
                     f"→ {dodge_name} → 补平A{fill:.0f}ms → {name}×{rounds}")
-            elif style == self.STYLE_SCHEME_LS:
-                # 光速4a(方案四): 闪避后直接接光速4a(时间驱动连点→到跳A时机跳→接第二个4a),
-                # 不用强制平A/主动闪避。调"方案四-跳A时机"让第二个4a接出来(跳早了只出1a)。
-                params = self._scheme_ls_params()
-                self.log_info(f"闪避反击测试(光速4a方案四): 闪避后接光速4a × {rounds}, "
-                              f"跳A时机={params['jump_at_ms']}ms 按住={params['jump_hold_ms']}ms")
-                for _ in range(rounds):
-                    requiem_combo.run_scheme_lightspeed(io, **params)
             else:
                 # 当前(方案一): [强制平A(反击, 打出一个高伤4a) → 主动闪避] 重复 N 次(N=主动闪避次数),
                 # 每次白嫖一个4a; 最后一次闪避把连段重置 → 后摇等待 → rounds轮方案一combo(从a1起手对齐)。

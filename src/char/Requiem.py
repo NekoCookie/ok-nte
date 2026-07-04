@@ -337,16 +337,12 @@ class Requiem(MainDps):
         """触发闪避后按"安魂曲配置"的闪避反击方式走对应流程(与测试同一份配置):
         - 闪双4a: 前段平A的前~1秒在此打(填满声音窗口、立即反击), 剩余交 do_perform 无缝续打
           (见 _dodge_double_4a_inside / _run_double_4a_outside, 后段像普通combo可被新声音打断);
-        - 光速4a: 反应交给随后一轮 combo(mode=光速4a), 这里不额外强制平A、不加后摇等待;
         - 方案一(默认): 强制平A打反击(0.1间隔) → 主动闪避取消后摇 → 记时刻, combo起手前等后摇。
         由 task.after_dodge_executed 在闪避键按下后(主线程内)同步调用。"""
         task = self._jump_task()
         style = task.config.get(task.CONF_DODGE_STYLE, task.STYLE_CURRENT) if task is not None else None
         if task is not None and style == task.STYLE_SCHEME_B:
             self._dodge_double_4a_inside(task)
-            return
-        if task is not None and style == task.STYLE_SCHEME_LS:
-            self._dodge_counter_at = 0.0  # 光速4a的反应=随后一轮combo, 不额外强制平A/后摇等待
             return
         duration = self._dodge_counter_duration()
         if duration <= 0:
