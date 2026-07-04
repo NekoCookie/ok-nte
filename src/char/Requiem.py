@@ -59,6 +59,7 @@ class Requiem(MainDps):
     # 实际秒数在 4A 测试任务(RequiemJumpAttackTestTask)里可配, 便于实时调。
     DODGE_COUNTER_ATTACK = 0.3
     DODGE_COUNTER_INTERVAL = 0.1
+    DODGE_KEY = "lshift"  # 游戏闪避键
     # combo 起手前, 若紧接在闪避反击之后, 额外等这么久让反击后摇走完再落第一下(否则 combo 顺序乱)。
     # 只加在 combo 路径; 切人/技能/大招不等→立即执行取消后摇。默认值, 4A 任务里可配。
     DODGE_COUNTER_COMBO_WAIT = 0.3
@@ -157,11 +158,8 @@ class Requiem(MainDps):
         return self.classify_skill_visual() != "free"
 
     def engage_attack_duration(self):
-        """真技能前的起手平A时长,优先读自动战斗任务的配置,便于实时调。"""
-        try:
-            return max(0.0, float(self.task.config.get(self.CONF_ENGAGE_ATTACK, self.SKILL_ENGAGE_ATTACK)))
-        except (AttributeError, TypeError, ValueError):
-            return self.SKILL_ENGAGE_ATTACK
+        """真技能前的起手平A时长, 读"安魂曲配置"任务(RequiemJumpAttackTestTask)的配置, 便于实时调。"""
+        return self._read_jump_task_conf(self.CONF_ENGAGE_ATTACK, self.SKILL_ENGAGE_ATTACK)
 
     def engage_before_skill(self, duration):
         """真技能前的起手平A:用无守卫的 normal_attack 直接出手进入交战。
@@ -215,22 +213,30 @@ class Requiem(MainDps):
         return self._read_jump_task_conf(
             RequiemJumpAttackTestTask.CONF_DODGE_COMBO_WAIT, self.DODGE_COUNTER_COMBO_WAIT)
 
+    def _active_dodge(self):
+        """主动按一下游戏闪避键(lshift): 取消上一段(反击)后摇, 干净衔接后续 combo
+        (否则反击后接平A会变5a、不接又原地发呆)。就是按一下键盘 shift, 不涉及声音。"""
+        try:
+            self.task.send_key(self.DODGE_KEY, down_time=0.02)
+        except Exception as e:
+            self.logger.debug(f"active dodge failed: {e}")
+
     def on_dodge_counter(self):
-        """触发闪避后强制平A一小段(0.1间隔), 保证安魂曲高伤闪避反击一定打出。
+        """触发闪避后: 强制平A打出反击(0.1间隔, 不可打断) → 主动补一个闪避取消反击后摇 → 记时刻。
         由 task.after_dodge_executed 在闪避键按下后(主线程内)同步调用。**刻意用 raw time.sleep +
-        直接点击、不走 self.sleep/sleep_check**: 这段期间不可被技能/大招/切人/新的sleep_check打断,
-        这正是"保证反击"的目的。时长可在 4A 测试任务里配, 0=关闭。
-        记下反击出手时刻: 若紧接着起 combo, combo 会先等这一下的后摇(见 _wait_dodge_counter_recovery);
-        接切人/技能/大招则不等(它们能取消后摇)。"""
+        直接点击、不走 self.sleep/sleep_check**: 反击段不可被技能/大招/切人/新sleep_check打断。
+        主动闪避后记 _dodge_counter_at: 之后 combo 起手前等"combo前后摇等待"(=闪避后到首平A的时间)
+        再落第一下(见 _wait_dodge_counter_recovery)。强制平A时长可在"安魂曲配置"里配, 0=关闭。"""
         duration = self._dodge_counter_duration()
         if duration <= 0:
             return
-        self.logger.info(f"安魂曲闪避反击: 强制平A {duration:.2f}s(不可打断)")
+        self.logger.info(f"安魂曲闪避反击: 强制平A {duration:.2f}s → 主动闪避 → combo")
         start = time.time()
         while time.time() - start < duration:
             self.click()
             time.sleep(self.DODGE_COUNTER_INTERVAL)
-        self._dodge_counter_at = time.time()
+        self._active_dodge()               # 主动闪避, 取消反击后摇
+        self._dodge_counter_at = time.time()  # combo 起手前从这里算"闪避后到首平A"的等待
 
     def _wait_dodge_counter_recovery(self):
         """combo 起手前: 若紧接在闪避反击之后(在后摇窗口内), 等后摇走完再落第一下, 否则 combo 顺序乱。

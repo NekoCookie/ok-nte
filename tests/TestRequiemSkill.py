@@ -38,7 +38,9 @@ def make_requiem(clock, skill_kind="real", skill_available=True,
     r.skill_off_field_until = 0.0
     r.index = 0
     r.task = mock.MagicMock()
-    r.task.config = {}  # 空配置: engage_attack_duration 走默认 SKILL_ENGAGE_ATTACK(否则 MagicMock.__float__=1.0)
+    r.task.config = {}
+    # engage/闪避反击等时长现从"安魂曲配置"任务(get_task_by_class)读; 默认None→走各自默认值。
+    r.task.get_task_by_class = mock.MagicMock(return_value=None)
     r.logger = mock.MagicMock()
     r.wait_intro = mock.MagicMock()
     r.click_ultimate = mock.MagicMock(return_value=click_ultimate)
@@ -186,16 +188,19 @@ class TestRequiemSkillClassification(unittest.TestCase):
     # ---- 起手平A时长可被自动战斗任务配置覆盖 ----
     def test_engage_attack_reads_task_config(self):
         r = make_requiem(self.clock)
+        # get_task_by_class 默认 None → 走默认 SKILL_ENGAGE_ATTACK
         self.assertEqual(r.engage_attack_duration(), r.SKILL_ENGAGE_ATTACK)
-        r.task = mock.MagicMock()
-        r.task.config = {r.CONF_ENGAGE_ATTACK: 0.45}
+        # 从"安魂曲配置"任务读: 配置该任务的 config
+        jump_task = mock.MagicMock()
+        jump_task.config = {r.CONF_ENGAGE_ATTACK: 0.45}
+        r.task.get_task_by_class = mock.MagicMock(return_value=jump_task)
         self.assertEqual(r.engage_attack_duration(), 0.45)
         # 配置为 0 → 不起手平A,但真技能仍正常放出+切人
-        r.task.config = {r.CONF_ENGAGE_ATTACK: 0}
+        jump_task.config = {r.CONF_ENGAGE_ATTACK: 0}
         r.do_perform()
         r.engage_before_skill.assert_not_called()
         self.assertTrue(r.should_force_off_field(), "真技能仍应切下场")
-        r.task.config = {r.CONF_ENGAGE_ATTACK: "abc"}
+        jump_task.config = {r.CONF_ENGAGE_ATTACK: "abc"}
         self.assertEqual(r.engage_attack_duration(), r.SKILL_ENGAGE_ATTACK)
 
     # ---- 视觉模板:真/免费图标能分开(用提交进 assets 的模板自校验)----

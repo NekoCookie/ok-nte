@@ -43,12 +43,10 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         self.default_config.update(
             {
                 "自动目标": True,
-                "安魂曲技能前平A(s)": 0.1,
             }
         )
         self.config_description = {
             "自动目标": "关闭时仅在中键选中敌人且画面识别到 'Lv' 文字时开启战斗",
-            "安魂曲技能前平A(s)": "安魂曲放真技能前先平A出手进入交战这么久,防止开战瞬间直接放技能打空;设为0表示不补",
         }
         self.op_index = 0
         self.origin_func = {}
