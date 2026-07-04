@@ -178,8 +178,35 @@ class Requiem(MainDps):
             self.sleep(self.FREE_SKILL_ATTACK_INTERVAL)
         self.logger.info(f"requiem pre-skill engage: {n} normal attack(s) over {duration:.2f}s")
 
+    def _jump_task(self):
+        """取"安魂曲配置"任务(RequiemJumpAttackTestTask)实例, 拿不到返回 None。
+        实战直接复用该任务的方案选择/参数构建方法, 保证与测试同一套逻辑同一份配置。"""
+        try:
+            from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
+            return self.task.get_task_by_class(RequiemJumpAttackTestTask)
+        except Exception as e:
+            self.logger.debug(f"get jump task failed: {e}")
+            return None
+
+    def _run_configured_combo(self, io):
+        """按"安魂曲配置"的「4A宏模式」跑一轮 combo(方案一/二/三/四共用同一处选择, 复用 jump 任务的
+        _scheme_runner, 时序/参数与测试一致)。拿不到配置或原始录制等无对应方案时回退方案一。
+        不管哪套方案, should_continue 都是每下点击前查(光速4a≈40ms/次, 让路比方案一还快),
+        执行仍由 combo_attack 尾部的 sleep_check 统一兜底。"""
+        task = self._jump_task()
+        if task is not None:
+            try:
+                mode = task.config.get(task.CONF_MACRO_MODE, task.MODE_SCHEME_A)
+                runner = task._scheme_runner(mode, io)
+                if runner is not None:
+                    runner[0]()
+                    return
+            except Exception as e:
+                self.logger.debug(f"configured combo failed, fallback scheme_a: {e}")
+        requiem_combo.run_scheme_a(io)
+
     def combo_attack(self):
-        """主C的普通攻击 = 跑一轮 4A跳A combo(时序见 requiem_combo, 与跳A宏方案一同源)。
+        """主C的普通攻击 = 跑一轮 combo, 走哪套复用"安魂曲配置"的「4A宏模式」(方案一/二/三/四)。
         走后台 PostMessage; 提 1ms 定时精度 + raw sleep 保节奏(self.sleep 会插帧截图, 打乱 combo);
         每一下之前查 should_continue, 闪避待执行/已切走即中止, 交回战斗循环让闪避随后落地。"""
         self.check_combat()  # 战斗已结束/切队则抛出, 不空打一轮
@@ -187,7 +214,7 @@ class Requiem(MainDps):
         io = _RequiemCombatIO(self)
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
-            requiem_combo.run_scheme_a(io)
+            self._run_configured_combo(io)
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
         # combo 一轮内用 raw sleep(不插帧保节奏), 全程不走 sleep_check; 而排队的声音闪避只在
