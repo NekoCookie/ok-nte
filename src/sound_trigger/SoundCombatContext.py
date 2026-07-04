@@ -90,6 +90,13 @@ class SoundCombatContext:
     def should_interrupt_combat(cls):
         return cls._combat_interrupt.is_set()
 
+    def has_pending_action(self):
+        """是否有"新的声音闪避在排队待执行"。用于闪避反击(双4a)期间: 反击本身在处理"当前这次"
+        闪避、combat_interrupt 尚为当前闪避而 set(不能拿它判断中止), 但一旦来了**新的**敌人攻击
+        会入队 _pending_action —— 反击应立刻中止让位, 把主线程交回去执行那次救命闪避。"""
+        with self._context_lock:
+            return self._pending_action is not None
+
     @classmethod
     def wait_for_resume(cls):
         if not cls._combat_interrupt.is_set():

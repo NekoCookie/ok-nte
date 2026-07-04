@@ -16,8 +16,11 @@ class _RequiemCombatIO:
     should_continue 用廉价标志位判断"闪避待执行/已不是当前角色", 命中即中止本轮 combo, 把控制权
     交回战斗循环——待执行的闪避会在随后的 sleep_check 落地。intra-combo 用 raw sleep 保节奏。"""
 
-    def __init__(self, char):
+    def __init__(self, char, dodge_react=False):
         self._char = char
+        # dodge_react=True(闪避反击/双4a专用): 反击在处理"当前这次"闪避, combat_interrupt 仍为它
+        # 而 set, 不能拿它判断; 只在"来了新的闪避在排队"(has_pending_action)时中止, 让位保命。
+        self._dodge_react = dodge_react
         self._itx = char.task.executor.interaction
         try:
             cx = round(self._itx.capture.width * 0.5)
@@ -27,7 +30,11 @@ class _RequiemCombatIO:
             self._pos = self._itx.update_mouse_pos(-1, -1)
 
     def should_continue(self):
-        return self._char.is_current_char and not SoundCombatContext.should_interrupt_combat()
+        if not self._char.is_current_char:
+            return False
+        if self._dodge_react:
+            return not SoundCombatContext().has_pending_action()
+        return not SoundCombatContext.should_interrupt_combat()
 
     def mouse_down(self):
         self._itx.post(win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, self._pos)
@@ -60,6 +67,7 @@ class Requiem(MainDps):
     DODGE_COUNTER_ATTACK = 0.3
     DODGE_COUNTER_INTERVAL = 0.1
     DODGE_KEY = "lshift"  # 游戏闪避键
+    DODGE_DIR_KEY = "w"   # 双4a尾段"带方向闪避"的方向键: 按住W再按闪避
     # combo 起手前, 若紧接在闪避反击之后, 额外等这么久让反击后摇走完再落第一下(否则 combo 顺序乱)。
     # 只加在 combo 路径; 切人/技能/大招不等→立即执行取消后摇。默认值, 4A 任务里可配。
     DODGE_COUNTER_COMBO_WAIT = 0.3
@@ -254,12 +262,58 @@ class Requiem(MainDps):
         except Exception as e:
             self.logger.debug(f"active dodge failed: {e}")
 
+    def _directional_dodge(self):
+        """带方向的闪避: 按住W再按闪避, 稍顿再一起松(和"安魂曲配置"双4a尾段一致)。"""
+        try:
+            self.task.send_key_down(self.DODGE_DIR_KEY)
+            self.task.send_key_down(self.DODGE_KEY)
+            time.sleep(0.05)
+            self.task.send_key_up(self.DODGE_KEY)
+            self.task.send_key_up(self.DODGE_DIR_KEY)
+        except Exception as e:
+            self.logger.debug(f"directional dodge failed: {e}")
+
+    def _dodge_counter_double_4a(self, task):
+        """实战双4a闪避反击(与"安魂曲配置"测试同流程同参数, 但**一检测到新的声音闪避就立刻中止让位**保命):
+        前段平A(第一个4a) → 跳A(续段, 第二个4a) → 后段平A → 尾段闪避(W+闪避 或 跳+左键) → 补平A。
+        io 用 dodge_react: 每下点击前查 has_pending_action, 有新闪避排队即中止返回, 让主线程回去执行那次
+        救命闪避; 技能/大招/切人不打断。补平A已代替后摇等待, 故清 _dodge_counter_at。"""
+        io = _RequiemCombatIO(self, dodge_react=True)
+        ctypes.windll.winmm.timeBeginPeriod(1)
+        try:
+            requiem_combo.run_scheme_double_4a(io, **task._scheme_d4_params())
+            if io.should_continue():  # 没被新闪避中止才接尾段
+                if task.config.get(task.CONF_D4_TAIL_DODGE, task.D4_DODGE_W) == task.D4_DODGE_JUMP:
+                    io.space_down()
+                    io.mouse_down()
+                    io.sleep_ms(task._conf_num(task.CONF_LS_JUMP_HOLD, 18))
+                    io.mouse_up()
+                    io.space_up()
+                else:
+                    self._directional_dodge()
+                requiem_combo._fill_attacks(
+                    io, task._conf_num(task.CONF_D4_TAIL_FILL, 350),
+                    task._conf_num(task.CONF_LS_CLICK_HOLD, 40),
+                    task._conf_num(task.CONF_LS_CLICK_GAP, 8))
+        finally:
+            ctypes.windll.winmm.timeEndPeriod(1)
+        self._dodge_counter_at = 0.0
+        self.logger.info("安魂曲闪避反击(双4a): 前段→跳A→后段→尾段闪避→补平A")
+
     def on_dodge_counter(self):
-        """触发闪避后: 强制平A打出反击(0.1间隔, 不可打断) → 主动补一个闪避取消反击后摇 → 记时刻。
-        由 task.after_dodge_executed 在闪避键按下后(主线程内)同步调用。**刻意用 raw time.sleep +
-        直接点击、不走 self.sleep/sleep_check**: 反击段不可被技能/大招/切人/新sleep_check打断。
-        主动闪避后记 _dodge_counter_at: 之后 combo 起手前等"combo前后摇等待"(=闪避后到首平A的时间)
-        再落第一下(见 _wait_dodge_counter_recovery)。强制平A时长可在"安魂曲配置"里配, 0=关闭。"""
+        """触发闪避后按"安魂曲配置"的闪避反击方式走对应流程(与测试同一份配置):
+        - 闪双4a: 双4a整套(一有新声音闪避就中止让位保命; 技能/大招/切人不打断, 见 _dodge_counter_double_4a);
+        - 光速4a: 反应交给随后一轮 combo(mode=光速4a), 这里不额外强制平A、不加后摇等待;
+        - 方案一(默认): 强制平A打反击(0.1间隔) → 主动闪避取消后摇 → 记时刻, combo起手前等后摇。
+        由 task.after_dodge_executed 在闪避键按下后(主线程内)同步调用。"""
+        task = self._jump_task()
+        style = task.config.get(task.CONF_DODGE_STYLE, task.STYLE_CURRENT) if task is not None else None
+        if task is not None and style == task.STYLE_SCHEME_B:
+            self._dodge_counter_double_4a(task)
+            return
+        if task is not None and style == task.STYLE_SCHEME_LS:
+            self._dodge_counter_at = 0.0  # 光速4a的反应=随后一轮combo, 不额外强制平A/后摇等待
+            return
         duration = self._dodge_counter_duration()
         if duration <= 0:
             return
