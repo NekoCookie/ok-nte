@@ -367,8 +367,26 @@ class Requiem(MainDps):
         else:
             self.logger.info("requiem REAL skill 未放进长CD(被打断/没放出), 不切, 下轮重试")
 
+    def _skills_disabled_for_test(self):
+        """读"安魂曲配置"的"禁用技能大招(测试)"开关: 开=只站场打 combo, 方便单独测手感/闪避。"""
+        task = self._jump_task()
+        if task is None:
+            return False
+        try:
+            return bool(task.config.get(task.CONF_DISABLE_SKILLS, False))
+        except Exception:
+            return False
+
     def do_perform(self):
         self.wait_intro()
+
+        if self._skills_disabled_for_test():
+            # 测试开关: 跳过技能/大招, 直接站场 combo(仍保留让位辅助的正常逻辑)。
+            if self.should_yield_to_support():
+                self.continues_normal_attack(0.2)
+                return
+            self.idle_normal_attack()
+            return
 
         used_ultimate = self.click_ultimate(wait_if_cd_ready=self.PRE_SKILL_ULTIMATE_WAIT)
 
