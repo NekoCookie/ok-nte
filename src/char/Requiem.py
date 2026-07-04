@@ -190,6 +190,12 @@ class Requiem(MainDps):
             requiem_combo.run_scheme_a(io)
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
+        # combo 一轮内用 raw sleep(不插帧保节奏), 全程不走 sleep_check; 而排队的声音闪避只在
+        # sleep_check 里落地。若不补这一下, 闪避被 should_continue 中止 combo 后, 主循环在
+        # "读CD→combo(立即返回)"间空转、始终不执行那次闪避 → 排队1s超时被丢(实测爆发期不闪避)。
+        # 故每轮结束(或被闪避中止返回)后补一次 sleep_check: 有待执行的救命闪避立即落地(与老版
+        # 连点每0.1s一次sleep_check同效), 只加在轮与轮之间, 不打乱单轮 combo 节奏。
+        self.task.sleep_check()
 
     def _read_jump_task_conf(self, key, default):
         """读 4A 测试任务(RequiemJumpAttackTestTask)的某个数值配置(可实时调), 读不到用默认。"""
