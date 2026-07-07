@@ -16,15 +16,20 @@ class _RequiemCombatIO:
     should_continue 用廉价标志位判断"闪避待执行/已不是当前角色", 命中即中止本轮 combo, 把控制权
     交回战斗循环——待执行的闪避会在随后的 sleep_check 落地。intra-combo 用 raw sleep 保节奏。"""
 
-    def __init__(self, char, dodge_react=False, watch_combat=False):
+    def __init__(self, char, dodge_react=False, watch_combat=False, task=None, round_seconds=0.0):
         self._char = char
         # dodge_react=True(闪避反击/双4a专用): 反击在处理"当前这次"闪避, combat_interrupt 仍为它
         # 而 set, 不能拿它判断; 只在"来了新的闪避在排队"(has_pending_action)时中止, 让位保命。
         self._dodge_react = dodge_react
         # watch_combat=True(仅主站场 combo): combo 中途每隔一段复查脱战, 目标死/打空立即收手,
         # 不再对着尸体空打完整轮。双4a 等精调时序段不开, 免插帧扰乱跳A时机。0=关(配置读不到默认)。
-        self._combat_check_interval = char._combo_combat_check_interval() if watch_combat else 0.0
-        self._last_combat_check = time.time()
+        # task: 本轮已抓好的"安魂曲配置"任务引用, 复查间隔/让路阈值都复用它, 不再各自 get_task_by_class。
+        self._combat_check_interval = char._combo_combat_check_interval(task) if watch_combat else 0.0
+        # combo 进度 < 此比例且技能/大招就绪就中断(让路去开)。0=关。round_seconds=这一轮预计总时长。
+        self._break_for_skill_ratio = char._combo_break_for_skill_ratio(task) if watch_combat else 0.0
+        self._round_seconds = round_seconds
+        self._round_start = time.time()
+        self._last_combat_check = self._round_start
         self._itx = char.task.executor.interaction
         try:
             cx = round(self._itx.capture.width * 0.5)
@@ -48,6 +53,16 @@ class _RequiemCombatIO:
             if now - self._last_combat_check >= self._combat_check_interval:
                 self._last_combat_check = now
                 self._char._check_combat_alive()
+                # 为技能/大招让路: combo 进度还没过阈值(伤害大头在结尾, 过半就打完不打断),
+                # 且此刻技能/大招已就绪 → 中断本轮, 交回 do_perform 顶部去开(下一次 do_perform
+                # 重新决策会 click_ultimate / cast skill)。恒在"鼠标已抬起"时判断, 中止安全。
+                if self._break_for_skill_ratio > 0 and self._round_seconds > 0:
+                    progress = (now - self._round_start) / self._round_seconds
+                    if progress < self._break_for_skill_ratio and self._char._skill_or_ult_ready():
+                        self._char.logger.info(
+                            f"combo 进度 {progress:.0%}<{self._break_for_skill_ratio:.0%} 且技能/大招就绪, "
+                            f"中断本轮 combo 去开")
+                        return False
         return True
 
     def mouse_down(self):
@@ -78,6 +93,9 @@ class Requiem(MainDps):
     IDLE_NEAR_SKILL_INTERVAL = 0.1
     # combo 中途每隔这么久复查一次脱战(目标死/打空即收手, 不空打整轮)。配置读不到时用; 0=关。
     COMBO_COMBAT_CHECK_INTERVAL = 0.5
+    # combo 进度 < 此比例且技能/大招就绪 → 中断本轮 combo 交回主循环去开(伤害大头在结尾, 过半就打完)。
+    # 配置读不到时用; 0=关(永不为技能中断)。
+    COMBO_BREAK_FOR_SKILL_RATIO = 0.5
     # 闪避反击: 触发闪避后强制平A的默认秒数(配置读不到时用)与点击间隔。
     # 实际秒数在 4A 测试任务(RequiemJumpAttackTestTask)里可配, 便于实时调。
     DODGE_COUNTER_ATTACK = 0.3
@@ -217,13 +235,14 @@ class Requiem(MainDps):
             self.logger.debug(f"get jump task failed: {e}")
             return None
 
-    def _run_configured_combo(self, io):
+    def _run_configured_combo(self, io, task=None):
         """按"安魂曲配置"的「4A宏模式」跑一轮 combo(方案一/二/三/四共用同一处选择, 复用 jump 任务的
         _scheme_runner, 时序/参数与测试一致)。拿不到配置或原始录制等无对应方案时回退方案一。
         不管哪套方案, should_continue 都是每下点击前查(光速4a≈40ms/次, 让路比方案一还快),
         执行仍由 combo_attack 尾部的 sleep_check 统一兜底。"""
         from src.combat.BaseCombatTask import NotInCombatException
-        task = self._jump_task()
+        if task is None:
+            task = self._jump_task()
         if task is not None:
             try:
                 mode = task.config.get(task.CONF_MACRO_MODE, task.MODE_SCHEME_A)
@@ -243,10 +262,15 @@ class Requiem(MainDps):
         每一下之前查 should_continue, 闪避待执行/已切走即中止, 交回战斗循环让闪避随后落地。"""
         self.check_combat()  # 战斗已结束/切队则抛出, 不空打一轮
         self._wait_dodge_counter_recovery()  # 若紧接闪避反击, 先等其后摇再起 combo(顺序不乱)
-        io = _RequiemCombatIO(self, watch_combat=True)  # 主站场 combo: 中途复查脱战, 目标死即收手
+        # 本轮抓一次"安魂曲配置"任务引用: 脱战复查间隔 / 让路阈值 / 一轮预计时长都复用它,
+        # 不再各自 get_task_by_class(线性扫任务表)。拿不到就用方案一固定时长兜底。
+        task = self._jump_task()
+        round_seconds = (task.scheme_round_seconds() if task is not None
+                         else requiem_combo.scheme_a_round_seconds())
+        io = _RequiemCombatIO(self, watch_combat=True, task=task, round_seconds=round_seconds)
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
-            self._run_configured_combo(io)
+            self._run_configured_combo(io, task)
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
         # combo 一轮内用 raw sleep(不插帧保节奏), 全程不走 sleep_check; 而排队的声音闪避只在
@@ -256,23 +280,43 @@ class Requiem(MainDps):
         # 连点每0.1s一次sleep_check同效), 只加在轮与轮之间, 不打乱单轮 combo 节奏。
         self.task.sleep_check()
 
-    def _read_jump_task_conf(self, key, default):
-        """读 4A 测试任务(RequiemJumpAttackTestTask)的某个数值配置(可实时调), 读不到用默认。"""
+    def _read_jump_task_conf(self, key, default, task=None):
+        """读 4A 测试任务(RequiemJumpAttackTestTask)的某个数值配置(可实时调), 读不到用默认。
+        传入 task 则复用它(本轮已抓好), 不再 get_task_by_class 重复扫任务表。"""
         try:
-            from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
-
-            task = self.task.get_task_by_class(RequiemJumpAttackTestTask)
+            if task is None:
+                from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
+                task = self.task.get_task_by_class(RequiemJumpAttackTestTask)
             if task is not None:
                 return max(0.0, float(task.config.get(key, default)))
         except Exception as e:
             self.logger.debug(f"read jump task config {key} failed: {e}")
         return default
 
-    def _combo_combat_check_interval(self):
+    def _combo_combat_check_interval(self, task=None):
         """combo 中途脱战复查间隔(秒), 从"安魂曲配置"读, 可实时调; 0=关。默认 COMBO_COMBAT_CHECK_INTERVAL。"""
         from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
         return self._read_jump_task_conf(
-            RequiemJumpAttackTestTask.CONF_COMBO_COMBAT_CHECK, self.COMBO_COMBAT_CHECK_INTERVAL)
+            RequiemJumpAttackTestTask.CONF_COMBO_COMBAT_CHECK, self.COMBO_COMBAT_CHECK_INTERVAL, task=task)
+
+    def _combo_break_for_skill_ratio(self, task=None):
+        """combo 为技能/大招让路的进度阈值(0~1): 进度<此值且技能/大招就绪就中断本轮 combo 去开。
+        "禁用技能大招(测试)"开着时只站场, 直接返回 0 不让路。0=关(永不为技能中断)。"""
+        if self._skills_disabled_for_test(task):
+            return 0.0
+        from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
+        return self._read_jump_task_conf(
+            RequiemJumpAttackTestTask.CONF_COMBO_BREAK_FOR_SKILL,
+            self.COMBO_BREAK_FOR_SKILL_RATIO, task=task)
+
+    def _skill_or_ult_ready(self):
+        """combo 中途: 大招或技能是否已就绪(值得中断 combo 让路去开)。读缓存CD/就绪判定, 不贵。"""
+        try:
+            if self.ultimate_available():
+                return True
+            return self.skill_available()
+        except Exception:
+            return False
 
     def _check_combat_alive(self):
         """刷新一帧并复查是否仍在战斗; 已脱战(打空/目标死)则抛 NotInCombatException 收手。
@@ -483,9 +527,10 @@ class Requiem(MainDps):
         else:
             self.logger.info("requiem REAL skill 未放进长CD(被打断/没放出), 不切, 下轮重试")
 
-    def _skills_disabled_for_test(self):
+    def _skills_disabled_for_test(self, task=None):
         """读"安魂曲配置"的"禁用技能大招(测试)"开关: 开=只站场打 combo, 方便单独测手感/闪避。"""
-        task = self._jump_task()
+        if task is None:
+            task = self._jump_task()
         if task is None:
             return False
         try:

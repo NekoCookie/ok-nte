@@ -83,6 +83,10 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
     # (早雾那种"死了秒停手"的体感)。只影响主站场 combo; 双4a 等精调时序段不查, 免插帧扰乱跳A时机。
     # 用框架带去抖(2帧miss+0.4s)的 in_combat 判定, 不会因血条闪一下误停。实战侧(Requiem)读它; 0=关。
     CONF_COMBO_COMBAT_CHECK = "combo中途脱战复查(s)"
+    # 实战 combo 跑到"进度 < 此比例(0~1)"时, 若技能/大招已就绪就中断本轮 combo、交回主循环去开。
+    # 伤害大头在 combo 尾(跳A), 故只在前半让路; 进度过半(>=此值)一律打完不打断(不丢尾伤)。
+    # 复用脱战复查那一下(每约0.5s)顺带查一次, 不额外插帧。实战侧(Requiem)读它; 0=关(永不为技能中断)。
+    CONF_COMBO_BREAK_FOR_SKILL = "combo为技能大招让路(进度<)"
     DODGE_TEST_COMBO_ROUNDS = 2  # 测试里反击后接几轮 combo 的默认值(配置读不到时用)
     CONF_COMBO_ROUNDS = "combo轮数"  # 测试里反击+闪避之后接几轮 combo, 可配
     # 闪避反击测试用哪套流程(供对比):
@@ -201,6 +205,7 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_COMBO_ROUNDS: 2,
                 self.CONF_ENGAGE_ATTACK: 0.15,
                 self.CONF_COMBO_COMBAT_CHECK: 0.5,
+                self.CONF_COMBO_BREAK_FOR_SKILL: 0.5,
                 self.CONF_DODGE_TEST: False,
                 self.CONF_DISABLE_SKILLS: False,
                 self.CONF_DODGE_STYLE: self.STYLE_SCHEME_B,
@@ -291,6 +296,7 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_COMBO_ROUNDS: "反击+闪避后接几轮combo",
                 self.CONF_ENGAGE_ATTACK: "放真技能前先平A进交战这么久, 防打空; 0=不补",
                 self.CONF_COMBO_COMBAT_CHECK: "实战combo中途每隔这么久复查脱战(目标死/打空即收手); 0=关",
+                self.CONF_COMBO_BREAK_FOR_SKILL: "combo进度<此比例(0~1)且技能/大招就绪就中断去开(伤害大头在combo尾, 过半就打完); 0=关",
                 self.CONF_DODGE_TEST: "开=每次声音闪避走一整轮(关自动战斗后调时间用)",
                 self.CONF_DISABLE_SKILLS: "开=安魂曲只站场打combo、不放技能/大招(测手感/闪避用); 刷本记得关",
                 self.CONF_DODGE_STYLE: "闪避反击方式: 方案一 / 闪双4a",
@@ -525,6 +531,15 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
             jump_hold_ms=self._conf_num(self.CONF_LS_JUMP_HOLD, 18),
             jump_tail_ms=self._conf_num(self.CONF_LS_TAIL, 218),
         )
+
+    def scheme_round_seconds(self, mode=None):
+        """当前"4A宏模式"下一轮 combo 的预计时长(秒), 供实战估 combo 进度(为技能大招让路用)。
+        方案四(光速4a)按配置的跳A时机+按住+收尾算; 其余(方案一/原始录制/未知)用方案一固定时长。"""
+        mode = mode or self.config.get(self.CONF_MACRO_MODE, self.MODE_SCHEME_A)
+        if mode == self.MODE_SCHEME_LS:
+            p = self._scheme_ls_params()
+            return (p["jump_at_ms"] + p["jump_hold_ms"] + p["jump_tail_ms"]) / 1000.0
+        return requiem_combo.scheme_a_round_seconds()
 
     def _scheme_runner(self, mode, io):
         """mode → (跑一轮的可调用, 显示名)。方案四的时序由配置实时决定。"""
