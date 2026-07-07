@@ -16,11 +16,15 @@ class _RequiemCombatIO:
     should_continue 用廉价标志位判断"闪避待执行/已不是当前角色", 命中即中止本轮 combo, 把控制权
     交回战斗循环——待执行的闪避会在随后的 sleep_check 落地。intra-combo 用 raw sleep 保节奏。"""
 
-    def __init__(self, char, dodge_react=False):
+    def __init__(self, char, dodge_react=False, watch_combat=False):
         self._char = char
         # dodge_react=True(闪避反击/双4a专用): 反击在处理"当前这次"闪避, combat_interrupt 仍为它
         # 而 set, 不能拿它判断; 只在"来了新的闪避在排队"(has_pending_action)时中止, 让位保命。
         self._dodge_react = dodge_react
+        # watch_combat=True(仅主站场 combo): combo 中途每隔一段复查脱战, 目标死/打空立即收手,
+        # 不再对着尸体空打完整轮。双4a 等精调时序段不开, 免插帧扰乱跳A时机。0=关(配置读不到默认)。
+        self._combat_check_interval = char._combo_combat_check_interval() if watch_combat else 0.0
+        self._last_combat_check = time.time()
         self._itx = char.task.executor.interaction
         try:
             cx = round(self._itx.capture.width * 0.5)
@@ -34,7 +38,17 @@ class _RequiemCombatIO:
             return False
         if self._dodge_react:
             return not SoundCombatContext().has_pending_action()
-        return not SoundCombatContext.should_interrupt_combat()
+        if SoundCombatContext.should_interrupt_combat():
+            return False
+        # 主站场 combo: 每隔 _combat_check_interval 复查一次脱战(刷新一帧 + 带去抖的 in_combat)。
+        # 目标已死/打空则抛 NotInCombat 收手, 不再把这一整轮 raw-sleep combo 打完(对着尸体空打)。
+        # should_continue 恒在"鼠标已抬起"时被调用, 此处抛异常不会留下按住的左键。
+        if self._combat_check_interval > 0:
+            now = time.time()
+            if now - self._last_combat_check >= self._combat_check_interval:
+                self._last_combat_check = now
+                self._char._check_combat_alive()
+        return True
 
     def mouse_down(self):
         self._itx.post(win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, self._pos)
@@ -62,6 +76,8 @@ class Requiem(MainDps):
     # 改成 0.1 间隔平A盯着就绪; >= 1s 一律走完整轮 combo(输出不亏)。
     IDLE_NEAR_SKILL_CD = 1.0
     IDLE_NEAR_SKILL_INTERVAL = 0.1
+    # combo 中途每隔这么久复查一次脱战(目标死/打空即收手, 不空打整轮)。配置读不到时用; 0=关。
+    COMBO_COMBAT_CHECK_INTERVAL = 0.5
     # 闪避反击: 触发闪避后强制平A的默认秒数(配置读不到时用)与点击间隔。
     # 实际秒数在 4A 测试任务(RequiemJumpAttackTestTask)里可配, 便于实时调。
     DODGE_COUNTER_ATTACK = 0.3
@@ -206,6 +222,7 @@ class Requiem(MainDps):
         _scheme_runner, 时序/参数与测试一致)。拿不到配置或原始录制等无对应方案时回退方案一。
         不管哪套方案, should_continue 都是每下点击前查(光速4a≈40ms/次, 让路比方案一还快),
         执行仍由 combo_attack 尾部的 sleep_check 统一兜底。"""
+        from src.combat.BaseCombatTask import NotInCombatException
         task = self._jump_task()
         if task is not None:
             try:
@@ -214,6 +231,8 @@ class Requiem(MainDps):
                 if runner is not None:
                     runner[0]()
                     return
+            except NotInCombatException:
+                raise  # 脱战(combo中途打空/目标死)必须一路抛到战斗循环收手, 别被下面的兜底吞掉
             except Exception as e:
                 self.logger.debug(f"configured combo failed, fallback scheme_a: {e}")
         requiem_combo.run_scheme_a(io)
@@ -224,7 +243,7 @@ class Requiem(MainDps):
         每一下之前查 should_continue, 闪避待执行/已切走即中止, 交回战斗循环让闪避随后落地。"""
         self.check_combat()  # 战斗已结束/切队则抛出, 不空打一轮
         self._wait_dodge_counter_recovery()  # 若紧接闪避反击, 先等其后摇再起 combo(顺序不乱)
-        io = _RequiemCombatIO(self)
+        io = _RequiemCombatIO(self, watch_combat=True)  # 主站场 combo: 中途复查脱战, 目标死即收手
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
             self._run_configured_combo(io)
@@ -248,6 +267,19 @@ class Requiem(MainDps):
         except Exception as e:
             self.logger.debug(f"read jump task config {key} failed: {e}")
         return default
+
+    def _combo_combat_check_interval(self):
+        """combo 中途脱战复查间隔(秒), 从"安魂曲配置"读, 可实时调; 0=关。默认 COMBO_COMBAT_CHECK_INTERVAL。"""
+        from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
+        return self._read_jump_task_conf(
+            RequiemJumpAttackTestTask.CONF_COMBO_COMBAT_CHECK, self.COMBO_COMBAT_CHECK_INTERVAL)
+
+    def _check_combat_alive(self):
+        """刷新一帧并复查是否仍在战斗; 已脱战(打空/目标死)则抛 NotInCombatException 收手。
+        复用框架带去抖(2帧miss+0.4s settle)的 in_combat 判定, 不会因血条/目标框闪一下误停。
+        combo 中途(每约0.5s)与放技能/大招前各调一次, 免得对着尸体空打整轮或空放大招/技能。"""
+        self.task.next_frame()
+        self.task.check_combat()
 
     def _dodge_counter_duration(self):
         from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
@@ -477,6 +509,10 @@ class Requiem(MainDps):
                 return
             self.idle_normal_attack()
             return
+
+        # 目标存活门: 开大/放技能前刷新一帧确认还在战斗, 别对着尸体开大或放真技能(白扔长CD)。
+        # 已确认脱战则抛 NotInCombat 收手。和 combo 中途 _check_combat_alive 同一判定(带去抖不误停)。
+        self._check_combat_alive()
 
         used_ultimate = self.click_ultimate(wait_if_cd_ready=self.PRE_SKILL_ULTIMATE_WAIT)
 

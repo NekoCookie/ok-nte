@@ -79,6 +79,10 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
     CONF_DODGE_TEST = "闪避反击测试开关"  # 布尔开关(SwitchButton); 改过名, 让旧的下拉字符串值作废
     # 实战测试开关: 开=安魂曲只站场打 combo、不放技能/大招, 方便单独测 combo 手感 + 闪避。实战读它。
     CONF_DISABLE_SKILLS = "禁用技能大招(测试)"  # 布尔开关
+    # 实战 combo 中途每隔这么久复查一次脱战: 目标被打死/打空则立即收手, 不再对着尸体空打完整轮 combo
+    # (早雾那种"死了秒停手"的体感)。只影响主站场 combo; 双4a 等精调时序段不查, 免插帧扰乱跳A时机。
+    # 用框架带去抖(2帧miss+0.4s)的 in_combat 判定, 不会因血条闪一下误停。实战侧(Requiem)读它; 0=关。
+    CONF_COMBO_COMBAT_CHECK = "combo中途脱战复查(s)"
     DODGE_TEST_COMBO_ROUNDS = 2  # 测试里反击后接几轮 combo 的默认值(配置读不到时用)
     CONF_COMBO_ROUNDS = "combo轮数"  # 测试里反击+闪避之后接几轮 combo, 可配
     # 闪避反击测试用哪套流程(供对比):
@@ -196,6 +200,7 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_DODGE_GAP: 0.3,
                 self.CONF_COMBO_ROUNDS: 2,
                 self.CONF_ENGAGE_ATTACK: 0.15,
+                self.CONF_COMBO_COMBAT_CHECK: 0.5,
                 self.CONF_DODGE_TEST: False,
                 self.CONF_DISABLE_SKILLS: False,
                 self.CONF_DODGE_STYLE: self.STYLE_SCHEME_B,
@@ -285,6 +290,7 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_DODGE_GAP: "主动闪避≥2次时, 每两次之间等这么久",
                 self.CONF_COMBO_ROUNDS: "反击+闪避后接几轮combo",
                 self.CONF_ENGAGE_ATTACK: "放真技能前先平A进交战这么久, 防打空; 0=不补",
+                self.CONF_COMBO_COMBAT_CHECK: "实战combo中途每隔这么久复查脱战(目标死/打空即收手); 0=关",
                 self.CONF_DODGE_TEST: "开=每次声音闪避走一整轮(关自动战斗后调时间用)",
                 self.CONF_DISABLE_SKILLS: "开=安魂曲只站场打combo、不放技能/大招(测手感/闪避用); 刷本记得关",
                 self.CONF_DODGE_STYLE: "闪避反击方式: 方案一 / 闪双4a",
