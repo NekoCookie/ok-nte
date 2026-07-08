@@ -139,9 +139,9 @@ class Requiem(MainDps):
     FREE_SKILL_FOLLOWUP_ATTACK_DURATION = 0.85
     # 免费技能后普攻会顺出又慢又低伤的第五下平A(a5); 放完免费技能用闪避打断它(实测只有闪避能打断,
     # 跳A打不断)、不打那第五下, 直接接后续输出。以下为打断时序默认值(ms, 配置读不到时用); hold<=0=关(不打断)。
-    FREE_BREAK_DELAY_MS = 200
+    FREE_BREAK_DELAY_MS = 250
     FREE_BREAK_JUMP_HOLD_MS = 20
-    FREE_BREAK_WAIT_MS = 0
+    FREE_BREAK_WAIT_MS = 400
 
     _skill_real_template = None
     _skill_free_template = None

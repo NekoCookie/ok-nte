@@ -232,9 +232,9 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_LS_TAIL: 200,
                 # 免费技能后打断时序, 展开开关
                 self.CONF_FREE_BREAK_EXPAND: True,
-                self.CONF_FREE_BREAK_DELAY: 200,
+                self.CONF_FREE_BREAK_DELAY: 250,
                 self.CONF_FREE_BREAK_JUMP_HOLD: 20,
-                self.CONF_FREE_BREAK_WAIT: 0,
+                self.CONF_FREE_BREAK_WAIT: 400,
                 # 实战调优参数(折叠, 默认收起)
                 self.CONF_GROUP_TUNING: False,
                 self.CONF_DODGE_COUNTER: 0.95,
