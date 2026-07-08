@@ -137,6 +137,11 @@ class Requiem(MainDps):
     SKILL_VISUAL_MARGIN = 0.06     # 两者差距小于此 → 分不清
     FREE_SKILL_ATTACK_INTERVAL = 0.1
     FREE_SKILL_FOLLOWUP_ATTACK_DURATION = 0.85
+    # 免费技能后普攻会顺出又慢又低伤的第五下平A(a5); 放完免费技能用闪避打断它(实测只有闪避能打断,
+    # 跳A打不断)、不打那第五下, 直接接后续输出。以下为打断时序默认值(ms, 配置读不到时用); hold<=0=关(不打断)。
+    FREE_BREAK_DELAY_MS = 200
+    FREE_BREAK_JUMP_HOLD_MS = 20
+    FREE_BREAK_WAIT_MS = 0
 
     _skill_real_template = None
     _skill_free_template = None
@@ -470,6 +475,35 @@ class Requiem(MainDps):
             return
         self.combo_attack()
 
+    def _free_skill_break_a5(self):
+        """免费技能放出后, 用闪避打断那又慢又低伤的第五下平A(a5), 省掉它直接接后续输出。
+        实测只有闪避能打断 a5, 跳A(空格+左键)打不断, 故这里按一下游戏闪避键(lshift)。
+        delay: 免费技能→闪避 的等待(核心); hold: 闪避键按住; wait: 闪避后到后续的间隔。全读"安魂曲配置"可实时调。
+        hold<=0 视为关闭(不打断)。与测试脚手架(_run_free_skill_combo_test)同一份配置。"""
+        from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
+        task = self._jump_task()
+        delay = self._read_jump_task_conf(
+            RequiemJumpAttackTestTask.CONF_FREE_BREAK_DELAY, self.FREE_BREAK_DELAY_MS, task=task)
+        hold = self._read_jump_task_conf(
+            RequiemJumpAttackTestTask.CONF_FREE_BREAK_JUMP_HOLD, self.FREE_BREAK_JUMP_HOLD_MS, task=task)
+        wait = self._read_jump_task_conf(
+            RequiemJumpAttackTestTask.CONF_FREE_BREAK_WAIT, self.FREE_BREAK_WAIT_MS, task=task)
+        if hold <= 0:
+            return  # 关: 不打断, 沿用免费技能后的默认后续(会顺出 a5)
+        io = _RequiemCombatIO(self)  # 普通 io: 就一下闪避, 不需中途复查
+        ctypes.windll.winmm.timeBeginPeriod(1)
+        try:
+            if delay > 0:
+                io.sleep_ms(delay)
+            self.task.send_key_down(self.DODGE_KEY)   # 闪避打断 a5(实测只有闪避能打断, 跳A打不断)
+            io.sleep_ms(hold)
+            self.task.send_key_up(self.DODGE_KEY)
+            if wait > 0:
+                io.sleep_ms(wait)
+        finally:
+            ctypes.windll.winmm.timeEndPeriod(1)
+        self.logger.info(f"免费技能后闪避打断a5: 等{delay:.0f}→闪避{hold:.0f}→等{wait:.0f}ms")
+
     def _mark_real_skill_overlap(self, reason):
         """真技能确认进CD后: 安排 overlap 下场 + 当场锚16s CD。
         不锚的话overlap切走后锚点停在放招前的"就绪", 切回来 cd-truth 误报"切早"(纯显示噪声)。"""
@@ -571,6 +605,7 @@ class Requiem(MainDps):
                 if self.click_skill(time_out=1.0)[0]:
                     # 免费技能:留场接平A,不触发下场。
                     self.logger.info("requiem FREE skill cast, staying on field")
+                    self._free_skill_break_a5()  # 跳A打断拖沓低伤的第五下平A(a5), 不打那下
                     self.free_skill_followup_attack()
                     return
 

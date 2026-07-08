@@ -54,6 +54,8 @@ def make_requiem(clock, skill_kind="real", skill_available=True,
     # sleep 推进假时钟, 否则真技能重试循环(按时间 deadline)在测试里永不结束。
     r.sleep = mock.MagicMock(side_effect=lambda *a, **k: clock.advance(a[0] if a else 0))
     r.free_skill_followup_attack = mock.MagicMock()
+    # 免费技能后的"跳A打断a5"是独立的时序IO行为, 这里打桩掉, 只验证 do_perform 分支是否调它。
+    r._free_skill_break_a5 = mock.MagicMock()
     r.engage_before_skill = mock.MagicMock()
     # 放完真技能后的"是否真进CD"确认:默认 False = 技能已落实(进了CD)
     r._skill_still_available_after_input_mode_delay = mock.MagicMock(return_value=False)
@@ -80,6 +82,7 @@ class TestRequiemSkillClassification(unittest.TestCase):
         r.engage_before_skill.assert_called_once_with(r.SKILL_ENGAGE_ATTACK)
         self.assertTrue(r.should_force_off_field(), "真技能后应触发下场")
         r.free_skill_followup_attack.assert_not_called()
+        r._free_skill_break_a5.assert_not_called()  # 真技能分支不走免费打断
 
     # ---- 视觉判免费 → 留场,不切,不起手平A ----
     def test_free_skill_stays_on_field(self):
@@ -87,6 +90,7 @@ class TestRequiemSkillClassification(unittest.TestCase):
         r.do_perform()
         r.engage_before_skill.assert_not_called()
         self.assertFalse(r.should_force_off_field(), "免费技能不应触发下场")
+        r._free_skill_break_a5.assert_called_once()  # 免费技能后应先跳A打断a5
         r.free_skill_followup_attack.assert_called_once()
 
     # ---- 识别不到(None)→ 按真技能处理(切人)----

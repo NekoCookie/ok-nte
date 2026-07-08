@@ -128,6 +128,16 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
     CONF_LS_CLICK_GAP = "方案四-连点抬起(ms)"
     CONF_LS_TAIL = "方案四-跳后收尾(ms)"
 
+    # 免费技能后普攻会顺出又慢又低伤的第五下平A(a5)。放完免费技能用闪避打断它(实测只有闪避能打断,
+    # 跳A打不断)、不打那第五下, 直接接 combo。以下时序可调(ms), 实战侧(Requiem)读。
+    # 测试键: 按一下=发技能键放(免费)技能 → delay → 闪避打断 → combo; 需在游戏里把技能设成免费技能(可反复放)。
+    CONF_FREE_BREAK_TEST_KEY = "免费技能后接combo测试键"
+    CONF_FREE_SKILL_KEY = "技能键(测试放免费技能用)"
+    CONF_FREE_BREAK_EXPAND = "免费技能后-展开打断时序"  # 布尔开关(SwitchButton), 开=展开3个时序
+    CONF_FREE_BREAK_DELAY = "免费技能后打断延迟(ms)"      # 免费技能→闪避 的等待(核心旋钮)
+    CONF_FREE_BREAK_JUMP_HOLD = "免费技能后闪避按住(ms)"  # 闪避键按住时长
+    CONF_FREE_BREAK_WAIT = "免费技能后打断后等待(ms)"     # 闪避打断→combo第一下 的间隔
+
     # 配置档位: 界面内保存/载入 1~4 套配置(存在 PRESET_FILE), 外加导出/从文件导入。
     CONF_PRESET_SLOT = "配置档位"       # drop_down 1/2/3/4
     CONF_PRESET_OPS = "档位存取"        # 两个按钮: 保存到该档位 / 载入该档位
@@ -224,6 +234,12 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_LS_CLICK_HOLD: 20,
                 self.CONF_LS_CLICK_GAP: 20,
                 self.CONF_LS_TAIL: 200,
+                self.CONF_FREE_BREAK_TEST_KEY: "8",
+                self.CONF_FREE_SKILL_KEY: "e",
+                self.CONF_FREE_BREAK_EXPAND: True,
+                self.CONF_FREE_BREAK_DELAY: 200,
+                self.CONF_FREE_BREAK_JUMP_HOLD: 20,
+                self.CONF_FREE_BREAK_WAIT: 0,
                 self.CONF_PRESET_SLOT: "1",
             }
         )
@@ -256,6 +272,15 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                             self.CONF_LS_JUMP_AT, self.CONF_LS_JUMP_HOLD,
                             self.CONF_LS_CLICK_HOLD, self.CONF_LS_CLICK_GAP,
                             self.CONF_LS_TAIL,
+                        ],
+                    },
+                },
+                # 免费技能后打断的3个时序配置用开关折叠, 打开(True)才显示。
+                self.CONF_FREE_BREAK_EXPAND: {
+                    "sub_configs": {
+                        True: [
+                            self.CONF_FREE_BREAK_DELAY, self.CONF_FREE_BREAK_JUMP_HOLD,
+                            self.CONF_FREE_BREAK_WAIT,
                         ],
                     },
                 },
@@ -315,6 +340,12 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_LS_CLICK_HOLD: "方案四 连点每下左键按住毫秒",
                 self.CONF_LS_CLICK_GAP: "方案四 连点每下左键抬起毫秒",
                 self.CONF_LS_TAIL: "方案四 跳A后收尾毫秒(连点节拍继续平A填满; 参考218)",
+                self.CONF_FREE_BREAK_TEST_KEY: "按此键=发技能键放(免费)技能→闪避打断a5→combo; 需游戏里把技能设成免费技能; 留空=关",
+                self.CONF_FREE_SKILL_KEY: "测试放免费技能用的技能键(填游戏里的技能键, 如e)",
+                self.CONF_FREE_BREAK_EXPAND: "开=展开免费技能后打断的3个时序配置",
+                self.CONF_FREE_BREAK_DELAY: "免费技能放出→按闪避打断 之间等这么久(核心; 早了打断免费技能/晚了a5已出)",
+                self.CONF_FREE_BREAK_JUMP_HOLD: "打断用的闪避键按住毫秒(实测只有闪避能打断a5, 跳A打不断)",
+                self.CONF_FREE_BREAK_WAIT: "闪避打断→combo第一下 的间隔毫秒(可填0)",
                 self.CONF_PRESET_SLOT: "选择配置档位(1~4), 存取/导入导出都对该档位",
                 self.CONF_PRESET_OPS: "保存=当前配置存到该档位; 载入=把该档位配置读回界面",
                 self.CONF_PRESET_FILE: "导出=当前配置存成json; 从文件导入=读json回界面",
@@ -332,6 +363,7 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
         self._in_dodge_test = False   # 正在跑闪避反击测试序列(此时 combo 跑满, 不看触发键)
         self._fk_was_down = False     # 闪避后首平A测试键的前态(边沿检测)
         self._dtk_was_down = False    # 闪避反击模拟测试键(7)的前态(边沿检测)
+        self._fbk_was_down = False    # 免费技能后接combo测试键的前态(边沿检测)
 
     def run(self):
         if self._submitted:
@@ -358,6 +390,18 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 return True
         else:
             self._dtk_was_down = False
+
+        # 免费技能后接combo测试键(边沿触发): 发技能键放(免费)技能 → delay → 闪避打断a5 → wait → combo。
+        fbk = self.config.get(self.CONF_FREE_BREAK_TEST_KEY)
+        if fbk:
+            fbdown = self._is_key_pressed(fbk)
+            fbedge = fbdown and not self._fbk_was_down
+            self._fbk_was_down = fbdown
+            if fbedge and not self._macro_running:
+                self._run_free_skill_combo_test()
+                return True
+        else:
+            self._fbk_was_down = False
 
         # 闪避后首平A测试键(边沿触发): 任何时候都响应(不受闪避反击测试开关影响)。
         # 按一下→闪避→等 combo前后摇等待→打一个平A。
@@ -700,6 +744,43 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
             self._in_dodge_test = False
             self._macro_running = False
             self.log_info("闪避反击测试: 一次序列完成")
+
+    def _run_free_skill_combo_test(self):
+        """免费技能后接combo测试: 发技能键放(免费)技能 → delay → 闪避打断拖沓低伤的a5(实测只有闪避能打断,
+        跳A打不断) → wait → combo(按4A宏模式当前选择)。需在游戏里把技能设成免费技能(可反复放, 不受16s真技能CD限制)。
+        期间暂停声音自动闪避, 便于反复调 delay/hold。时序与实战侧(Requiem._free_skill_break_a5)同一份配置。"""
+        from src.sound_trigger.SoundCombatContext import SoundCombatContext
+
+        self._macro_running = True
+        self._in_dodge_test = True
+        SoundCombatContext.set_dodge_paused(True)
+        delay = self._conf_num(self.CONF_FREE_BREAK_DELAY, 200)
+        hold = self._conf_num(self.CONF_FREE_BREAK_JUMP_HOLD, 20)
+        wait = self._conf_num(self.CONF_FREE_BREAK_WAIT, 0)
+        skill_key = self.config.get(self.CONF_FREE_SKILL_KEY, "e")
+        self.log_info(f"免费技能后接combo测试: 触发 (技能键={skill_key})")
+        ctypes.windll.winmm.timeBeginPeriod(1)
+        try:
+            self._prepare_input()
+            io = _MacroIO(self)
+            if skill_key:
+                self.send_key(str(skill_key), down_time=0.02)  # 放(免费)技能
+            if delay > 0:
+                time.sleep(delay / 1000.0)
+            self.send_key_down(self.DODGE_KEY)   # 闪避打断a5(实测只有闪避能打断, 跳A打不断)
+            io.sleep_ms(hold)
+            self.send_key_up(self.DODGE_KEY)
+            if wait > 0:
+                io.sleep_ms(wait)
+            rounds = max(1, int(self._conf_num(self.CONF_COMBO_ROUNDS, self.DODGE_TEST_COMBO_ROUNDS)))
+            name = self._run_combo_rounds(io, rounds)   # 打断后接 combo(按4A宏模式), 轮数复用"combo轮数"
+            self.log_info(
+                f"免费技能后接combo测试: 放技能→等{delay:.0f}→闪避{hold:.0f}→等{wait:.0f}ms → {rounds}轮{name}")
+        finally:
+            ctypes.windll.winmm.timeEndPeriod(1)
+            SoundCombatContext.set_dodge_paused(False)
+            self._in_dodge_test = False
+            self._macro_running = False
 
     def _run_first_attack_test(self):
         """专测"闪避后接第一个平A所需时间": 闪避(按一下shift) → 等 combo前后摇等待秒 → 打一个平A。
