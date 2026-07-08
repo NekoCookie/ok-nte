@@ -138,6 +138,12 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
     CONF_FREE_BREAK_JUMP_HOLD = "免费技能后闪避按住(ms)"  # 闪避键按住时长
     CONF_FREE_BREAK_WAIT = "免费技能后打断后等待(ms)"     # 闪避打断→combo第一下 的间隔
 
+    # 顶层配置太多, 按用途再折叠两组(默认收起, 用到再展开; 机制同方案四/免费技能的展开开关):
+    #   实战调优参数 = 反击/后摇/主动闪避/轮数/技能前平A/脱战复查/让路 那几个秒数与比例旋钮;
+    #   测试开关与测试键 = 各测试开关(闪避反击测试/禁用技能大招)与测试键(首平A/模拟闪避/免费技能)。
+    CONF_GROUP_TUNING = "▸ 实战调优参数(展开)"    # 布尔开关(SwitchButton)
+    CONF_GROUP_TEST = "▸ 测试开关与测试键(展开)"   # 布尔开关(SwitchButton)
+
     # 配置档位: 界面内保存/载入 1~4 套配置(存在 PRESET_FILE), 外加导出/从文件导入。
     CONF_PRESET_SLOT = "配置档位"       # drop_down 1/2/3/4
     CONF_PRESET_OPS = "档位存取"        # 两个按钮: 保存到该档位 / 载入该档位
@@ -208,16 +214,7 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_MACRO_MODE: self.MODE_SCHEME_LS,
                 self.CONF_TRIGGER_MODE: self.TRIGGER_HOLD,
                 self.CONF_INPUT_MODE: self.INPUT_BG,
-                self.CONF_DODGE_COUNTER: 0.95,
-                self.CONF_DODGE_COMBO_WAIT: 0.6,
-                self.CONF_DODGE_COUNT: 1,
-                self.CONF_DODGE_GAP: 0.3,
-                self.CONF_COMBO_ROUNDS: 2,
-                self.CONF_ENGAGE_ATTACK: 0.15,
-                self.CONF_COMBO_COMBAT_CHECK: 0.5,
-                self.CONF_COMBO_BREAK_FOR_SKILL: 0.5,
-                self.CONF_DODGE_TEST: False,
-                self.CONF_DISABLE_SKILLS: False,
+                # 闪避反击方式 + 双4a专属时序(选"闪双4a"才展开, 见 CONF_DODGE_STYLE 的 sub_configs)
                 self.CONF_DODGE_STYLE: self.STYLE_SCHEME_B,
                 self.CONF_D4_FRONT: 1950,
                 self.CONF_D4_JUMP_HOLD: 20,
@@ -226,20 +223,36 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_D4_CLICK_GAP: 20,
                 self.CONF_D4_TAIL_DODGE: self.D4_DODGE_JUMP,
                 self.CONF_D4_TAIL_FILL: 250,
-                self.CONF_FIRST_ATTACK_TEST_KEY: "6",
-                self.CONF_DODGE_TEST_KEY: "7",
+                # 方案四(光速4a)时序, 展开开关
                 self.CONF_LS_EXPAND: True,
                 self.CONF_LS_JUMP_AT: 1800,
                 self.CONF_LS_JUMP_HOLD: 20,
                 self.CONF_LS_CLICK_HOLD: 20,
                 self.CONF_LS_CLICK_GAP: 20,
                 self.CONF_LS_TAIL: 200,
-                self.CONF_FREE_BREAK_TEST_KEY: "8",
-                self.CONF_FREE_SKILL_KEY: "e",
+                # 免费技能后打断时序, 展开开关
                 self.CONF_FREE_BREAK_EXPAND: True,
                 self.CONF_FREE_BREAK_DELAY: 200,
                 self.CONF_FREE_BREAK_JUMP_HOLD: 20,
                 self.CONF_FREE_BREAK_WAIT: 0,
+                # 实战调优参数(折叠, 默认收起)
+                self.CONF_GROUP_TUNING: False,
+                self.CONF_DODGE_COUNTER: 0.95,
+                self.CONF_DODGE_COMBO_WAIT: 0.6,
+                self.CONF_DODGE_COUNT: 1,
+                self.CONF_DODGE_GAP: 0.3,
+                self.CONF_COMBO_ROUNDS: 2,
+                self.CONF_ENGAGE_ATTACK: 0.15,
+                self.CONF_COMBO_COMBAT_CHECK: 0.5,
+                self.CONF_COMBO_BREAK_FOR_SKILL: 0.5,
+                # 测试开关与测试键(折叠, 默认收起)
+                self.CONF_GROUP_TEST: False,
+                self.CONF_DODGE_TEST: False,
+                self.CONF_DISABLE_SKILLS: False,
+                self.CONF_FIRST_ATTACK_TEST_KEY: "6",
+                self.CONF_DODGE_TEST_KEY: "7",
+                self.CONF_FREE_BREAK_TEST_KEY: "8",
+                self.CONF_FREE_SKILL_KEY: "e",
                 self.CONF_PRESET_SLOT: "1",
             }
         )
@@ -281,6 +294,27 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                         True: [
                             self.CONF_FREE_BREAK_DELAY, self.CONF_FREE_BREAK_JUMP_HOLD,
                             self.CONF_FREE_BREAK_WAIT,
+                        ],
+                    },
+                },
+                # 实战调优参数折叠: 开(True)才显示那几个秒数/比例旋钮(收起不影响其值生效)。
+                self.CONF_GROUP_TUNING: {
+                    "sub_configs": {
+                        True: [
+                            self.CONF_DODGE_COUNTER, self.CONF_DODGE_COMBO_WAIT,
+                            self.CONF_DODGE_COUNT, self.CONF_DODGE_GAP,
+                            self.CONF_COMBO_ROUNDS, self.CONF_ENGAGE_ATTACK,
+                            self.CONF_COMBO_COMBAT_CHECK, self.CONF_COMBO_BREAK_FOR_SKILL,
+                        ],
+                    },
+                },
+                # 测试开关与测试键折叠: 开(True)才显示(收起不影响其值生效; 禁用技能大招默认关)。
+                self.CONF_GROUP_TEST: {
+                    "sub_configs": {
+                        True: [
+                            self.CONF_DODGE_TEST, self.CONF_DISABLE_SKILLS,
+                            self.CONF_FIRST_ATTACK_TEST_KEY, self.CONF_DODGE_TEST_KEY,
+                            self.CONF_FREE_BREAK_TEST_KEY, self.CONF_FREE_SKILL_KEY,
                         ],
                     },
                 },
@@ -346,6 +380,8 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_FREE_BREAK_DELAY: "免费技能放出→按闪避打断 之间等这么久(核心; 早了打断免费技能/晚了a5已出)",
                 self.CONF_FREE_BREAK_JUMP_HOLD: "打断用的闪避键按住毫秒(实测只有闪避能打断a5, 跳A打不断)",
                 self.CONF_FREE_BREAK_WAIT: "闪避打断→combo第一下 的间隔毫秒(可填0)",
+                self.CONF_GROUP_TUNING: "开=展开实战调优参数(反击平A/后摇/主动闪避/轮数/技能前平A/脱战复查/让路)",
+                self.CONF_GROUP_TEST: "开=展开测试开关与测试键(闪避反击测试/禁用技能大招/首平A/模拟闪避/免费技能)",
                 self.CONF_PRESET_SLOT: "选择配置档位(1~4), 存取/导入导出都对该档位",
                 self.CONF_PRESET_OPS: "保存=当前配置存到该档位; 载入=把该档位配置读回界面",
                 self.CONF_PRESET_FILE: "导出=当前配置存成json; 从文件导入=读json回界面",
