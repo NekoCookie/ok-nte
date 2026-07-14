@@ -189,8 +189,8 @@ config = {
         ["src.tasks.trigger.SkipDialogTask", "SkipDialogTask"],
         ["src.tasks.trigger.FastTravelTask", "FastTravelTask"],
         ["src.tasks.trigger.HeistTask", "HeistTask"],
-        ["src.tasks.trigger.RequiemJumpAttackTestTask", "RequiemJumpAttackTestTask"],
-        ["src.tasks.trigger.NanallySuperJumpTask", "NanallySuperJumpTask"],
+        ["src.tasks.trigger.RequiemJumpAttackTestTask", "RequiemJumpAttackTestTask"],  # [lw]
+        ["src.tasks.trigger.NanallySuperJumpTask", "NanallySuperJumpTask"],  # [lw]
         ["src.tasks.trigger.AutoLoginTask", "AutoLoginTask"],
     ],
     "custom_tabs": [

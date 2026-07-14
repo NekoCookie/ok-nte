@@ -49,11 +49,11 @@ class DodgeCounterTrigger:
             self.execute_action()
             self._last_dodge_time = now
             logger.info(f"Dodge executed successfully at {now:.3f}")
-            # 闪避键按下后, 主线程内立即执行"闪避后钩子"(如安魂曲强制平A打出闪避反击)。
+            # [lw] 闪避键按下后, 主线程内立即执行"闪避后钩子"(如安魂曲强制平A打出闪避反击)。
             # 挂在这里=绑定闪避的实际执行(而非入队时刻); 钩子内用 raw sleep 不触发嵌套 sleep_check。
             after = getattr(self.task, "after_dodge_executed", None)
             if after is not None:
-                after()
+                after()  # [lw]
         except Exception as e:
             logger.error("Dodge execution error", e)
         finally:

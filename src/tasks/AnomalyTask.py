@@ -210,9 +210,9 @@ class AnomalyTask(NTEOneTimeTask, BaseCombatTask):
         )
 
     def exit_anomaly(self):
-        # 搜索框必须大于95x95的按钮模板, 否则matchTemplate直接崩溃; 范围与钓鱼任务同弹窗位置对齐
+        # [lw] 搜索框必须大于95x95的按钮模板, 否则matchTemplate直接崩溃; 范围与钓鱼任务同弹窗位置对齐
         self.wait_click_confirm(
-            lambda: self.send_key("esc", interval=2), range=(0.656, 0.618, 0.700, 0.699)
+            lambda: self.send_key("esc", interval=2), range=(0.656, 0.618, 0.700, 0.699)  # [lw] 改range
         )
         self.wait_in_team_and_world()
 

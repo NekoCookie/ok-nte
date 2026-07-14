@@ -4,13 +4,14 @@ from typing import Optional
 
 from ok import Logger
 
+from src.lw.sound_ext import SoundContextExtMixin  # [lw]
 from src.sound_trigger.DodgeCounterTrigger import DodgeCounterTrigger
 from src.sound_trigger.SoundListener import SoundListener
 
 logger = Logger.get_logger(__name__)
 
 
-class SoundCombatContext:
+class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
     _instance = None
     _lock = threading.Lock()
     _combat_interrupt = threading.Event()
@@ -39,12 +40,6 @@ class SoundCombatContext:
         self._pending_task = None
         self._pending_config = None
         self._pending_action = None
-
-    def last_dodge_time(self):
-        """上次声音触发闪避的时刻(time.time()), 没触发过返回 0。
-        闪避是我方主动触发(记了时刻), 所以"放完技能是否立刻闪避"可确定性判断, 不必靠图标猜。"""
-        trigger = self._trigger
-        return getattr(trigger, "_last_dodge_time", 0.0) if trigger else 0.0
 
     @classmethod
     def enter_priority(cls, on_timeout=None):
@@ -89,13 +84,6 @@ class SoundCombatContext:
     @classmethod
     def should_interrupt_combat(cls):
         return cls._combat_interrupt.is_set()
-
-    def has_pending_action(self):
-        """是否有"新的声音闪避在排队待执行"。用于闪避反击(双4a)期间: 反击本身在处理"当前这次"
-        闪避、combat_interrupt 尚为当前闪避而 set(不能拿它判断中止), 但一旦来了**新的**敌人攻击
-        会入队 _pending_action —— 反击应立刻中止让位, 把主线程交回去执行那次救命闪避。"""
-        with self._context_lock:
-            return self._pending_action is not None
 
     @classmethod
     def wait_for_resume(cls):
@@ -189,18 +177,10 @@ class SoundCombatContext:
             except Exception as e:
                 logger.error(f"Error exiting SoundCombatContext: {e}")
 
-    _dodge_paused = False
-
-    @classmethod
-    def set_dodge_paused(cls, paused):
-        """暂停/恢复声音自动闪避。仅用于"安魂曲配置"的闪避反击测试: 跑一整轮期间暂停, 免得
-        SoundTriggerTask 对真·敌人攻击的自动闪避插进测试的 combo 里、看不清完整一轮。实战不用。"""
-        cls._dodge_paused = bool(paused)
-
     def _queue_action(self, action):
         with self._context_lock:
-            if self._dodge_paused:
-                return
+            if self._dodge_paused:  # [lw] 测试用暂停开关(实现在 src/lw/sound_ext.py)
+                return  # [lw]
             if (
                 self._trigger is None
                 or self._trigger.task is None

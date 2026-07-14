@@ -8,6 +8,7 @@ import numpy as np  # noqa
 from ok import Config, Logger, Box  # noqa
 from src import text_white_color  # noqa
 from src.Labels import Labels
+from src.lw.char_ext import CharExtMixin  # [lw]
 from src.utils import game_filters as gf
 
 from typing import TYPE_CHECKING
@@ -56,27 +57,10 @@ class Element(StrEnum):
 role_values = list(Role)
 
 
-class BaseChar:
+class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
     """角色基类，定义了游戏角色的通用属性和行为。"""
 
     INTRO_MOTION_FREEZE_DURATION = 1.5
-    ULTIMATE_COMBAT_SETTLE_TIMEOUT = 2.5
-    ULTIMATE_COMBAT_SETTLE_CLICK = True
-    ULTIMATE_COMBAT_SETTLE_FORCE_ON_TIMEOUT = True
-    ULTIMATE_COMBAT_SETTLE_FORCE_RETARGET = True
-    IDLE_FILL_ATTACK_INTERVAL = 0.1
-    SKILL_INPUT_MODE_RETRY_DELAY = 0.12
-    # 放长CD技能后若"放招之后触发了闪避"(可能打断释放), 留场结算的最长时间/间隔:
-    # 期间看技能图标——进CD就读真实CD校准锚点, 还就绪就补发技能, 直到定下来或超时。
-    SKILL_SETTLE_MAX_DURATION = 0.5
-    SKILL_SETTLE_INTERVAL = 0.1
-    # settle 判"已进CD"的最小有效CD。图标抖动成"非就绪"但 OCR 读到 -0.2/0 这种(就绪/读数
-    # 未稳的噪声)不算真进CD, 否则会把"还没放成"误当进CD退出、不再补放。读到 <此值就继续补放。
-    SKILL_SETTLE_MIN_ON_CD = 1.0
-    # 大招演出结束(已回到队伍画面)后,等"时停解除/CD 开始走"的精确确认超时。
-    # 正常 1~2s 内 condition 就满足;深渊换层等场景下大招图标区识别会失效,会一直空等到
-    # 超时,导致角色卡住十几秒不切人。这第二段只用来算 freeze 时长,缩短它纯止血、不影响放招。
-    ULTIMATE_UNFREEZE_TIMEOUT = 4
 
     def __init__(self, task, index, char_name=None, confidence=1):
         """初始化角色基础属性。
@@ -106,7 +90,7 @@ class BaseChar:
         self.cycle_start_time = 0.0
         self.combo_label = "default"
         self.element = Element.DEFAULT
-        self.role = Role.DEFAULT
+        self.role = Role.DEFAULT  # [lw]
 
     def cycle_start(self):
         self.cycle_start_time = time.time()
@@ -152,51 +136,8 @@ class BaseChar:
         self.logger.debug(f"set current char false {self.index}")
         self.switch_next_char()
 
-    def settle_skill_after_cast(self, cast_at, cooldown, max_duration=None):
-        """放长CD技能后的收尾结算 —— 校准CD / 补放。放技能那一下若**紧接着触发了闪避**,
-        释放可能被打断: 要么按出去了但没生效、进了个 ~3s 短CD(以为是20s长CD就糟了), 要么
-        和闪避隔太近、键根本没按出去、技能还就绪。这里在切人前把它弄清楚。
-
-        仅当"放招(cast_at)之后发生过闪避"才介入; 否则技能正常放出, 直接返回(不影响平常)。
-        介入后留场平A最多 SKILL_SETTLE_MAX_DURATION, 每 SKILL_SETTLE_INTERVAL 看技能图标:
-          A. OCR读到有意义CD数字 → 按出去了(放成功长CD / 被打断短CD): 锚点已被OCR校准, 结束;
-          B. 没读到数字 = 还就绪/没按出去: 底层补发技能(用 send_skill_key 绕过被刚锚CD挡住的
-             available), 放出去后下一圈转 A;
-          超时仍没数字 → 锚成就绪(别留标称CD撒谎, 下次再上来放)。
-
-        进CD与否只认 skill_ocr_raw(这帧OCR真读到的原始数字), 不读 skill_available/get_cd
-        ——后者会被刚 note 的标称CD + grace 污染。返回 True=确认进了CD(已校准); False=没介入/超时。"""
-        if not self.is_current_char:
-            return False
-        # 放招瞬间触发的闪避此刻可能还排在队列里没执行, last_dodge_time 尚未更新。先把它落地再判,
-        # 否则"放招→闪避(pending)→切人"贴太紧时会漏检(辅助没有起手平A 去顺手落地闪避)。
-        self.task.flush_pending_dodge()
-        if not (cast_at > 0 and self.task.last_dodge_time() >= cast_at):
-            return False  # 放招后没闪避 → 不介入
-        down_time = getattr(self, "SKILL_DOWN_TIME", 0.01)
-        self.logger.info("放招后触发闪避, 留场结算技能(校准/补放)")
-        deadline = time.time() + (max_duration or self.SKILL_SETTLE_MAX_DURATION)
-        while time.time() < deadline:
-            self.task.next_frame()
-            # A: 这帧OCR真读到了够大的CD数字 → 已进CD(放成功长CD / 被打断短CD), 锚点已校准。
-            # 用 skill_ocr_raw 而非 get_cd: 后者没数字时会按刚 note 的标称CD 倒数、谎报进CD。
-            raw = self.task.skill_ocr_raw(self.index)
-            if raw is not None and raw >= self.SKILL_SETTLE_MIN_ON_CD:
-                self.logger.info(f"放招后结算: 技能已进CD, 校准为真实CD={raw:.1f}s")
-                return True
-            # B: 没读到数字 = 还就绪/没按出去 → 底层补发(绕过被note挡住的available检查)
-            self.send_skill_key(down_time=down_time)
-            self.task.note_skill_on_cd(self.index, cd=cooldown)  # 暂锚标称, 真值下圈A校准
-            self.normal_attack()
-            self.sleep(self.SKILL_SETTLE_INTERVAL)
-        self.task.note_skill_ready(self.index)
-        self.logger.info("放招后结算: 超时仍就绪(没放出), 锚为就绪等下次")
-        return False
-
     def add_intro_motion_freeze(self, start):
-        self.add_freeze_duration(
-            start, self.INTRO_MOTION_FREEZE_DURATION, freeze_time=-100, cause="入场/环合"
-        )
+        self.add_freeze_duration(start, self.INTRO_MOTION_FREEZE_DURATION, freeze_time=-100, cause="入场/环合")  # [lw] cause=
 
     def wait_intro(self, time_out=-1, click=True):
         """等待角色入场动画结束。
@@ -223,15 +164,6 @@ class BaseChar:
             interval (float, optional): 点击间隔。默认为 0.1。
         """
         self.click(interval=interval)
-
-    def fill_idle_attack(self, interval=None):
-        current_char = self.task.get_current_char(raise_exception=False)
-        if current_char is not self:
-            return False
-        if self.task.in_animation or not self.task.is_in_team():
-            return False
-        interval = self.IDLE_FILL_ATTACK_INTERVAL if interval is None else interval
-        return self.click(action_name=f"{self.name}_idle_fill_attack", interval=interval)
 
     @property
     def click(self):
@@ -362,7 +294,7 @@ class BaseChar:
                     result["action_time"] = time.time()
 
             self.task.next_frame()
-            self.check_combat()
+            self.check_combat()  # [lw] 等待循环里补战斗检查
 
     def _check_available_action_result(
         self,
@@ -397,58 +329,6 @@ class BaseChar:
             return "released" if result["clicked"] else "unavailable"
         return "continue"
 
-    def _force_ultimate_after_combat_settle_timeout(self):
-        if not self.ULTIMATE_COMBAT_SETTLE_FORCE_ON_TIMEOUT:
-            self.logger.info(
-                f"click_ultimate skipped by combat_detect_settle timeout "
-                f"{self.ULTIMATE_COMBAT_SETTLE_TIMEOUT}s"
-            )
-            return False
-
-        current_char = self.task.get_current_char(raise_exception=False)
-        if current_char is not self:
-            self.logger.info("click_ultimate skipped because current char changed during settle")
-            return False
-        if not self.task.is_in_team():
-            return self.task.in_animation
-        if not self.ultimate_available():
-            self.logger.info("click_ultimate skipped because ultimate is no longer available")
-            return False
-
-        if self.ULTIMATE_COMBAT_SETTLE_FORCE_RETARGET:
-            has_target = self.task.combat_detect()
-            if not has_target and self.click(
-                key="middle", action_name="ultimate_settle_retarget", interval=0.35
-            ):
-                self.task.openvino_clear_cache()
-            self.task.next_frame()
-
-        if not self.ultimate_available():
-            self.logger.info("click_ultimate skipped after retarget because ultimate is no longer available")
-            return False
-
-        self.logger.info(
-            f"click_ultimate forced after combat_detect_settle timeout "
-            f"{self.ULTIMATE_COMBAT_SETTLE_TIMEOUT}s"
-        )
-        return True
-
-    def wait_ultimate_combat_settle(self):
-        if self.task._combat_settle.time is None:
-            return True
-
-        self.logger.info("click_ultimate blocked by combat_detect_settle")
-        start = time.time()
-        while self.task._combat_settle.time is not None:
-            if time.time() - start >= self.ULTIMATE_COMBAT_SETTLE_TIMEOUT:
-                return self._force_ultimate_after_combat_settle_timeout()
-            self.task.next_frame()
-            self.check_combat()
-            if self.ULTIMATE_COMBAT_SETTLE_CLICK:
-                self.fill_idle_attack()
-            self.sleep(0.1)
-        return True
-
     def click_ultimate(self, send_click=True, wait_if_cd_ready=0.1):
         """尝试释放终结技。
 
@@ -463,8 +343,8 @@ class BaseChar:
             return False
 
         if self.ultimate_available():
-            if not self.wait_ultimate_combat_settle():
-                return False
+            if not self.wait_ultimate_combat_settle():  # [lw] settle等待/超时强制放, 原为裸while轮询
+                return False  # [lw]
 
         self.logger.debug("click_ultimate start")
         if not self.task.in_animation:
@@ -540,15 +420,11 @@ class BaseChar:
                 return True
         return self.task.in_animation
 
-    def _click_during_ultimate_unfreeze(self):
-        self.check_combat()
-        self.click_with_interval()
-
     def _wait_ultimate_unfreeze(self, start):
         self.logger.debug("waiting for time unfrozen")
         self.task.wait_until(
             lambda: self.has_cd("ultimate"),
-            post_action=self._click_during_ultimate_unfreeze,
+            post_action=self._click_during_ultimate_unfreeze,  # [lw] 点击时顺带查战斗
             time_out=2,
         )
         box_ultimate = self.task.get_box_by_name(Labels.box_ultimate)
@@ -571,11 +447,11 @@ class BaseChar:
 
         self.task.wait_until(
             condition,
-            time_out=self.ULTIMATE_UNFREEZE_TIMEOUT,
-            post_action=self._click_during_ultimate_unfreeze,
+            time_out=self.ULTIMATE_UNFREEZE_TIMEOUT,  # [lw] 原10s, 识别失效时空等太久
+            post_action=self._click_during_ultimate_unfreeze,  # [lw]
         )
         duration = time.time() - start - 0.1
-        self.add_freeze_duration(start, duration, cause="大招时停")
+        self.add_freeze_duration(start, duration, cause="大招时停")  # [lw] cause=
         return duration
 
     def click_skill(
@@ -601,27 +477,10 @@ class BaseChar:
         """
         self.logger.debug("click_skill start")
         the_time_out = SKILL_TIME_OUT if time_out == 0 else time_out
-        input_mode_retry_used = False
-
-        def send_skill_action():
-            nonlocal input_mode_retry_used
-            sent = self.send_skill_key(
-                down_time=down_time, action_name="skill_send", interval=0.25
-            )
-            if sent is False or input_mode_retry_used:
-                return sent
-            if not self._skill_still_available_after_input_mode_delay():
-                return sent
-
-            input_mode_retry_used = True
-            self.logger.info("skill still available after first key press, retry input mode once")
-            self._skill_available = False
-            return self.send_skill_key(down_time=down_time)
-
         result = self._try_available_action(
             "skill",
             self.skill_available,
-            send_skill_action,
+            self.lw_send_skill_action_factory(down_time),  # [lw] 输入模式没吃到键则重试一次
             send_click=send_click,
             time_out=the_time_out,
             has_animation=has_animation,
@@ -649,9 +508,7 @@ class BaseChar:
             self.sleep(post_sleep)
         duration = time.time() - skill_click_time if skill_click_time != 0 else 0
         if animation_start > 0:
-            self.add_freeze_duration(
-                skill_click_time, time.time() - animation_start, cause="技能动画"
-            )
+            self.add_freeze_duration(skill_click_time, time.time() - animation_start, cause="技能动画")  # [lw] cause=
         return clicked, duration, animation_start > 0
 
     def _wait_skill_animation(self, animation_start, skill_click_time):
@@ -663,20 +520,6 @@ class BaseChar:
                 break
             self.task.next_frame()
             self.check_combat()
-
-    def _current_char_still_self(self):
-        return self.task.get_current_char(raise_exception=False) is self
-
-    def _skill_still_available_after_input_mode_delay(self):
-        self.sleep(self.SKILL_INPUT_MODE_RETRY_DELAY, sleep_check=False)
-        self.task.next_frame()
-        self.check_combat()
-        return (
-            self._current_char_still_self()
-            and not self.task.in_animation
-            and self.task.is_in_team()
-            and self.skill_available()
-        )
 
     def click_arc(self):
         self.send_arc_key()
@@ -884,14 +727,13 @@ class BaseChar:
         """
         start = time.time()
         while time.time() - start < duration:
-            current_char = self.task.get_current_char(raise_exception=False)
-            if current_char is not self or not self.task.is_in_team():
-                return
+            if not self._current_char_still_self() or not self.task.is_in_team():  # [lw] 已切人/不在队伍即停
+                return  # [lw]
             if click_skill_if_ready_and_return and self.skill_available():
                 return self.click_skill()
             # if until_cycle_full and self.is_cycle_full():
             #     return
-            self.fill_idle_attack(interval=interval)
+            self.fill_idle_attack(interval=interval)  # [lw] 原为 self.click()
             self.sleep(interval)
         self.sleep(after_sleep)
 

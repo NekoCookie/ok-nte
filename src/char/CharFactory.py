@@ -7,10 +7,8 @@ from src.char.BaseChar import BaseChar, Element
 from src.char.Chiz import Chiz
 from src.char.Hotori import Hotori
 from src.char.Jiuyuan import Jiuyuan
-from src.char.MainDps import BuffSupport, HealSupport, MainDps, SakiriBuffSupport
 from src.char.Mint import Mint
 from src.char.Nanally import Nanally
-from src.char.Requiem import Requiem
 from src.char.Sakiri import Sakiri
 from src.char.Zero import Zero
 
@@ -30,12 +28,10 @@ char_dict: dict[str, dict[str, Any]] = {
     "char_nanally": {"cls": Nanally, "cn_name": "娜娜莉", "element": Element.GREEN},
     "char_hotori": {"cls": Hotori, "cn_name": "浔", "element": Element.WHITE},
     "char_chiz": {"cls": Chiz, "cn_name": "小吱", "element": Element.WHITE},
-    "template_main_dps": {"cls": MainDps, "cn_name": "主C模板"},
-    "template_buff_support": {"cls": BuffSupport, "cn_name": "辅助模板"},
-    "template_heal_support": {"cls": HealSupport, "cn_name": "治疗模板"},
-    "template_sakiri_buff_support": {"cls": SakiriBuffSupport, "cn_name": "早雾辅助"},
-    "char_requiem": {"cls": Requiem, "cn_name": "安魂曲主C"},
 }
+
+from src.lw.chars import lw_char_dict  # noqa: E402  # [lw] 用户角色注册, 合并上游时保留这两行
+char_dict.update(lw_char_dict)  # [lw]
 
 char_names = char_dict.keys()
 

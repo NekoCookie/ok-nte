@@ -57,10 +57,14 @@ class TestRefreshCdReady(unittest.TestCase):
     def setUp(self):
         self.clock = FakeClock(now=1000.0)
         self.p_time = mock.patch('src.combat.BaseCombatTask.time', self.clock)
+        # note_skill_on_cd/note_skill_ready 等在 src/lw/combat_ext.py, 必须与 refresh_cd 用同一假钟
+        self.p_time_ext = mock.patch('src.lw.combat_ext.time', self.clock)
         self.p_conv = mock.patch('src.combat.BaseCombatTask.convert_cd', lambda t: t.cd)
         self.p_time.start()
+        self.p_time_ext.start()
         self.p_conv.start()
         self.addCleanup(self.p_time.stop)
+        self.addCleanup(self.p_time_ext.stop)
         self.addCleanup(self.p_conv.stop)
         self.task = make_task()
 
