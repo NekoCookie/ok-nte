@@ -1081,10 +1081,12 @@ class BaseNTETask(BaseTask, CharUIMixin):  # type: ignore
         if not isinstance(box, Box):
             box = self.main_viewport
         candidates = []
+        # 确认/取消可能是同一款式(如全白), 每个模板要收集多个匹配而非单个最佳,
+        # 否则真确认键根本进不了候选
         for label in (Labels.confirm_btn_1, Labels.confirm_btn_2):
-            btn = self.find_one(label, box=box, threshold=threshold)
-            if btn:
-                candidates.append(btn)
+            boxes = self.find_feature(label, box=box, threshold=threshold)
+            if boxes:
+                candidates.extend(boxes)
         if not candidates:
             return None
         return self._pick_confirm_button(candidates)
@@ -1097,7 +1099,9 @@ class BaseNTETask(BaseTask, CharUIMixin):  # type: ignore
         识别不出文字的按模板匹配度兜底。
         """
         unknown = []
-        for btn in sorted(candidates, key=lambda b: b.confidence, reverse=True):
+        # 无字模板可能误匹配复选框等杂项, 只保留置信度最高的几个做OCR
+        candidates = sorted(candidates, key=lambda b: b.confidence, reverse=True)[:4]
+        for btn in candidates:
             text = self._read_confirm_btn_text(btn)
             if confirm_text_re.search(text):
                 return btn
