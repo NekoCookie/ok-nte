@@ -22,6 +22,8 @@ from src.utils import image_utils as iu
 
 logger = Logger.get_logger(__name__)
 stamina_re = re.compile(r"(\d+)/(\d+)")
+confirm_text_re = re.compile("确认|确定")
+cancel_text_re = re.compile("取消")
 
 
 class BaseNTETask(BaseTask, CharUIMixin):  # type: ignore
@@ -1078,9 +1080,48 @@ class BaseNTETask(BaseTask, CharUIMixin):  # type: ignore
     def find_confirm(self, box=None, threshold=0.7):
         if not isinstance(box, Box):
             box = self.main_viewport
-        return self.find_best_match_in_box(
-            box=box, to_find=[Labels.confirm_btn_1, Labels.confirm_btn_2], threshold=threshold
-        )
+        candidates = []
+        for label in (Labels.confirm_btn_1, Labels.confirm_btn_2):
+            btn = self.find_one(label, box=box, threshold=threshold)
+            if btn:
+                candidates.append(btn)
+        if not candidates:
+            return None
+        return self._pick_confirm_button(candidates)
+
+    def _pick_confirm_button(self, candidates):
+        """挑出真正的确认键。
+
+        按钮模板只认样式不认文字, 游戏更新可能调换确认/取消的位置或配色,
+        点击前先 OCR 按钮文字: 优先点"确认/确定", 明确是"取消"的不点,
+        识别不出文字的按模板匹配度兜底。
+        """
+        unknown = []
+        for btn in sorted(candidates, key=lambda b: b.confidence, reverse=True):
+            text = self._read_confirm_btn_text(btn)
+            if confirm_text_re.search(text):
+                return btn
+            if cancel_text_re.search(text):
+                logger.info(f"find_confirm skip cancel button {btn} text={text}")
+                continue
+            unknown.append(btn)
+        if not unknown:
+            logger.warning("find_confirm all candidates look like cancel")
+            return None
+        return unknown[0]
+
+    def _read_confirm_btn_text(self, btn):
+        # 模板只是按钮端头, 文字在旁边, 向左右各扩2倍宽; 越界box会被crop_image
+        # 静默替换为整帧导致读到全屏文字, 必须先钳到帧内
+        expand = btn.width * 2
+        x = max(0, btn.x - expand)
+        to_x = min(self.screen_width, btn.x + btn.width + expand)
+        ocr_box = Box(x, btn.y, to_x - x, btn.height, name="confirm_btn_text")
+        texts = self.ocr(box=ocr_box)
+        if not texts:
+            return ""
+        nearest = min(texts, key=lambda t: t.center_distance(btn))
+        return nearest.name or ""
 
 
 def interac_mask(image):

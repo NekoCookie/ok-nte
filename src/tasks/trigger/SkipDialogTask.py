@@ -86,8 +86,13 @@ class SkipDialogTask(TriggerTask, BaseNTETask):
         if skip_button := self.find_confirm(threshold=0.8):
             # sleep 0.2 to stable click skip button
             now = time.time()
+            # 等按钮完全显示再点: 白色款等白, 粉色款等粉
+            if "confirm_btn_2" in str(skip_button.name):
+                ready_color = confirm_pink_color
+            else:
+                ready_color = skip_confirm_color
             self.wait_until(
-                lambda: self.calculate_color_percentage(skip_confirm_color, skip_button) > 0.4,
+                lambda: self.calculate_color_percentage(ready_color, skip_button) > 0.4,
                 time_out=6,
             )
             if time.time() - now < 2.5:
@@ -130,6 +135,13 @@ skip_confirm_color = {
     "r": (208, 217),
     "g": (208, 217),
     "b": (208, 217),
+}
+
+# 取自 confirm_btn_2 模板(assets/images/0.png)的粉色实测范围
+confirm_pink_color = {
+    "r": (233, 255),
+    "g": (74, 96),
+    "b": (138, 160),
 }
 
 option_pink_color = {
