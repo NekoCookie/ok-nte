@@ -27,7 +27,15 @@
 ## 技术限制
 
 - Mixin 作为基类**不能 override** 上游类体里已定义的方法(Python MRO 子类优先)。
-  要改上游方法的行为:小改动就地改+标记;整方法改写就地改+方法顶标记。
+  要改上游方法的行为:
+  - **小改动**(几行以内): 就地改 + `# [lw]` 标记;
+  - **整方法改写**: 用"开关分发"模式——上游方法体顶部加两行 `[lw]` 分发,
+    实现放 `src/lw/` 里的 `lw_<方法名>`,开关是 `CombatExtMixin` 等上的 `LW_*` 类常量(默认 True);
+    上游原版方法体**原样保留**在分发之后,作对照/排查回退用。现有例子:
+    `BaseCombatTask.refresh_cd`(`LW_CD_ANCHORING` → `lw_refresh_cd`)、
+    `BaseCombatTask.load_chars`(`LW_LOAD_CHARS` → `lw_load_chars`)。
+    合并上游时: 分发两行保留;上游对原版方法体的改动正常合入(它是原版对照),
+    合完后人工比对上游改了什么、决定是否吸收进 `lw_` 版。
 - `CharUnavailableException`/`TeamChangedException` 定义在 `BaseCombatTask.py`(继承
   NotInCombatException 会循环 import),`src/lw/` 内引用它们用方法内局部 import。
 

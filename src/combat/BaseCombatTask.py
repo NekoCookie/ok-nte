@@ -240,7 +240,9 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
             )
         return time.time() - start - to_minus
 
-    def refresh_cd(self):  # [lw] 本方法被大幅改写(OCR锚定/去抖/诊断), 合并上游冲突时以本版为准并人工比对上游改动
+    def refresh_cd(self):
+        if self.LW_CD_ANCHORING:  # [lw] 开=龙威CD锚定(src/lw/combat_ext.py), 关=下面的上游原版(仅排查对照)
+            return self.lw_refresh_cd()  # [lw]
         if self.scene.cd_refreshed:
             return
         index = self.get_current_char().index
@@ -248,85 +250,18 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
         if cds is None:
             cds = {}
             self.cds[index] = cds
-        # 诊断(SKILL_CD_DIAG):切上场瞬间(覆盖锚点前)记下"下场最后推算",待在场首次读到真实CD对照。
-        if self.SKILL_CD_DIAG and getattr(self, "_last_refresh_index", None) != index:
-            self._capture_switch_in_estimate(index, cds)
-        now = time.time()
-        cds["time"] = now  # 兼容旧字段; 实际推算用每个 box 独立的 <box>_time
+        cds["time"] = time.time()
+        cds["skill"] = 0
+        cds["ultimate"] = 0
         texts = self.ocr(
             0.8594, 0.8847, 0.9578, 0.9139, frame_processor=gf.isolate_cd_to_black, match=cd_regex
         )
-        ocr_cds = {"skill": None, "ultimate": None}
         for text in texts:
             cd = convert_cd(text)
             if text.x < self.width_of_screen(0.89):
-                ocr_cds["skill"] = cd
+                cds["skill"] = cd
             elif text.x > self.width_of_screen(0.925):
-                ocr_cds["ultimate"] = cd
-        # 关键: 不要把"OCR 没读到数字"当成 CD=0。读不到时用图标高亮区分:
-        #   图标亮 = 已就绪 -> 锚 0; 图标暗 = 仍在冷却但数字没识别(坏帧) -> 保留上次可信锚点。
-        for box, ocr_cd in ocr_cds.items():
-            # 只截技能图标做诊断;大招走头像菱形稳定判定、不靠这套, 截了纯属浪费。
-            if self.SKILL_CD_DIAG and box == "skill":
-                self._dump_box_debug(box, ocr_cd)
-            # 记下这一帧 OCR 的原始读数(None=没读到数字), 供 settle / 真技能判定不受 note 标称CD 污染地判进CD/就绪。
-            cds[box + "_ocr_raw"] = ocr_cd
-            if ocr_cd is not None:
-                # 读到数字 = 在CD, 数字即剩余CD(OCR 数字识别可靠, 作主判据)。
-                # 闪避打断检测: 放招刚锚了标称大CD, 但图标紧接着读到明显更短的CD = 技能被打断、
-                # 没真放(进短CD ~3s)。闪避是我方主动触发(记了时刻), 所以用"放招后是否真闪避了"
-                # 确定性确认, 图标短CD作实证, 不靠动画/猜测。
-                noted = cds.get(box)
-                cast_at = cds.get("skill_cast_at", 0)
-                if (
-                    box == "skill"
-                    and 0 < now - cast_at < 2.5
-                    and isinstance(noted, (int, float))
-                    and ocr_cd < noted - 5
-                ):
-                    dodge_at = SoundCombatContext().last_dodge_time()
-                    dodged = cast_at < dodge_at <= now
-                    extra = f"(闪避@放招后{dodge_at - cast_at:.2f}s)" if dodged else ""
-                    self.log_info(
-                        f"技能被打断: char{index + 1} 放招锚{noted:.0f}s 图标实读{ocr_cd:.1f}s "
-                        f"(没真放, 约{ocr_cd:.0f}s后可重放) | 闪避确认={dodged}{extra}"
-                    )
-                cds[box] = ocr_cd
-                cds[box + "_time"] = now
-                cds.pop(box + "_no_number_since", None)  # 读到数字 → 清空"连续没数字"计时
-            elif box == "skill":
-                # 技能没读到数字: 不再靠每角色就绪模板/图标高亮(高亮按"有白色像素"判, 会被CD白字骗→
-                # 安魂曲进CD也误判就绪)。改成"连续没数字够久才算就绪": 数字识别可靠→在CD几乎每帧有数字、
-                # 只偶发漏帧, 真就绪才持续没数字。去抖窗放招后(grace内)取更长的 grace(挡放招后数字滞后,
-                # 别把刚放出的技能误判就绪→空切), 平时取短的 READY_NO_NUMBER_DEBOUNCE。
-                since = cds.get("skill_no_number_since")
-                if since is None:
-                    since = now
-                    cds["skill_no_number_since"] = now
-                if "skill" not in cds:
-                    # 首次见该角色且没数字: 没历史可做"连续没数字"去抖, 用图标兜一帧定调
-                    # (就绪→锚0; 否则占位冷却, 下一帧读到数字再校准)。仅这一帧用图标, 之后走去抖。
-                    cds["skill"] = 0 if self._box_ready_no_number("skill") else self.UNKNOWN_CD_SECONDS
-                    cds["skill_time"] = now
-                else:
-                    in_post_cast = 0 < now - cds.get("skill_cast_at", 0) < self.SKILL_CAST_READY_GRACE
-                    debounce = self.SKILL_CAST_READY_GRACE if in_post_cast else self.READY_NO_NUMBER_DEBOUNCE
-                    if now - since >= debounce:
-                        cds["skill"] = 0
-                        cds["skill_time"] = now
-                    # else: 没数字但没到去抖窗 → 保留上次锚点继续倒数(偶发坏帧, 不动)
-            elif self._box_ready_no_number(box):
-                # 大招(ultimate): 维持原"图标就绪→锚0"判定(大招走头像菱形那条线, 不改)。
-                cds[box] = 0
-                cds[box + "_time"] = now
-            elif box not in cds:
-                # 从未成功锚定过 + 此刻坏帧: 保守占位为冷却中, 等下一帧重锚。
-                cds[box] = self.UNKNOWN_CD_SECONDS
-                cds[box + "_time"] = now
-            # else: 保留 cds[box] / cds[box+"_time"] 不变, 继续按上次锚点倒计时
-        if self.SKILL_CD_DIAG:
-            self._report_switch_in_cd_truth(index, cds, now)
-            self._last_refresh_index = index
+                cds["ultimate"] = cd
         self.scene.cd_refreshed = True
         # self.log_debug(f"cd refreshed: {cds} {time.time() - cds['time']}")
 
@@ -796,82 +731,63 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
 
         return get_char_by_pos(self, box_scaled, index, safe_get(self.chars, index))
 
-    def load_chars(self, preserve_on_weak=True) -> bool:  # [lw] 本方法被大幅改写(快照重试/弱识别防抖), 合并上游冲突时以本版为准并人工比对上游改动
+    def load_chars(self) -> bool:
         """加载队伍中的角色信息。"""
+        if self.LW_LOAD_CHARS:  # [lw] 开=龙威队伍加载(src/lw/combat_ext.py), 关=下面的上游原版(仅排查对照)
+            return self.lw_load_chars()  # [lw]
         ret = False
         now = time.perf_counter()
         self.load_hotkey()
-        snapshot = self._get_valid_team_snapshot(source="load_chars", retry=True)
-        if snapshot is None:
+        in_team, current_index, count = self.in_team()
+        if not in_team or current_index == -1:
             return ret
 
-        current_index, count = snapshot
+        if count > 4:
+            logger.warning(f"char count {count} larger than 4, set to 4")
+            count = 4
         self.log_info(f"load_chars count {count} current_index {current_index}")
 
-        fixed_slots = self._get_fixed_slots()
-        resnap_weak_single_unknown = True
-        while True:
-            restart_with_new_snapshot = False
-            for attempt in range(self.LOAD_CHARS_WEAK_RETRY + 1):
-                new_chars = []
-                indices_to_detect = []
-                for i in range(count):
-                    char = self._do_load_char(i, fixed_slots)
-                    new_chars.append(char)
-                    if char.element is Element.DEFAULT:
-                        indices_to_detect.append(i)
+        self.clear_element_ring_reactions()
+        fixed_team = CustomCharManager().get_fixed_team()
+        fixed_slots = fixed_team.get("slots", []) if fixed_team.get("enabled", False) else []
+        new_chars = []
+        indices_to_detect = []
+        for i in range(count):
+            char = self._do_load_char(i, fixed_slots)
+            new_chars.append(char)
+            if char.element is Element.DEFAULT:
+                indices_to_detect.append(i)
 
-                if indices_to_detect:
-                    detected_elements = self.load_chars_element(indices_to_detect)
-                    for i in indices_to_detect:
-                        new_chars[i].element = detected_elements.get(i, Element.DEFAULT)
+        if indices_to_detect:
+            detected_elements = self.load_chars_element(indices_to_detect)
+            for i in indices_to_detect:
+                new_chars[i].element = detected_elements.get(i, Element.DEFAULT)
 
-                weak_single_unknown = self._is_weak_single_unknown_team(new_chars, fixed_slots)
-                if weak_single_unknown and resnap_weak_single_unknown:
-                    resnap_weak_single_unknown = False
-                    recovered_snapshot = self._get_valid_team_snapshot(
-                        source="load_chars weak single unknown",
-                        retry=True,
-                        reject_snapshot=lambda team_snapshot: team_snapshot[1] == 1,
-                    )
-                    if recovered_snapshot is not None:
-                        current_index, count = recovered_snapshot
-                        self.log_info(
-                            f"load_chars weak single unknown recovered team snapshot "
-                            f"count {count} current_index {current_index}"
-                        )
-                        restart_with_new_snapshot = True
-                        break
+        elements = [char.element for char in new_chars]
+        self.chars = new_chars
+        self.info_set("char elements", elements)
 
-                weak_unknown_expansion = self._is_weak_unknown_expansion(
-                    new_chars,
-                    fixed_slots,
-                    previous_count=self.team_size,
-                )
-                if (weak_single_unknown or weak_unknown_expansion) and attempt < self.LOAD_CHARS_WEAK_RETRY:
-                    self.log_info(
-                        f"load_chars weak unknown retry {attempt + 1}/{self.LOAD_CHARS_WEAK_RETRY}"
-                    )
-                    time.sleep(self.LOAD_CHARS_WEAK_RETRY_INTERVAL)
-                    continue
+        healer_count = 0
+        self.info_set("chars", [])
+        for char in self.chars:
+            if char is not None:
+                char.reset_state()
+                if isinstance(char, Healer):
+                    healer_count += 1
+                if char.index == current_index:
+                    char.is_current_char = True
+                else:
+                    char.is_current_char = False
+                name = char.char_name
+                conf = char.confidence
+                elem = char.element
+                self.log_info(f"load char success {char} {name} {conf:.2f} {elem}")
+                self.info_add_to_list("chars", f"{char.char_name}: {char.combo_label}")
 
-                if weak_single_unknown and preserve_on_weak and self.chars:
-                    self.log_info("load_chars weak single unknown ignored, keep previous team")
-                    ret = False
-                    break
-
-                if weak_unknown_expansion and preserve_on_weak and self.chars:
-                    self.log_info("load_chars weak unknown expansion ignored, keep previous team")
-                    ret = False
-                    break
-
-                ret = self._commit_loaded_chars(new_chars, current_index)
-                break
-
-            if restart_with_new_snapshot:
-                continue
-            break
-
+        if self.team_size > 0:
+            self.combat_start = time.time()
+            ret = True
+            self._apply_sound_config()
         logger.debug(f"load_chars cost {time.perf_counter() - now:.3f}s")
         return ret
 
