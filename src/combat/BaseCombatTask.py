@@ -73,7 +73,8 @@ class BaseCombatTask(CombatCheck):
     _element_template_cache = {}
     LOAD_CHARS_WEAK_RETRY = 2
     LOAD_CHARS_WEAK_RETRY_INTERVAL = 0.25
-    LOAD_CHARS_SNAPSHOT_RETRY_WINDOW = 0.8
+    # 需覆盖开战入场动画(~1.5s), 期间队伍栏头像识别不全会得到无效快照
+    LOAD_CHARS_SNAPSHOT_RETRY_WINDOW = 2.5
     LOAD_CHARS_SNAPSHOT_RETRY_INTERVAL = 0.08
     TEAM_CHANGE_CHECK_INTERVAL = 0.3
     TEAM_CHANGE_CONFIRM_INTERVAL = 0.8
@@ -1156,6 +1157,7 @@ class BaseCombatTask(CombatCheck):
                 return None
 
             attempt += 1
+            self.click(action_name="load_chars_fill_attack", interval=0.2)
             time.sleep(self.LOAD_CHARS_SNAPSHOT_RETRY_INTERVAL)
 
     def combat_end(self):
