@@ -6,13 +6,7 @@ from qfluentwidgets import FluentIcon
 
 from src.char.CharFactory import get_char_feature_by_pos
 from src.char.custom.CustomCharManager import CustomCharManager
-from src.combat.BaseCombatTask import (  # [lw] 多 import 两个用户异常
-    BaseCombatTask,
-    CharDeadException,
-    CharUnavailableException,
-    NotInCombatException,
-    TeamChangedException,
-)
+from src.combat.BaseCombatTask import BaseCombatTask, CharDeadException, NotInCombatException
 
 
 class ScannerSignals(QObject):
@@ -52,42 +46,22 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
             self.tr(self.txt_team_not_enough)
 
     def run(self):
+        if self.LW_COMBAT_RUN:  # [lw] 开=龙威战斗主循环(src/lw/combat_ext.py), 关=下面的上游原版(仅排查对照)
+            return self.lw_combat_run()  # [lw]
         ret = False
         if not self.scene.is_in_team(self.is_in_team):
             return
 
-        self._last_team_recheck = 0.0  # [lw]
-        self.reset_unavailable_chars()  # [lw]
         combat_start = time.time()
         while self.in_combat():
             try:
                 if not ret:
                     ret = True
                     self.switch_to_combat_start_char()
-                if not self._reload_if_team_size_changed():  # [lw] 队伍变化重载(原为直接 perform)
-                    time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
-                    continue
-                current_char = self.get_current_char()
-                if current_char is None:
-                    self.log_info("current char missing during combat, reload chars")
-                    if not self._reload_combat_team():
-                        time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
-                    continue
-                current_char.perform()  # [lw] 本块到此为用户改动
+                self.get_current_char().perform()
             except CharDeadException:
                 self.log_error("Characters dead", notify=True)
                 break
-            except CharUnavailableException as e:  # [lw] 两个用户异常分支, 合并上游时保留
-                logger.info(
-                    f"auto_combat_task_char_unavailable "
-                    f"{int(time.time() - combat_start)} {e}"
-                )
-                continue
-            except TeamChangedException as e:
-                logger.info(f"auto_combat_task_team_changed {int(time.time() - combat_start)} {e}")
-                if not self._reload_combat_team():
-                    time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
-                continue  # [lw]
             except NotInCombatException as e:
                 logger.info(f"auto_combat_task_out_of_combat {int(time.time() - combat_start)} {e}")
                 break

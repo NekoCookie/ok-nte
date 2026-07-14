@@ -37,6 +37,7 @@ class CombatExtMixin(_TaskProxy):
     LW_CD_ANCHORING = True
     LW_LOAD_CHARS = True
     LW_SWITCH_DECIDE = True
+    LW_COMBAT_RUN = True
 
     # 锚定技能/大招 CD 时, 若 OCR 读不到数字且图标不亮(无旧锚点)的保守占位:
     # 当成仍在冷却, 宁可多冷却也不误判可用(避免空切)。
@@ -791,6 +792,58 @@ class CombatExtMixin(_TaskProxy):
 
     TEAM_RECHECK_INTERVAL = 1.0
     TEAM_RELOAD_WAIT_INTERVAL = 0.2
+
+    def lw_combat_run(self):
+        """AutoCombatTask.run 的龙威实现(按 LW_COMBAT_RUN 分发到这里):
+        增加队伍变化重载、当前角色丢失重载、角色不可用/队伍变更两类异常的恢复分支。"""
+        from src.combat.BaseCombatTask import (
+            CharDeadException,
+            CharUnavailableException,
+            NotInCombatException,
+            TeamChangedException,
+        )
+
+        ret = False
+        if not self.scene.is_in_team(self.is_in_team):
+            return
+
+        self._last_team_recheck = 0.0
+        self.reset_unavailable_chars()
+        combat_start = time.time()
+        while self.in_combat():
+            try:
+                if not ret:
+                    ret = True
+                    self.switch_to_combat_start_char()
+                if not self._reload_if_team_size_changed():
+                    time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
+                    continue
+                current_char = self.get_current_char()
+                if current_char is None:
+                    self.log_info("current char missing during combat, reload chars")
+                    if not self._reload_combat_team():
+                        time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
+                    continue
+                current_char.perform()
+            except CharDeadException:
+                self.log_error("Characters dead", notify=True)
+                break
+            except CharUnavailableException as e:
+                logger.info(
+                    f"auto_combat_task_char_unavailable "
+                    f"{int(time.time() - combat_start)} {e}"
+                )
+                continue
+            except TeamChangedException as e:
+                logger.info(f"auto_combat_task_team_changed {int(time.time() - combat_start)} {e}")
+                if not self._reload_combat_team():
+                    time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
+                continue
+            except NotInCombatException as e:
+                logger.info(f"auto_combat_task_out_of_combat {int(time.time() - combat_start)} {e}")
+                break
+        if ret:
+            self.combat_end()
 
     def _reload_combat_team(self) -> bool:
         from src.combat.BaseCombatTask import CharUnavailableException
