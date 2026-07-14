@@ -33,7 +33,10 @@
     实现放 `src/lw/` 里的 `lw_<方法名>`,开关是 `CombatExtMixin` 等上的 `LW_*` 类常量(默认 True);
     上游原版方法体**原样保留**在分发之后,作对照/排查回退用。现有例子:
     `BaseCombatTask.refresh_cd`(`LW_CD_ANCHORING` → `lw_refresh_cd`)、
-    `BaseCombatTask.load_chars`(`LW_LOAD_CHARS` → `lw_load_chars`)。
+    `BaseCombatTask.load_chars`(`LW_LOAD_CHARS` → `lw_load_chars`)、
+    `BaseCombatTask._decide_switch_to`(`LW_SWITCH_DECIDE` → `lw_decide_switch_to`)。
+- 用户实例字段不写在上游 `__init__` 里——`CombatExtMixin.__init__` 会经由上游
+  `super().__init__()` 链被调用, 用户字段统一在那里初始化。
     合并上游时: 分发两行保留;上游对原版方法体的改动正常合入(它是原版对照),
     合完后人工比对上游改了什么、决定是否吸收进 `lw_` 版。
 - `CharUnavailableException`/`TeamChangedException` 定义在 `BaseCombatTask.py`(继承

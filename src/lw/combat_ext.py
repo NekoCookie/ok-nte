@@ -11,7 +11,7 @@ import numpy as np
 from ok import Logger, safe_get
 
 from src import text_white_color
-from src.char.BaseChar import BaseChar, Element
+from src.char.BaseChar import BaseChar, Element, Priority
 from src.char.custom.CustomCharManager import CustomCharManager
 from src.char.Healer import Healer
 from src.sound_trigger.SoundCombatContext import SoundCombatContext
@@ -36,6 +36,7 @@ class CombatExtMixin(_TaskProxy):
     # 只应在"怀疑 lw 逻辑自身有问题、想和原版对照"时临时关闭。
     LW_CD_ANCHORING = True
     LW_LOAD_CHARS = True
+    LW_SWITCH_DECIDE = True
 
     # 锚定技能/大招 CD 时, 若 OCR 读不到数字且图标不亮(无旧锚点)的保守占位:
     # 当成仍在冷却, 宁可多冷却也不误判可用(避免空切)。
@@ -64,6 +65,19 @@ class CombatExtMixin(_TaskProxy):
     TEAM_SIGNATURE_MATCH_THRESHOLD = 0.6
     CHAR_UNAVAILABLE_BASE_COOLDOWN = 8.0
     CHAR_UNAVAILABLE_MAX_COOLDOWN = 30.0
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # 用户字段集中在这里初始化(MRO 上游类的 super().__init__ 会路过本方法),
+        # 上游 __init__ 里不留任何用户行。
+        self._last_team_change_check = 0.0
+        self._last_team_signature_check = 0.0
+        self._pending_team_change = None
+        self._pending_team_signature_change = None
+        self._team_change_checking = False
+        self.unavailable_char_until = {}
+        self.unavailable_char_failures = {}
+        self._last_team_recheck = 0.0  # AutoCombatTask 的队伍重载节流
 
     # ---------- 角色不可用标记 ----------
 
@@ -508,6 +522,59 @@ class CombatExtMixin(_TaskProxy):
             self.log_debug(f"cd estimate log failed: {e}")
 
     # ---------- 切换决策辅助 ----------
+
+    def lw_decide_switch_to(self, current_char: "BaseChar", free_intro=False, require_intro=False):
+        """_decide_switch_to 的龙威实现(按 LW_SWITCH_DECIDE 分发到这里):
+        跳过不可用角色 + 切换决策诊断 + 辅助大招待铺时压过环合反应。"""
+        has_intro = free_intro or current_char.is_cycle_full()
+        switch_to = current_char
+
+        if require_intro and not has_intro:
+            return switch_to, has_intro
+
+        max_priority = Priority.MIN
+
+        # 只在主决策打(retry_intro 那个 0.12s 重决策不打, 免刷屏)
+        diag = [] if (self.SKILL_CD_DIAG and not require_intro) else None
+        for char in self.chars:
+            if char is None:
+                continue
+            if char != current_char and self.is_char_unavailable(char):
+                logger.debug(f"skip unavailable char {char}")
+                continue
+
+            if char == current_char:
+                priority = Priority.CURRENT_CHAR
+            else:
+                priority = char.get_switch_priority(current_char, has_intro)
+                logger.debug(f"switch_next_char priority: {char} {priority}")
+
+            if diag is not None:
+                diag.append(self._switch_diag_str(char, priority))
+
+            if priority > max_priority or (
+                priority == max_priority and char.last_perform < switch_to.last_perform
+            ):
+                if priority == max_priority:
+                    logger.debug("switch priority equal, determine by last perform")
+                max_priority = priority
+                switch_to = char
+
+        if diag is not None:
+            self.log_info(
+                f"switch决策(has_intro={has_intro}): {' | '.join(diag)} "
+                f"=> 选 {self._get_char_log_name(switch_to)}"
+            )
+
+        if has_intro and max_priority < Priority.FAST_SWITCH:
+            # 辅助大招就绪待铺时,先上场铺大招 buff,不被环合反应覆盖
+            # (按优先级切到该辅助开大);没有大招待铺时环合照常走。
+            if not self._any_support_ultimate_pending(current_char):
+                reaction_target = self.find_element_ring_reaction_target(current_char)
+                if reaction_target and not self.is_char_unavailable(reaction_target):
+                    return reaction_target, has_intro
+
+        return switch_to, has_intro
 
     def _switch_diag_str(self, char, priority):
         """诊断(SKILL_CD_DIAG):某角色本次切人决策拿到的优先级 + (支援)资源判定明细,

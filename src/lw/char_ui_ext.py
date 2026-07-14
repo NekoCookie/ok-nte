@@ -33,6 +33,13 @@ class CharUIExtMixin(_TaskProxy):
     ULT_DIAMOND_LAP_PRESENT = 17000
     ULT_DIAMOND_LAP_ABSENT = 8000
 
+    def lw_stable_current_char(self, detection, score):
+        """识别理由属于稳定类且分数未超拒绝线时放宽接受, 防在场角色显示跳变。"""
+        return (
+            detection.reason in self.CURRENT_CHAR_STABLE_ACCEPT_REASONS
+            and score <= self.CURRENT_CHAR_REJECT_SCORE
+        )
+
     def get_ultimate_diamond_box(self, index: int) -> "Box":
         """第 index 个角色头像右侧"大招就绪菱形"格的区域框(随分辨率缩放、跟 UI 偏移)。"""
         box = self.box_of_screen_scaled(

@@ -275,11 +275,7 @@ class CharUIMixin(CharUIExtMixin, _TaskProxy):  # [lw] 插入用户扩展基类
         detection = self._get_current_char_detection(frame=frame)
         score = detection.scores[index]
         new = f"idx {index} conf {score:.3f} {detection.reason}"
-        stable_target = (  # [lw] 稳定判定放宽, 合并上游时保留本块
-            detection.reason in self.CURRENT_CHAR_STABLE_ACCEPT_REASONS
-            and score <= self.CURRENT_CHAR_REJECT_SCORE
-        )  # [lw]
-        if detection.accepted and detection.index == index and (score < threshold or stable_target):  # [lw]
+        if detection.accepted and detection.index == index and (score < threshold or self.lw_stable_current_char(detection, score)):  # [lw] 稳定判定放宽
             self.info_set("current char", new)
             return True
         self.run_with_interval(lambda: self.info_set("current char", new), 0.5)

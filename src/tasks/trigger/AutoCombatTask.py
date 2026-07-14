@@ -47,7 +47,6 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         }
         self.op_index = 0
         self.origin_func = {}
-        self._last_team_recheck = 0.0  # [lw] 队伍重载节流(实现在 src/lw/combat_ext.py)
         if self._app is not None:
             self.tr(self.txt_team_not_exist)
             self.tr(self.txt_team_not_enough)

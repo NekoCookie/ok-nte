@@ -22,8 +22,22 @@ logger = Logger.get_logger(__name__)
 confirm_text_re = re.compile("确认|确定")
 cancel_text_re = re.compile("取消")
 
+# 取自 confirm_btn_2 模板(assets/images/0.png)的粉色实测范围
+confirm_pink_color = {
+    "r": (233, 255),
+    "g": (74, 96),
+    "b": (138, 160),
+}
+
 
 class NTETaskExtMixin(_TaskProxy):
+    def lw_confirm_ready_color(self, button, default_color):
+        """确认按钮"完全显示"该等的颜色: 白色款等白(default), 粉色款(confirm_btn_2)等粉。
+        游戏更新后按钮有两种款式, 等错颜色会一直等到超时才点。"""
+        if "confirm_btn_2" in str(button.name):
+            return confirm_pink_color
+        return default_color
+
     def lw_find_confirm(self, box=None, threshold=0.7):
         if not isinstance(box, Box):
             box = self.main_viewport

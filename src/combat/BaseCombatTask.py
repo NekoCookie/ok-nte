@@ -76,13 +76,6 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
         self.vibrate_chars_index: list[int] = []
         self.chars_slot_mat = [None, None, None, None]
         self.element_ring_reaction_counts = {}
-        self._last_team_change_check = 0.0  # [lw] 以下到 unavailable_char_failures 均为用户字段
-        self._last_team_signature_check = 0.0  # [lw]
-        self._pending_team_change = None  # [lw]
-        self._pending_team_signature_change = None  # [lw]
-        self._team_change_checking = False  # [lw]
-        self.unavailable_char_until = {}  # [lw]
-        self.unavailable_char_failures = {}  # [lw]
         self.clear_element_ring_reactions()
 
     @property
@@ -359,6 +352,8 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
             return char.name
 
     def _decide_switch_to(self, current_char: "BaseChar", free_intro=False, require_intro=False):
+        if self.LW_SWITCH_DECIDE:  # [lw] 开=龙威切换决策(src/lw/combat_ext.py), 关=下面的上游原版(仅排查对照)
+            return self.lw_decide_switch_to(current_char, free_intro, require_intro)  # [lw]
         has_intro = free_intro or current_char.is_cycle_full()
         switch_to = current_char
 
@@ -367,23 +362,15 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
 
         max_priority = Priority.MIN
 
-        # [lw] 只在主决策打(retry_intro 那个 0.12s 重决策不打, 免刷屏)
-        diag = [] if (self.SKILL_CD_DIAG and not require_intro) else None  # [lw]
         for char in self.chars:
             if char is None:
                 continue
-            if char != current_char and self.is_char_unavailable(char):  # [lw] 跳过不可用角色
-                logger.debug(f"skip unavailable char {char}")
-                continue  # [lw]
 
             if char == current_char:
                 priority = Priority.CURRENT_CHAR
             else:
                 priority = char.get_switch_priority(current_char, has_intro)
                 logger.debug(f"switch_next_char priority: {char} {priority}")
-
-            if diag is not None:  # [lw]
-                diag.append(self._switch_diag_str(char, priority))  # [lw]
 
             if priority > max_priority or (
                 priority == max_priority and char.last_perform < switch_to.last_perform
@@ -393,19 +380,10 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
                 max_priority = priority
                 switch_to = char
 
-        if diag is not None:  # [lw] 切换决策诊断日志
-            self.log_info(
-                f"switch决策(has_intro={has_intro}): {' | '.join(diag)} "
-                f"=> 选 {self._get_char_log_name(switch_to)}"
-            )  # [lw]
-
         if has_intro and max_priority < Priority.FAST_SWITCH:
-            # [lw] 辅助大招就绪待铺时,先上场铺大招 buff,不被环合反应覆盖
-            # (按优先级切到该辅助开大);没有大招待铺时环合照常走。
-            if not self._any_support_ultimate_pending(current_char):  # [lw] 本块改自裸 reaction_target 判断
-                reaction_target = self.find_element_ring_reaction_target(current_char)
-                if reaction_target and not self.is_char_unavailable(reaction_target):  # [lw]
-                    return reaction_target, has_intro
+            reaction_target = self.find_element_ring_reaction_target(current_char)
+            if reaction_target:
+                return reaction_target, has_intro
 
         return switch_to, has_intro
 
