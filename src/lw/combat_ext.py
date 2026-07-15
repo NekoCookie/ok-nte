@@ -909,6 +909,18 @@ class CombatExtMixin(_TaskProxy):
     def _is_unknown_char(self, char: "BaseChar") -> bool:
         return type(char) is BaseChar and char.char_name == "unknown"
 
+    def _warm_up_background_mouse(self):
+        """开战(换队加载成功)时预热后台鼠标状态。LauncherTask 每次"Switching capture to game
+        window"都会重建 interaction, bg_mouse_pos 归零成 (0,0)/目标 hwnd 丢失——重建后的第一场
+        战斗里 combo 的 PostMessage 左键会打到窗口左上角, 游戏不响应(实测: 程序启动/暂停重启后
+        第一把双4a只出闪避那一下)。此刻 load_chars 刚截图成功, width/height 必然有效, 用画面
+        中心坐标把 bg_mouse_pos/_dynamic_target_hwnd/激活状态热身一次。"""
+        try:
+            itx = self.executor.interaction
+            itx.update_mouse_pos(round(self.width * 0.5), round(self.height * 0.5))
+        except Exception as e:
+            self.log_debug(f"warm_up_background_mouse failed: {e}")
+
     def _get_fixed_slots(self):
         fixed_team = CustomCharManager().get_fixed_team()
         return fixed_team.get("slots", []) if fixed_team.get("enabled", False) else []
@@ -1052,5 +1064,6 @@ class CombatExtMixin(_TaskProxy):
         if self.team_size > 0:
             self.combat_start = time.time()
             self._apply_sound_config()
+            self._warm_up_background_mouse()
             return True
         return False

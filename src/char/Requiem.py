@@ -34,8 +34,15 @@ class _RequiemCombatIO:
         try:
             cx = round(self._itx.capture.width * 0.5)
             cy = round(self._itx.capture.height * 0.5)
-            self._pos = self._itx.update_mouse_pos(cx, cy)
         except Exception:
+            # capture 短暂无效(LauncherTask 刚切换 capture)时退回 task 宽高, 千万别退到
+            # update_mouse_pos(-1,-1): interaction 刚重建时 bg_mouse_pos 是 (0,0)=窗口左上角,
+            # combo 的左键会全部打空(实测: 重建后第一把双4a不出)。
+            cx = round(getattr(char.task, "width", 0) * 0.5)
+            cy = round(getattr(char.task, "height", 0) * 0.5)
+        if cx > 0 and cy > 0:
+            self._pos = self._itx.update_mouse_pos(cx, cy)
+        else:
             self._pos = self._itx.update_mouse_pos(-1, -1)
 
     def should_continue(self):
