@@ -758,13 +758,15 @@ class CombatExtMixin(_TaskProxy):
                 continue
 
             verified += 1
-            is_match, match_name, confidence = manager.match_feature(
+            # 上游schema v5后match_feature的target_char/返回值均为char_id(原为char_name);
+            # 传名字会过滤掉全部候选→置信度恒0.00→误判队伍变更(实测每秒误报清combo状态)
+            is_match, match_id, confidence = manager.match_feature(
                 self,
                 mat,
                 threshold=self.TEAM_SIGNATURE_MATCH_THRESHOLD,
-                target_char=char.char_name,
+                target_char=char_id,
             )
-            if not is_match or match_name != char.char_name:
+            if not is_match or match_id != char_id:
                 mismatches.append((char.index, char.char_name, confidence))
 
         if not verified:
