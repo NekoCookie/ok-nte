@@ -163,7 +163,9 @@ class CombatExtMixin(_TaskProxy):
 
         if self.scene.cd_refreshed:
             return
-        index = self.get_current_char().index
+        # 上游get_current_char默认语义反转(旧: 默认raise; 新: 默认返回None), 显式raise保持旧行为,
+        # 否则识别丢当前角色的瞬间这里会变成未捕获的NoneType.index而非可被战斗循环接住的NotInCombat
+        index = self.get_current_char(raise_exception=True).index
         cds = self.cds.get(index)
         if cds is None:
             cds = {}
@@ -367,7 +369,7 @@ class CombatExtMixin(_TaskProxy):
         确定"这一下到底进没进CD": 读到有意义数字才是真进了CD, 没数字就是没放成/还就绪。"""
         self.refresh_cd()
         if char_index is None:
-            char_index = self.get_current_char().index
+            char_index = self.get_current_char(raise_exception=True).index  # 同lw_refresh_cd: 保持旧版raise语义
         return self.cds.get(char_index, {}).get("skill_ocr_raw")
 
     # ---------- CD 诊断(SKILL_CD_DIAG) ----------
@@ -901,7 +903,8 @@ class CombatExtMixin(_TaskProxy):
         fixed_slot = safe_get(fixed_slots, index)
         if not isinstance(fixed_slot, dict):
             return False
-        return bool(str(fixed_slot.get("char_name", "") or "").strip())
+        # 上游schema v5后固定槽字段为char_id(原char_name), 读旧键恒False→固定槽被当未知槽
+        return bool(str(fixed_slot.get("char_id", "") or "").strip())
 
     def _is_unknown_char(self, char: "BaseChar") -> bool:
         return type(char) is BaseChar and char.char_name == "unknown"
