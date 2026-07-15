@@ -646,6 +646,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
     def _wait_for_ultimate_ready(self, wait_if_no_cd):
         deadline = time.time() + wait_if_no_cd
         while not self.has_cd("ultimate") and time.time() < deadline:
+            self.click_with_interval()  # [lw] 等待期平A填充, 不死等
             self.sleep(0.1)
 
     def _wait_ultimate_unfreeze(self, start):

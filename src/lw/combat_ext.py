@@ -747,7 +747,9 @@ class CombatExtMixin(_TaskProxy):
             if char is None or not char.char_name or char.char_name == "unknown":
                 continue
 
-            char_info = manager.get_character_info(char.char_name) or {}
+            # 上游schema v5删除了按名查询get_character_info, 用 按名找id+按id查 组合等价
+            char_id = manager._find_character_id_by_name(char.char_name)
+            char_info = (manager.get_character_info_by_id(char_id) if char_id else None) or {}
             if not char_info.get("feature_ids"):
                 continue
 

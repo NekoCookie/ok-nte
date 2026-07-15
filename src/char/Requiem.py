@@ -593,7 +593,7 @@ class Requiem(MainDps):
         # 已确认脱战则抛 NotInCombat 收手。和 combo 中途 _check_combat_alive 同一判定(带去抖不误停)。
         self._check_combat_alive()
 
-        used_ultimate = self.click_ultimate(wait_if_cd_ready=self.PRE_SKILL_ULTIMATE_WAIT)
+        used_ultimate = self.click_ultimate(wait_if_no_cd=self.PRE_SKILL_ULTIMATE_WAIT)  # 上游参数改名(原wait_if_cd_ready)
 
         if self.skill_available():
             # 真/免费只看技能图标(is_real_skill_now);识别不到按真技能处理。
