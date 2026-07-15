@@ -689,12 +689,12 @@ class CombatExtMixin(_TaskProxy):
         self._last_team_change_check = now
 
         self._team_change_checking = True
-        previous_skip_sleep_check = self.skip_sleep_check
-        self.skip_sleep_check = True
         try:
-            in_team, current_index, count = self.in_team()
+            # 上游72ab817把skip_sleep_check布尔重构为SleepCheckSkip+contextmanager, 等价改写
+            with self.skip_sleep_checks() as skip:
+                skip.all = True
+                in_team, current_index, count = self.in_team()
         finally:
-            self.skip_sleep_check = previous_skip_sleep_check
             self._team_change_checking = False
 
         snapshot = self._normalize_team_snapshot(
