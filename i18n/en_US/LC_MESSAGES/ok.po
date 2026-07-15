@@ -81,9 +81,6 @@ msgstr "{fixed_team} cleared"
 msgid "{} 号位"
 msgstr "Slot {}"
 
-msgid "不扫描也可自动战斗，将使用通用脚本"
-msgstr "Auto-combat is possible without scanning; a general script will be used."
-
 msgid "任务跳过对话"
 msgstr "Task: Skip Dialogue"
 
@@ -100,8 +97,8 @@ msgstr "Saved successfully"
 msgid "停用"
 msgstr "Deactivate"
 
-msgid "先扫描或手动填写"
-msgstr "Scan first or fill manually"
+msgid "先扫描并关联特征或手动填写"
+msgstr "Scan and link features first, or fill manually"
 
 msgid "出招表"
 msgstr "Combo List"
@@ -124,6 +121,15 @@ msgstr "Refresh List"
 msgid "匹配成功: {}"
 msgstr "Match successful: {}"
 
+msgid "置信度: {:.2f}"
+msgstr "Confidence: {:.2f}"
+
+msgid "特征已加入"
+msgstr "Feature added"
+
+msgid "加入特征"
+msgstr "Add feature"
+
 msgid "匹配文字"
 msgstr "Match Text"
 
@@ -145,8 +151,8 @@ msgstr "Auto-click teleport in map"
 msgid "填入扫描"
 msgstr "Fill Scan"
 
-msgid "增加 <b style=\"color: #0078d7;\">角色特征</b> 后将自动判断当前角色。<br>如果不想管理 <b style=\"color: #0078d7;\">角色特征</b>，可以直接启用 <b style=\"color: #0078d7;\">{fixed_team}</b> 功能。"
-msgstr "Adding <b style=\"color: #0078d7;\">Character Features</b> will automatically identify the current character.<br>If you don't want to manage <b style=\"color: #0078d7;\">Character Features</b>, you can directly enable the <b style=\"color: #0078d7;\">{fixed_team}</b> function."
+msgid "这是个用于向数据库关联或添加 <b style=\"color: #0078d7;\">角色特征</b> 的工具面板。<br>点击 <b style=\"color: #0078d7;\">{scan_team}</b> 后点击 <b style=\"color: #0078d7;\">关联或添加</b> 特征，自动战斗时就会识别对应的角色。<br><b style=\"color: #d83b01;\">💡 注意：</b>此面板 <b style=\"color: #d83b01;\">不会</b> 在进入战斗或更换阵容时实时自动刷新或同步显示, 因为这是工具面板。<br>如果不想管理 <b style=\"color: #0078d7;\">角色特征</b>，可以直接使用 <b style=\"color: #0078d7;\">{fixed_team}</b> 功能。"
+msgstr "This is a tool panel for linking or adding <b style=\"color: #0078d7;\">Character Features</b> to the database.<br>Click <b style=\"color: #0078d7;\">{scan_team}</b> and then click <b style=\"color: #0078d7;\">Link or Add</b> feature, and the corresponding character will be identified during auto-combat.<br><b style=\"color: #d83b01;\">💡 Note:</b> This panel <b style=\"color: #d83b01;\">will not</b> automatically refresh or sync in real-time when entering combat or changing team composition, as this is a tool panel.<br>If you don't want to manage <b style=\"color: #0078d7;\">Character Features</b>, you can directly use the <b style=\"color: #0078d7;\">{fixed_team}</b> function."
 
 msgid "完成每日活跃度"
 msgstr "Complete Daily Activity"
@@ -162,9 +168,6 @@ msgstr "Import Data"
 
 msgid "导出数据"
 msgstr "Export Data"
-
-msgid "将优先使用固定角色进行战斗，未启用或槽位为空时自动识别"
-msgstr "Prioritize using fixed characters for combat; automatically identify when not enabled or slots are empty."
 
 msgid "已保存 {}/4"
 msgstr "Saved {}/4"
@@ -237,7 +240,7 @@ msgid "更新"
 msgstr "Update"
 
 msgid "未启用"
-msgstr "Not Enabled"
+msgstr "Disabled"
 
 msgid "未能识别该特征"
 msgstr "Failed to identify this feature"
@@ -245,8 +248,8 @@ msgstr "Failed to identify this feature"
 msgid "未获取到特征"
 msgstr "Feature not obtained"
 
-msgid "未识别，关联新特征"
-msgstr "Unidentified, associating new feature"
+msgid "关联特征"
+msgstr "Link Feature"
 
 msgid ""
 "此为内建 Python 脚本，不可在此修改。\n"
@@ -297,9 +300,6 @@ msgstr "Auto Target"
 msgid "自动钓鱼"
 msgstr "Auto Fishing"
 
-msgid "角色"
-msgstr "Character"
-
 msgid "角色中心"
 msgstr "Char Ctr"
 
@@ -324,8 +324,8 @@ msgstr "Skip Story"
 msgid "运行一次测试"
 msgstr "Run a test"
 
-msgid "选择或输入{combo}名"
-msgstr "Select or enter {combo} name"
+msgid "下拉选择，或直接输入名称以创建新{combo}"
+msgstr "Select from dropdown, or directly enter a name to create a new {combo}"
 
 msgid "重命名失败"
 msgstr "Rename failed"
@@ -521,9 +521,6 @@ msgstr "Timeout (s)"
 msgid "输出调试日志"
 msgstr "Output debug logs"
 
-msgid "记录新特征"
-msgstr "Record New Feature"
-
 msgid "输入或选择绑定的{combo} (可选)"
 msgstr "Enter or select the bound {combo} (optional)"
 
@@ -585,21 +582,6 @@ msgstr "Choose how to handle Cafe daily tasks"
 msgid "不执行"
 msgstr "Do not execute"
 
-msgid ""
-"功能说明：本功能仅负责『自动退出关卡』与『重新开启关卡』的点击循环，不包含任何局内的制作食物或招待客人操作。\n"
-"\n"
-"使用方法：\n"
-"1. 确保您已配置好游戏内的挂机流派。\n"
-"2. 站在咖啡店可进行 F 交互的位置。\n"
-"3. 首次启动需录制目标, 点击[开始]后请跟随指示操作。"
-msgstr ""
-"Feature notes: This feature only handles the click loop for \"automatically exiting the stage\" and \"restarting the stage\". It does not perform any in-stage food preparation or customer service actions.\n"
-"\n"
-"How to use:\n"
-"1. Make sure you have configured your in-game AFK build.\n"
-"2. Stand at a cafe position where you can interact with F.\n"
-"3. On the first launch, you need to record the target. Click [Start], then follow the prompts."
-
 msgid "循环次数(0为无限次)"
 msgstr "Loop count (0 for unlimited)"
 
@@ -618,36 +600,548 @@ msgstr "Dark Race"
 msgid "Record has been reset"
 msgstr "Record has been reset"
 
-msgid ""
-"No recorded operations were found. Please wait for the recording prompt, then "
-"follow the instructions carefully to record your actions."
-msgstr ""
-"No recorded operations were found. Please wait for the recording prompt, then "
-"follow the instructions carefully to record your actions."
-
 msgid "Updated successfully"
 msgstr "Updated successfully"
-
-msgid ""
-"记录点击目标关卡的操作，分为两个步骤：\n"
-"1. 使用滚轮滚动至目标可见 (若不需要则点击目标)\n"
-"2. 点击目标"
-msgstr ""
-"Record the operations for clicking the target stage in two steps:\n"
-"1. Use the mouse wheel to scroll until the target is visible (if not needed, click the target)\n"
-"2. Click the target"
-
-msgid ""
-"记录点击目标关卡的操作，分为两个步骤：\n"
-"1. 点击滚动条至目标可见 (若不需要则点击目标)\n"
-"2. 点击目标"
-msgstr ""
-"Record the operations for clicking the target stage in two steps:\n"
-"1. Click the scrollbar until the target is visible (if not needed, click the target)\n"
-"2. Click the target"
 
 msgid "都市闲趣"
 msgstr "Hobbies"
 
 msgid "日常/周常"
 msgstr "Daily/Weekly"
+
+msgid "※ 列表可直接输入并创建"
+msgstr "※ You can type directly in the list to create entries"
+
+msgid "输入或选择角色"
+msgstr "Enter or select a character"
+
+msgid "自动战斗任务不可用"
+msgstr "Auto combat task is unavailable"
+
+msgid ""
+"※ 关联角色特征后，软件将能自动识别角色并使用绑定的出招表；未关联时，将使用通用脚本。\n"
+"游戏内换人/换队自动适配，无需手动调整"
+msgstr ""
+"※ After linking character features, the software can automatically identify characters and use the bound combo; when not linked, it will use the generic script.\n"
+"In-game character and team switches adapt automatically, with no manual adjustment needed"
+
+msgid ""
+"※ {fixed_team}会优先使用已填写槽位；未填写的槽位仍会自动识别。\n"
+"如果游戏内切换队伍，已填写槽位需要在软件里手动修改。"
+msgstr ""
+"※ {fixed_team} will prioritize filled slots; empty slots will still use auto recognition.\n"
+"If you switch teams in game, update the filled slots manually in the software."
+
+msgid "<span style=\"color: #2ecc71;\">● 自动识别：已启用</span>"
+msgstr "<span style=\"color: #2ecc71;\">● Auto recognition: enabled</span>"
+
+msgid "<span style=\"color: #95a5a6;\">○ 自动识别：仅空槽启用</span>"
+msgstr "<span style=\"color: #95a5a6;\">○ Auto recognition: empty slots only</span>"
+
+msgid "<span style=\"color: #2ecc71;\">● {fixed_team}：已启用 ({count}/4)</span>"
+msgstr "<span style=\"color: #2ecc71;\">● {fixed_team}: enabled ({count}/4)</span>"
+
+msgid "<span style=\"color: #95a5a6;\">○ {fixed_team}：已停用</span>"
+msgstr "<span style=\"color: #95a5a6;\">○ {fixed_team}: disabled</span>"
+
+msgid "启动失败"
+msgstr "Failed to start"
+
+msgid "21键自然音布局 (已禁用)"
+msgstr "21-Key Diatonic Layout (Disabled)"
+
+msgid "36键半音布局 (12x3)"
+msgstr "36-Key Chromatic Layout (12x3)"
+
+msgid "中音"
+msgstr "Mid"
+
+msgid "低音"
+msgstr "Low"
+
+msgid "全部歌曲"
+msgstr "All Songs"
+
+msgid "单曲循环"
+msgstr "Loop Single"
+
+msgid "可以弹奏"
+msgstr "Playable"
+
+msgid "右下按键中心: "
+msgstr "Bottom-Right Button Center:"
+
+msgid "定时关闭"
+msgstr "Scheduled Stop"
+
+msgid "导入 MIDI"
+msgstr "Import MIDI"
+
+msgid "尚未载入音轨"
+msgstr "No Tracks Loaded"
+
+msgid "左上按键中心: "
+msgstr "Top-Left Button Center:"
+
+msgid "已收藏"
+msgstr "Favorited"
+
+msgid "当前游戏钢琴使用 36 键半音布局"
+msgstr "Current game piano uses a 36-key chromatic layout"
+
+msgid "打印键位映射"
+msgstr "Print Key Mapping"
+
+msgid "打开 mid_lib"
+msgstr "Open mid_lib"
+
+msgid "按键坐标配置"
+msgstr "Key Coordinates Config"
+
+msgid "搜索歌曲"
+msgstr "Search Songs"
+
+msgid "播放"
+msgstr "Play"
+
+msgid "播放模式"
+msgstr "Play Mode"
+
+msgid "播放设置"
+msgstr "Play Settings"
+
+msgid "播放速度"
+msgstr "Playback Speed"
+
+msgid "收藏歌曲"
+msgstr "Favorite Song"
+
+msgid "无法弹奏"
+msgstr "Unplayable"
+
+msgid "智能音域压缩"
+msgstr "Smart Range Compression"
+
+msgid "未选择歌曲"
+msgstr "No Song Selected"
+
+msgid "每个测试音间隔约 1 秒，请用调音器确认实际发音。"
+msgstr "Each test tone is spaced by ~1s. Please use a tuner to confirm the pitch."
+
+msgid "测试中音行"
+msgstr "Test Mid Row"
+
+msgid "测试全部键"
+msgstr "Test All Keys"
+
+msgid "自动弹琴"
+msgstr "Auto Piano"
+
+msgid "自动战斗任务不可用"
+msgstr "Auto-combat Tasks Unavailable"
+
+msgid "自动音高"
+msgstr "Auto Pitch"
+
+msgid "试听选中音轨"
+msgstr "Audition Selected Track"
+
+msgid "调试校准"
+msgstr "Debug Calibration"
+
+msgid "选中歌曲后可选择参与分析与播放的 MIDI 音轨。"
+msgstr "After selecting a song, choose which MIDI tracks to analyze and play."
+
+msgid "选择 MIDI 档案"
+msgstr "Select MIDI File"
+
+msgid "随机播放"
+msgstr "Shuffle"
+
+msgid "音轨选择"
+msgstr "Track Selection"
+
+msgid "音高与音域分析"
+msgstr "Pitch & Range Analysis"
+
+msgid "音高调整 (半音):"
+msgstr "Pitch Adjustment (Semitones):"
+
+msgid "顺序播放"
+msgstr "Sequential Play"
+
+msgid "高音"
+msgstr "High"
+
+msgid "MIDI 分析失败"
+msgstr "MIDI Analysis Failed"
+
+msgid "MIDI 播放失败"
+msgstr "MIDI Playback Failed"
+
+msgid "键盘布局"
+msgstr "Keyboard Layout"
+
+msgid "de_DE"
+msgstr "Deutsch"
+
+msgid "en_US"
+msgstr "English"
+
+msgid "es_ES"
+msgstr "Español"
+
+msgid "fr_FR"
+msgstr "Français"
+
+msgid "ja_JP"
+msgstr "日本語"
+
+msgid "ru_RU"
+msgstr "Русский"
+
+msgid "zh_CN"
+msgstr "简体中文"
+
+msgid "zh_TW"
+msgstr "繁體中文"
+
+msgid "文案生成模型调用地址, 需兼容OpenAI接口请求格式"
+msgstr "Model API URL, must be compatible with OpenAI API format"
+
+msgid "模型调用超时时间(s)"
+msgstr "Model Call Timeout (s)"
+
+msgid "文案生成调用模型的超时时间, 超时将回退使用本地词库, 留空使用30s"
+msgstr "Timeout for text generation model calls. Will fallback to local word bank on timeout. Leave empty for 30s."
+
+msgid "关闭后将降级使用本地词库抽取发帖回复文案"
+msgstr "When disabled, it will fallback to the local vocabulary database"
+
+msgid "发帖内容生成提示词"
+msgstr "Post content Generation prompt"
+
+msgid "发帖内容生成提示词, 请先调试好提示词再使用"
+msgstr "Post content Generation prompt; please refine the prompt before use"
+
+msgid "发帖标题生成提示词"
+msgstr "Post title Generation prompt"
+
+msgid "发帖标题生成提示词, 请先调试好提示词再使用"
+msgstr "Post title Generation prompt; please refine the prompt before use"
+
+msgid "呗果智能体"
+msgstr "Bagel Agent"
+
+msgid "回复生成提示词"
+msgstr "Reply Generation prompt"
+
+msgid "回复生成提示词, 请先调试好提示词再使用"
+msgstr "Reply Generation prompt; please refine the prompt before use"
+
+msgid "开启助手模式后, 将只会辅助生成文案"
+msgstr "After enabling Assistant Mode, it will only assist in generating content"
+
+msgid "所调用模型名称"
+msgstr "Model Name"
+
+msgid "文案助手模式"
+msgstr "Assistant Mode"
+
+msgid "智能体模式选项"
+msgstr "Agent Mode Options"
+
+msgid "自动回帖会同时点赞"
+msgstr "Automatic replies will also include likes"
+
+msgid "未设置请留空, 请勿泄露API_Key!"
+msgstr "Leave blank if not set, Do not leak your API_Key!"
+
+msgid "需要支持视觉输入的视觉语言模型"
+msgstr "Requires a VL Model with visual input support"
+
+msgid "模型调用API_Key"
+msgstr "Model API_Key"
+
+msgid "模型调用地址"
+msgstr "Model API URL"
+
+msgid "次数"
+msgstr "Count"
+
+msgid "游戏语言"
+msgstr "Game Language"
+
+msgid "请选择游戏所设置的语言"
+msgstr "Please select the language you set in Game"
+
+msgid "留言"
+msgstr "Comment"
+
+msgid "自动发帖"
+msgstr "Auto Post"
+
+msgid "自动呗果"
+msgstr "Auto Bagel"
+
+msgid "自动回帖"
+msgstr "Auto Reply"
+
+msgid "自动按赞"
+msgstr "Auto Like"
+
+msgid "请详阅使用说明"
+msgstr "Please read the instructions carefully"
+
+msgid "调用模型"
+msgstr "Use Model"
+
+msgid "过滤水贴"
+msgstr "Filter SPAM"
+
+msgid "1"
+msgstr ""
+
+msgid "2"
+msgstr ""
+
+msgid "3"
+msgstr ""
+
+msgid "4"
+msgstr ""
+
+msgid "使用任何路径前请先阅读使用说明"
+msgstr "Please read the instructions before using any route"
+
+msgid "设置为0则一直运行"
+msgstr "Set to 0 to run indefinitely"
+
+msgid "战斗角色"
+msgstr "Combat Characters"
+
+msgid "自动粉爪大劫案"
+msgstr "Auto Pink Paw Heist"
+
+msgid "跑图角色"
+msgstr "Exploration Character"
+
+msgid "路径"
+msgstr "Route"
+
+msgid "路径1(路线参考自B站UP: 早柚大魔王丶)"
+msgstr "Route 1 (Path based on Bilibili Creator: 早柚大魔王丶)"
+
+msgid "路径2(在路径1基础上优化了大厅到办公层的路线)"
+msgstr "Route 2 (Optimized path from Lobby to Office Floor based on Route 1)"
+
+msgid "选0~1个"
+msgstr "Select 0-1"
+
+msgid "选1~2个"
+msgstr "Select 1-2"
+
+msgid "选1个"
+msgstr "Select 1"
+
+msgid "避战方法"
+msgstr "Stealth Method"
+
+msgid "避战角色"
+msgstr "Stealth Character"
+
+msgid "长按shift"
+msgstr "Hold Shift"
+
+msgid "长按攻击"
+msgstr "Hold Attack"
+
+msgid ""
+"No recorded operations were found. Please wait for the recording prompt, then follow the instructions carefully to record your actions.\n"
+"DO NOT manually switch windows!\n"
+"Wait patiently for the software to bring the game window to the foreground."
+msgstr ""
+"No recorded operations were found. Please wait for the recording prompt, then follow the instructions carefully to record your actions.\n"
+"DO NOT manually switch windows!\n"
+"Wait patiently for the software to bring the game window to the foreground."
+
+msgid "影院约会"
+msgstr "Cinema Date"
+
+msgid "约会目标"
+msgstr "Dating Target"
+
+msgid "自动小旋风"
+msgstr "Auto Whirlwind"
+
+msgid "可交互「小旋风」下按开始"
+msgstr "Press start under interactive 'Whirlwind'"
+
+msgid "难度选项"
+msgstr "Difficulty Option"
+
+msgid "异象家具"
+msgstr "Anomaly Furniture"
+
+msgid "每2小时重新登入"
+msgstr "Re-login every 2 hours"
+
+
+msgid "除了选择内建存在的<b style=\"color: #0078d7;\">{combo}</b>外，您也可以自己输入名称来建立自己的<b style=\"color: #0078d7;\">{combo}</b>。"
+msgstr "In addition to selecting a built-in <b style=\"color: #0078d7;\">{combo}</b>, you can also enter a name to create your own <b style=\"color: #0078d7;\">{combo}</b>."
+
+msgid "九百九十九夜"
+msgstr "999 Nights"
+
+msgid "巧克力火山-底层最左边的篝火"
+msgstr "Chocolate Volcano - Bottom Floor Leftmost Bonfire"
+
+msgid "挂机刷经验"
+msgstr "AFK EXP Farming"
+
+msgid "位置"
+msgstr "Location"
+
+msgid "赤龙古堡-龙之高塔室外篝火"
+msgstr "Red Dragon Castle - Dragon Tower Outdoor Campfire"
+
+msgid "使用终结技"
+msgstr "Use Ultimate"
+
+msgid "Background Audio Routing"
+msgstr "Background Audio Routing"
+
+msgid "Enable Background Audio Routing"
+msgstr "Enable Background Audio Routing"
+
+msgid "SoundVolumeCommandLine Path"
+msgstr "SoundVolumeCommandLine Path"
+
+msgid "Background Output Device"
+msgstr "Background Output Device"
+
+msgid "Open SoundVolumeCommandLine Download Page"
+msgstr "Open SoundVolumeCommandLine Download Page"
+
+msgid "Optionally route the game to a selected Windows output device while it is in the background. SoundVolumeCommandLine is not bundled; select your own downloaded copy."
+msgstr "Optionally route the game to a selected Windows output device while it is in the background. SoundVolumeCommandLine is not bundled; select your own downloaded copy."
+
+msgid "Switch game audio output when the game window leaves the foreground"
+msgstr "Switch game audio output when the game window leaves the foreground"
+
+msgid "Select svcl.exe downloaded from NirSoft"
+msgstr "Select svcl.exe downloaded from NirSoft"
+
+msgid "Output device used while the game is in the background"
+msgstr "Output device used while the game is in the background"
+
+msgid "Open the official NirSoft SoundVolumeCommandLine page"
+msgstr "Open the official NirSoft SoundVolumeCommandLine page"
+
+msgid "SoundVolumeCommandLine (svcl.exe);;Executable Files (*.exe);;All Files (*)"
+msgstr "SoundVolumeCommandLine (svcl.exe);;Executable Files (*.exe);;All Files (*)"
+
+msgid "Select svcl.exe"
+msgstr "Select svcl.exe"
+
+msgid "Open Download Page"
+msgstr "Open Download Page"
+
+msgid "⚠️ 正在运行{rob_mode}\n该模式会高频占用/争夺鼠标。如需停止，请使用热键暂停 ok-nte, 再手动停止任务。\n当前热键: {hotkey} (如无法确认当前热键则点击取消, 主动确认后再运行)"
+msgstr "⚠️ Running {rob_mode}\nThis mode will occupy/fight for the mouse at high frequency. To stop, use the hotkey to pause ok-nte, then manually stop the task.\nCurrent hotkey: {hotkey} (if you cannot confirm the current hotkey, click cancel and run after confirming manually)"
+
+msgid "赤龙古堡-残丝长巷篝火"
+msgstr "Red Dragon Castle - Silken Alley Checkpoint"
+
+msgid "战斗时长上限"
+msgstr "Max Combat Duration"
+
+msgid "战斗时不切人"
+msgstr "Do not switch characters during combat"
+
+msgid "主界面检测失败。建议操作: \n1. 关闭显卡滤镜与锐化功能；\n2. 尝试开启 Windows “自动管理应用的颜色”设置。"
+msgstr "Main interface detection failed. Suggested actions: \n1. Disable GPU filters and sharpening features;\n2. Try enabling the Windows \"Automatically manage color for apps\" setting."
+
+msgid "大世界检测失败: 请检查游戏内 UI 透明度是否已设置为 1.0。"
+msgstr "Overworld detection failed: Please check if the in-game UI opacity has been set to 1.0."
+
+msgid "当前 CPU 不支持 AVX2, 无法运行 OpenVINO 2026 CPU 推理；自动战斗的目标检测将不可用。"
+msgstr "The current CPU does not support AVX2, so OpenVINO 2026 CPU inference cannot be run; target detection for auto-combat will be unavailable."
+
+msgid "战斗后等待至时长上限"
+msgstr "Wait until max duration after combat"
+
+msgid "羁遇赠礼"
+msgstr "Bond Gifts"
+
+msgid "新增角色"
+msgstr "Add Character"
+
+msgid "更新当前角色"
+msgstr "Update Current Character"
+
+msgid "删除当前角色"
+msgstr "Delete Current Character"
+
+msgid "开始赠礼"
+msgstr "Start Gifting"
+
+msgid "继续赠礼"
+msgstr "Continue Gifting"
+
+msgid "停止"
+msgstr "Stop"
+
+msgid "在游戏赠礼页点击{}。点击礼物卡片可设定优先级，再次点击取消。"
+msgstr "Click {} on the game gifting page. Click a gift card to set its priority, and click again to cancel."
+
+msgid "赠礼状态"
+msgstr "Gifting Status"
+
+msgid "已启用"
+msgstr "Enabled"
+
+msgid "名称"
+msgstr "Name"
+
+msgid "角色显示名称"
+msgstr "Character Display Name"
+
+msgid "赠送次数"
+msgstr "Gift Count"
+
+msgid "角色名称"
+msgstr "Character Name"
+
+msgid "礼物优先级"
+msgstr "Gift Priority"
+
+msgid "不赠送"
+msgstr "Do Not Gift"
+
+msgid "优先级 {}"
+msgstr "Priority {}"
+
+msgid "不可赠送"
+msgstr "Ungiftable"
+
+msgid "未命名角色"
+msgstr "Unnamed Character"
+
+msgid "捕获失败"
+msgstr "Capture Failed"
+
+msgid "保存失败"
+msgstr "Save Failed"
+
+msgid "无法开始"
+msgstr "Cannot Start"
+
+msgid "赠礼任务未注册"
+msgstr "Gifting task not registered"
+
+msgid "没有可用的游戏画面"
+msgstr "No game screen available"
+
+msgid "请先捕获、选择礼物并启用至少一个角色。"
+msgstr "Please capture, select gifts, and enable at least one character first."

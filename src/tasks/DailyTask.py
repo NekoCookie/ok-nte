@@ -1,8 +1,9 @@
 import re
+from contextlib import contextmanager
 from datetime import datetime
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Iterator, List, Optional, Tuple, Type, TypeVar, cast
 
-from ok import CannotFindException, TaskDisabledException, find_color_rectangles, og
+from ok import CannotFindException, TaskDisabledException, find_color_rectangles
 from qfluentwidgets import FluentIcon
 
 from src import text_white_color
@@ -10,11 +11,15 @@ from src.Labels import Labels
 from src.tasks.AnomalyTask import AnomalyTask
 from src.tasks.BaseNTETask import BaseNTETask
 from src.tasks.CoffeeTask import CoffeeTask
+from src.tasks.GiftTask import GiftTask
+from src.tasks.mixin.CinemaDateMixin import CinemaDateMixin
 from src.tasks.NTEOneTimeTask import NTEOneTimeTask
 from src.utils import image_utils as iu
 
+WorkingTaskT = TypeVar("WorkingTaskT", bound=BaseNTETask)
 
-class DailyTask(NTEOneTimeTask, BaseNTETask):
+
+class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
     """日常任务执行器"""
 
     # --- 配置项键名 ---
@@ -24,6 +29,11 @@ class DailyTask(NTEOneTimeTask, BaseNTETask):
     CONF_CLAIM_BP = "领取环期任务奖励"
     CONF_COFFEE_TASK = "一咖舍任务"
     CONF_AUTO_CYCLE_SUB_TASK = "自动循环项目"
+    CONF_CINEMA_DATE = "影院约会"
+    CONF_FURNITURE = "异象家具"
+    CONF_GIFT = "运行羁遇赠礼"
+
+    CINEMA_DATE_TARGET = "约会目标"
     DAILY_STAMINA_TARGET = "目标消耗体力"
 
     # --- 一咖舍任务选项 ---
@@ -39,6 +49,7 @@ class DailyTask(NTEOneTimeTask, BaseNTETask):
         self.group_icon = FluentIcon.CALENDAR
         self.support_schedule_task = True
         self.task_status = {"success": [], "failed": [], "skipped": [], "pending": []}
+        self.working_task: Optional[BaseNTETask] = None
 
         AnomalyTask.setup_config(self)
         self.default_config.update(
@@ -46,6 +57,10 @@ class DailyTask(NTEOneTimeTask, BaseNTETask):
                 self.DAILY_STAMINA_TARGET: 180,
                 self.CONF_AUTO_CYCLE_SUB_TASK: False,
                 self.CONF_COFFEE_TASK: self.COFFEE_MODE_NONE,
+                self.CONF_CINEMA_DATE: False,
+                self.CINEMA_DATE_TARGET: "",
+                self.CONF_FURNITURE: False,
+                self.CONF_GIFT: False
             }
         )
         self.config_description.update(
@@ -56,29 +71,26 @@ class DailyTask(NTEOneTimeTask, BaseNTETask):
         )
         coffee_options = [self.COFFEE_MODE_NONE, self.COFFEE_MODE_CLAIM_AND_RESTOCK]
         # 一咖舍自动化页面 OCR 仅匹配简体中文; 在非 zh_CN 下不向用户暴露自动化选项.
-        if self._is_zh_cn_locale():
+        if self.get_app_locale() == "zh_CN":
             coffee_options.append(self.COFFEE_MODE_AUTO)
-        self.config_type[self.CONF_COFFEE_TASK] = {
-            "type": "drop_down",
-            "options": coffee_options,
-        }
+        self.config_type.update(
+            {
+                self.CONF_COFFEE_TASK: {
+                    "type": "drop_down",
+                    "options": coffee_options,
+                },
+                self.CONF_CINEMA_DATE: {
+                    "sub_configs": {
+                        True: [
+                            self.CINEMA_DATE_TARGET,
+                        ]
+                    },
+                },
+            }
+        )
+
         self.current_task_key = None
         self.add_exit_after_config()
-
-    @staticmethod
-    def _is_zh_cn_locale() -> bool:
-        """Return True iff the running app reports zh_CN as its locale.
-
-        Defensive against early init / test contexts where ``og.app`` may be
-        missing or ``locale.name()`` may raise.
-        """
-        app = getattr(og, "app", None)
-        if app is None or not hasattr(app, "locale"):
-            return False
-        try:
-            return app.locale.name() == "zh_CN"
-        except Exception:
-            return False
 
     def run(self):
         super().run()
@@ -91,7 +103,7 @@ class DailyTask(NTEOneTimeTask, BaseNTETask):
 
     def do_run(self):
         """执行日常任务主流程"""
-        self._logged_in = False
+        self.scene.set_logged_in(False)
         self.ensure_main()
         self.log_info("开始执行日常任务")
 
@@ -116,6 +128,21 @@ class DailyTask(NTEOneTimeTask, BaseNTETask):
                 self.CONF_CLAIM_BP,
                 self._task_enabled(self.CONF_CLAIM_BP, True),
                 self.claim_battle_pass_rewards,
+            ),
+            (
+                self.CONF_CINEMA_DATE,
+                self._task_enabled(self.CONF_CINEMA_DATE, False),
+                lambda: self.run_cinema_date(self.config.get(self.CINEMA_DATE_TARGET, "")),
+            ),
+            (
+                self.CONF_FURNITURE,
+                self._task_enabled(self.CONF_FURNITURE, False),
+                self.claim_anomaly_furniture,
+            ),
+            (
+                self.CONF_GIFT,
+                self._task_enabled(self.CONF_GIFT, False),
+                self.run_gift_task,
             ),
         ]
 
@@ -175,7 +202,13 @@ class DailyTask(NTEOneTimeTask, BaseNTETask):
 
         self.ensure_main()
 
-        result = func()
+        try:
+            result = func()
+        except TaskDisabledException:
+            raise
+        except Exception as e:
+            self.log_error(f"任务: {key} 运行失败", e)
+            result = False
 
         if result is False:
             self.task_status["failed"].append(key)
@@ -255,14 +288,42 @@ class DailyTask(NTEOneTimeTask, BaseNTETask):
             return True
 
         used_stamina = self.info_get("used stamina")
-        must_use = self.config.get(self.DAILY_STAMINA_TARGET, 180) - used_stamina
+        target_stamina = self.config.get(self.DAILY_STAMINA_TARGET, 180)
+        must_use = target_stamina - used_stamina
+        if must_use <= 0:
+            self.log_info(
+                f"当前体力消耗: {used_stamina}, {self.DAILY_STAMINA_TARGET}: {target_stamina}"
+            )
+            self.log_info("目标已达成，跳过每日活跃度任务")
+            return True
         self.info_set("must use stamina", must_use)
 
-        task: AnomalyTask = self.get_task_by_class(AnomalyTask)
-        ret = task.do_run(self.config, stamina_target=must_use)
-        if ret:
-            self.shift_idx(task)
+        with self.set_working_task(AnomalyTask) as task:
+            ret = task.do_run(self.config, stamina_target=must_use)
+            if ret:
+                self.shift_idx(task)
         return ret
+
+    @contextmanager
+    def set_working_task(self, cls: Type[WorkingTaskT]) -> Iterator[WorkingTaskT]:
+        old_working_task = self.working_task
+        old_sleep_check_interval = self.sleep_check_interval
+        working_task = cast(WorkingTaskT, self.get_task_by_class(cls))
+        old_task_info = working_task.info
+        self.working_task = working_task
+        self.working_task.info = self.info
+        self.sleep_check_interval = working_task.sleep_check_interval
+        try:
+            yield working_task
+        finally:
+            self.working_task.info = old_task_info
+            self.working_task = old_working_task
+            self.sleep_check_interval = old_sleep_check_interval
+
+    def sleep_check(self):
+        if self.working_task:
+            return self.working_task.sleep_check()
+        return super().sleep_check()
 
     def shift_idx(self, task):
         """切换任务索引"""
@@ -308,13 +369,22 @@ class DailyTask(NTEOneTimeTask, BaseNTETask):
         activity_box = self.box_of_screen(0.184, 0.188, 0.256, 0.255, name="activity", hcenter=True)
 
         activity = self.ocr(box=activity_box, match=activity_re)
-        mission = self.ocr(box=mission_box, match=mission_re)
 
-        if mission:
-            match = mission_re.search(mission[0].name)
-            if match:
-                used_stamina = int(match.group(1))
-                self.log_info(f"ocr found used stamina {used_stamina}")
+        for _ in range(2):
+            mission = self.ocr(box=mission_box, match=mission_re)
+
+            if mission:
+                match = mission_re.search(mission[0].name)
+                if match:
+                    used_stamina = int(match.group(1))
+                    self.log_info(f"ocr found used stamina {used_stamina}")
+                    break
+            else:
+                self.operate(
+                    lambda: self.scroll_relative(0.2379, 0.7285, -42),
+                    block=True,
+                )
+                self.sleep(0.25)
 
         if activity:
             match = activity_re.search(activity[0].name)
@@ -400,7 +470,11 @@ class DailyTask(NTEOneTimeTask, BaseNTETask):
         self.sleep(1)
 
         # 提取收益
-        self.operate_click(0.188, 0.877)
+        self.wait_until(
+            lambda: not self.find_one(Labels.f5_coffee_panel),
+            pre_action=lambda: self.operate_click(0.188, 0.877, interval=1),
+            time_out=10,
+        )
         self.sleep(1)
         self.wait_until(
             lambda: self.find_one(Labels.f5_coffee_panel),
@@ -432,3 +506,158 @@ class DailyTask(NTEOneTimeTask, BaseNTETask):
     def run_coffee_task(self):
         task: CoffeeTask = self.get_task_by_class(CoffeeTask)
         return task.do_run()
+
+    def claim_anomaly_furniture(self):
+        """领取异象家具奖励"""
+
+        self.log_info("正在领取异象家具奖励")
+
+        def open_house_panel():
+            def action():
+                self.openF5panel()
+                self.sleep(1)
+                self.operate_click(0.255, 0.468)
+                self.sleep(0.5)
+                return self.wait_panel(Labels.f5_house_panel)
+
+            if self.find_one(Labels.f5_house_panel):
+                return True
+            result = self.retry_on_action(action, self.ensure_main)
+            if not result:
+                self.log_error("无法找到房产面板")
+                return False
+            self.sleep(1)
+            return True
+
+        def check_house_lock(ratio_y):
+            box = self.box_of_screen(0.050, ratio_y - 0.1, width=0.054, height=0.079, hcenter=True)
+            return self.find_one(Labels.f5_house_lock, box=box)
+
+        house_box = self.box_of_screen(0.507, 0.476, 0.956, 0.795, hcenter=True)
+
+        shown = 4
+        ratio_x = 0.079
+        ratio_y = 0.308
+        gap = 0.183
+        scroll = True
+        scroll_times = 0
+        scroll_per_item = 6
+        i = 0
+
+        for furniture in [
+            Labels.anomaly_fluff,
+            Labels.anomaly_hamster_ball,
+            Labels.anomaly_wooden_crate,
+        ]:
+            open_house_panel()
+
+            # 寻找目标家具
+            while scroll or i < shown:
+                if scroll:
+                    target_y = ratio_y
+                else:
+                    target_y = ratio_y + gap * i
+                    i += 1
+
+                # 检查房子是否解锁
+                if check_house_lock(target_y):
+                    self.sleep(0.25)
+                else:
+                    self.operate_click(ratio_x, target_y)
+                    self.sleep(0.25)
+                    if self.find_sift_feature(furniture, box=house_box):
+                        break
+
+                # 滚动并检查是否成功滚动
+                if scroll:
+                    scroll_times += 1
+                    snapshot_box = self.box_of_screen(0.016, 0.731, 0.143, 0.849, hcenter=True)
+                    snapshot = snapshot_box.crop_frame(self.frame)
+                    self.operate(
+                        lambda: (
+                            self.scroll_relative(ratio_x, ratio_y, -scroll_per_item),
+                            self.sleep(0.25),
+                        ),
+                        block=True,
+                    )
+                    y_offset = self.height * 0.1
+                    search_box = snapshot_box.copy(y_offset=-y_offset, height_offset=y_offset)
+                    scroll = not self.find_one(
+                        "snapshot", template=snapshot, box=search_box, threshold=0.9
+                    )
+            else:
+                self.log_info(f"not found furniture {furniture}")
+                self.operate(
+                    lambda: (
+                        self.scroll_relative(
+                            ratio_x, ratio_y, scroll_per_item * (scroll_times + 2)
+                        ),
+                        self.sleep(0.25),
+                    ),
+                    block=True,
+                )
+                continue
+
+            # 传送至目标房子
+            self.wait_until(
+                lambda: not self.find_one(Labels.f5_house_panel),
+                pre_action=lambda: self.operate_click(0.891, 0.951, after_sleep=1),
+            )
+            self.click_traval_button()
+            self.wait_in_team(time_out=120, settle_time=1)
+
+            # 打开异象家具
+            def action_1():
+                try:
+                    self.send_key_down("lalt")
+                    self.sleep(0.25)
+                    self.operate_click(0.465, 0.056)
+                finally:
+                    self.send_key_up("lalt")
+                self.sleep(2)
+                if not self.is_in_team():
+                    return True
+
+            self.retry_on_action(action_1, attempt=10, raise_if_failed=True)
+            box_left = self.box_of_screen(0.024, 0.181, 0.278, 0.775, hcenter=True)
+            self.wait_until(
+                lambda: self.find_sift_feature(furniture, box=box_left), raise_if_not_found=True
+            )
+            self.sleep(0.5)
+            box_right = self.box_of_screen(0.738, 0.236, 0.805, 0.959, hcenter=True)
+
+            # 点击异象家具
+            def action_2():
+                box = self.find_sift_feature(furniture, box=box_left)
+                if box:
+                    self.operate_click(box)
+                    self.sleep(0.5)
+                    self.operate_click(0.924, 0.174)
+                    self.sleep(0.5)
+                    if self.find_sift_feature(furniture, box=box_right):
+                        return True
+
+            self.retry_on_action(action_2, attempt=10, raise_if_failed=True)
+
+            # 二次确认异象家具
+            self.wait_until(
+                lambda: self.find_sift_feature(furniture, box=box_right), raise_if_not_found=True
+            )
+
+            # 领取目标家具
+            self.sleep(0.5)
+            self.operate(
+                lambda: (
+                    self.click(0.938, 0.283, move=True),
+                    self.sleep(0.1),
+                    self.click(0.938, 0.303, move=True),
+                ),
+                block=True,
+            )
+            self.sleep(2)
+            self.ensure_main()
+
+    def run_gift_task(self):
+        with self.set_working_task(GiftTask) as task:
+            summary = task.run_gifts()
+        return len(summary['failed']) == 0

@@ -1,20 +1,24 @@
-import random
 import re
 import time
-from typing import List
+from bisect import bisect_right
+from contextlib import contextmanager
+from dataclasses import dataclass, fields
 
 import cv2
 import numpy as np
-from ok import Logger, safe_get
+from ok import Box, Logger, safe_get
 
 from src import text_white_color
-from src.char.BaseChar import BaseChar, Element, Priority
-from src.char.CharFactory import get_char_by_name, get_char_by_pos
+from src.char.BaseChar import BaseChar, Element
+from src.char.CharFactory import get_char_by_id, get_char_by_pos
 from src.char.custom.CustomCharManager import CustomCharManager
 from src.char.Healer import Healer
 from src.combat.CombatCheck import CombatCheck
+from src.combat.planner import CombatPlanner
+from src.Labels import Labels
 from src.lw.combat_ext import CombatExtMixin  # [lw]
-from src.sound_trigger.SoundCombatContext import SoundCombatContext
+from src.sound_trigger.SoundCombatContext import ACTION_UNSET, SoundCombatContext
+from src.tasks.mixin.CharUIMixin import CharElementUIMixin
 from src.utils import game_filters as gf
 from src.utils import image_utils as iu
 
@@ -42,11 +46,35 @@ class TeamChangedException(NotInCombatException):  # [lw] 用户异常, 合并�
     pass
 
 
-class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基类
+@dataclass
+class SleepCheckSkip:
+    sound_combat_context: bool = False
+    check_combat: bool = False
+
+    @property
+    def all(self) -> bool:
+        return all(getattr(self, field.name) for field in fields(self))
+
+    @all.setter
+    def all(self, value: bool):
+        for field in fields(self):
+            setattr(self, field.name, value)
+
+
+class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] 插入用户扩展基类
     """基础战斗任务类，封装了游戏"鸣潮"中角色自动化操作的通用逻辑。"""
 
     hot_key_verified = False  # 热键是否已验证
-    freeze_durations = []  # 记录冻结/卡肉的持续时间
+    FREEZE_DURATION_RETENTION_SECONDS = 20 * 60
+
+    element_reactions = (
+        "创生",
+        "覆纹",
+        "浊燃",
+        "黯星",
+        "浸染",
+        "延滞",
+    )
 
     element_ring = (
         Element.WHITE,
@@ -57,7 +85,6 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
         Element.YELLOW,
     )
     element_ring_index = {element: index for index, element in enumerate(element_ring)}
-    _element_template_cache = {}
 
     def __init__(self, *args, **kwargs):
         """初始化战斗任务。
@@ -67,6 +94,8 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
             **kwargs: 传递给父类的关键字参数。
         """
         super().__init__(*args, **kwargs)
+        self.sleep_check_skip = SleepCheckSkip()
+        self.sleep_check_interval = 0.1
         self.chars: list[BaseChar] = []
         self.mouse_pos = None  # 当前鼠标位置
         self.combat_start = 0  # 战斗开始时间戳
@@ -75,8 +104,11 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
         self.use_ultimate = True
         self.vibrate_chars_index: list[int] = []
         self.chars_slot_mat = [None, None, None, None]
-        self.element_ring_reaction_counts = {}
-        self.clear_element_ring_reactions()
+        self.element_reaction_counts = {}
+        self.combat_planner = CombatPlanner(self)
+        self.clear_element_reactions()
+        self.preheat_element_template_cache_async()
+        CustomCharManager().preheat_feature_cache_async()
 
     @property
     def team_size(self):
@@ -127,22 +159,39 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
             return element_b, element_a
         return None
 
-    def clear_element_ring_reactions(self):
-        self.element_ring_reaction_counts = {
+    def clear_element_reactions(self):
+        self.element_reaction_counts = {
             (self.element_ring[i], self.element_ring[(i + 1) % len(self.element_ring)]): 0
             for i in range(len(self.element_ring))
         }
+        self._update_element_reaction_info()
 
-    def record_element_ring_reaction(self, char_a: "BaseChar", char_b: "BaseChar") -> bool:
+    def _update_element_reaction_info(self):
+        if not self.debug:
+            return
+        reaction_info = []
+        for index, reaction_name in enumerate(self.element_reactions):
+            pair = (
+                self.element_ring[index],
+                self.element_ring[(index + 1) % len(self.element_ring)],
+            )
+            count = self.element_reaction_counts.get(pair, 0)
+            if count > 0:
+                reaction_info.append(f"{reaction_name}: {count}")
+        self.info_set("环合反应", reaction_info)
+
+    def record_element_reaction(self, char_a: "BaseChar", char_b: "BaseChar") -> bool:
         if char_a is None or char_b is None:
             return False
         pair = self._get_element_ring_pair(char_a.element, char_b.element)
         if pair is None:
             return False
-        self.element_ring_reaction_counts[pair] = self.element_ring_reaction_counts.get(pair, 0) + 1
+        self.element_reaction_counts[pair] = self.element_reaction_counts.get(pair, 0) + 1
+
+        self._update_element_reaction_info()
         return True
 
-    def find_element_ring_reaction_target(self, source_char: "BaseChar") -> "BaseChar | None":
+    def find_element_reaction_target(self, source_char: "BaseChar") -> "BaseChar | None":
         if source_char is None:
             return None
         source_element_index = self.element_ring_index.get(source_char.element)
@@ -174,8 +223,8 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
 
         previous_pair = self._get_element_ring_pair(source_char.element, previous_target.element)
         next_pair = self._get_element_ring_pair(source_char.element, next_target.element)
-        previous_count = self.element_ring_reaction_counts.get(previous_pair, 0)
-        next_count = self.element_ring_reaction_counts.get(next_pair, 0)
+        previous_count = self.element_reaction_counts.get(previous_pair, 0)
+        next_count = self.element_reaction_counts.get(next_pair, 0)
         if previous_count <= next_count:
             return previous_target
         return next_target
@@ -193,16 +242,28 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
             duration = time.time() - start
         if start > 0 and duration > freeze_time:
             current_time = time.time()
-            self.freeze_durations = [
-                item for item in self.freeze_durations if item[0] > current_time - 60
-            ]
-            self.freeze_durations.append((start, duration, freeze_time, cause))  # [lw] 4元组带cause
+            while (
+                self.freeze_durations
+                and self.freeze_durations[0][0]
+                <= current_time - self.FREEZE_DURATION_RETENTION_SECONDS
+            ):
+                self.freeze_durations.popleft()
+            freeze_duration = (start, duration, freeze_time, cause)  # [lw] 4元组带cause
             if self.SKILL_CD_DIAG:  # [lw] 诊断日志块
-                deduct = 0 if freeze_time == -100 else duration - freeze_time
+                deduct = 0 if freeze_time == -100 else duration
                 self.log_info(
                     f"freeze记录: 原因={cause or '?'} 时长={duration:.2f}s "
                     f"扣CD={deduct:.2f}s{'(入场不扣)' if freeze_time == -100 else ''}"
                 )  # [lw]
+            if not self.freeze_durations or start >= self.freeze_durations[-1][0]:
+                self.freeze_durations.append(freeze_duration)
+                return
+
+            records = list(self.freeze_durations)
+            insert_at = bisect_right(records, start, key=lambda item: item[0])
+            records.insert(insert_at, freeze_duration)
+            self.freeze_durations.clear()
+            self.freeze_durations.extend(records)
 
     def time_elapsed_accounting_for_freeze(self, start, intro_motion_freeze=False):
         """计算扣除冻结时间后经过的时间。
@@ -217,20 +278,20 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
         if start < 0:
             return 10000
         to_minus = 0
-        for item in self.freeze_durations:  # [lw] 元组变4元(带cause), 按下标取前3个
+        for item in reversed(self.freeze_durations):  # [lw] 元组为4元(带cause), 按下标取前3个
             freeze_start, duration, freeze_time = item[0], item[1], item[2]  # [lw]
-            if start < freeze_start:
-                if intro_motion_freeze:
-                    if freeze_time == -100:
-                        freeze_time = 0
-                elif freeze_time == -100:
-                    continue
-                to_minus += duration - freeze_time
+            if freeze_start <= start:
+                break
+            if intro_motion_freeze:
+                if freeze_time == -100:
+                    freeze_time = 0
+            elif freeze_time == -100:
+                continue
+            if duration < freeze_time:
+                duration = freeze_time
+            to_minus += duration
         if to_minus != 0:
-            self.run_with_interval(
-                lambda: self.log_debug(f"time_elapsed_accounting_for_freeze to_minus {to_minus}"),
-                0.5,
-            )
+            self.log_debug_gated(f"time_elapsed_accounting_for_freeze to_minus {to_minus}")
         return time.time() - start - to_minus
 
     def refresh_cd(self):
@@ -258,7 +319,7 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
         self.scene.cd_refreshed = True
         # self.log_debug(f"cd refreshed: {cds} {time.time() - cds['time']}")
 
-    def get_cd(self, box_name, char_index=None):  # [lw] 改为按box独立锚点时间+UNKNOWN_CD兜底+诊断
+    def get_cd(self, box_name, char_index=None):  # [lw] 本方法被大幅改写: 按box独立锚点时间+UNKNOWN_CD兜底+诊断
         self.refresh_cd()
         if char_index is None:
             char_index = self.get_current_char().index
@@ -318,7 +379,7 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
             current = 0
         return current
 
-    def combat_once(self, wait_combat_time=200, raise_if_not_found=True):
+    def combat_once(self, wait_combat_time=200, max_combat_time=1200, raise_if_not_found=True):
         """执行一次完整的战斗流程。
 
         Args:
@@ -329,87 +390,72 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
             self.in_combat, time_out=wait_combat_time, raise_if_not_found=raise_if_not_found
         )
         self.reset_unavailable_chars()  # [lw]
-        self.load_chars()
         self.switch_to_combat_start_char()
         self.info["Combat Count"] = self.info.get("Combat Count", 0) + 1
-        try:
-            while self.in_combat():
-                logger.debug(f"combat_once loop {self.chars}")
-                self.get_current_char().perform()
-        except CharDeadException as e:
-            raise e
-        except NotInCombatException as e:
-            logger.info(f"combat_once out of combat break {e}")
+        with self.retarget_turn_policy(enable=True):
+            try:
+                deadline = time.time() + max_combat_time
+                while self.in_combat():
+                    logger.debug(f"combat_once loop {self.chars}")
+                    self.get_current_char(raise_exception=True).perform()
+                    if time.time() > deadline:
+                        self.raise_not_in_combat(
+                            f"Combat maximum duration of {max_combat_time}s reached."
+                        )
+            except CharDeadException as e:
+                raise e
+            except NotInCombatException as e:
+                logger.info(f"combat_once out of combat break {e}")
         self.combat_end()
-        self.wait_in_team_and_world(time_out=10, raise_if_not_found=False)
+        self.wait_in_team(time_out=10, raise_if_not_found=False)
 
     def _get_char_log_name(self, char: "BaseChar"):
-        from src.char.custom.CustomChar import CustomChar
-
-        if type(char) in (BaseChar, CustomChar):
+        if hasattr(char, "char_name"):
             return char.char_name
-        else:
-            return char.name
+        return getattr(char, "name", "None")
 
-    def _decide_switch_to(self, current_char: "BaseChar", free_intro=False, require_intro=False):
+    def _decide_switch_to(
+        self,
+        current_char: "BaseChar",
+        free_intro=False,
+        require_intro=False,
+    ):
         if self.LW_SWITCH_DECIDE:  # [lw] 开=龙威切换决策(src/lw/combat_ext.py), 关=下面的上游原版(仅排查对照)
             return self.lw_decide_switch_to(current_char, free_intro, require_intro)  # [lw]
-        has_intro = free_intro or current_char.is_cycle_full()
-        switch_to = current_char
+        decision = self.combat_planner.decide_switch(
+            current_char,
+            free_intro=free_intro,
+            require_intro=require_intro,
+        )
+        return decision.target, decision.has_intro
 
-        if require_intro and not has_intro:
-            return switch_to, has_intro
+    def _wait_switch_in_guard(
+        self,
+        current_char: "BaseChar",
+        switch_to: "BaseChar",
+        has_intro: bool,
+    ) -> None:
+        guard = self.combat_planner.switch_in_guard(current_char, switch_to, has_intro)
+        if not guard.should_delay():
+            return
 
-        max_priority = Priority.MIN
-
-        for char in self.chars:
-            if char is None:
-                continue
-
-            if char == current_char:
-                priority = Priority.CURRENT_CHAR
+        start_time = time.time()
+        reason = guard.reason or f"{switch_to} switch in guard"
+        logger.info(f"switch in delayed: {reason}")
+        while guard.should_delay() and time.time() - start_time < guard.timeout:
+            self.check_combat()
+            if guard.while_waiting is None:
+                current_char.click_with_interval()
             else:
-                priority = char.get_switch_priority(current_char, has_intro)
-                logger.debug(f"switch_next_char priority: {char} {priority}")
+                guard.while_waiting()
+            self.sleep(max(guard.poll_interval, 0.01))
 
-            if priority > max_priority or (
-                priority == max_priority and char.last_perform < switch_to.last_perform
-            ):
-                if priority == max_priority:
-                    logger.debug("switch priority equal, determine by last perform")
-                max_priority = priority
-                switch_to = char
-
-        if has_intro and max_priority < Priority.FAST_SWITCH:
-            reaction_target = self.find_element_ring_reaction_target(current_char)
-            if reaction_target:
-                return reaction_target, has_intro
-
-        return switch_to, has_intro
-
-    def _find_switch_target(self, current_char: "BaseChar", free_intro=False):
-        switch_to_self_count = 0
-        while True:
-            switch_to, has_intro = self._decide_switch_to(current_char, free_intro)
-            if switch_to != current_char:
-                return switch_to, has_intro
-
-            switch_to_self_count += 1
-            if switch_to_self_count > 5:
-                switch_to = safe_get(self.chars, self.get_longest_idle_char_index())
-                if switch_to is not None and switch_to != current_char:
-                    logger.warning(
-                        f"switch_next_char forced to next char {switch_to} "
-                        f"after repeated self selection"
-                    )
-                    return switch_to, has_intro
-                return current_char, has_intro  # [lw] 强切失败时留在当前角色
-
+        if guard.should_delay():
             logger.warning(
-                f"{current_char} can't find next char to switch to, "
-                "performing too fast add a normal attack"
+                f"switch in guard timeout after {time.time() - start_time:.2f}s: {reason}"
             )
-            current_char.continues_normal_attack(0.2)
+        else:
+            logger.info(f"switch in guard released after {time.time() - start_time:.2f}s: {reason}")
 
     def _set_current_char(self, current_char: "BaseChar | None", switch_to: "BaseChar", has_intro):
         self.in_animation = False
@@ -435,76 +481,153 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
     ):
         current_char_name = self._get_char_log_name(current_char) if current_char else "None"
         switch_to.has_intro = has_intro
-        last_decide_time = 0.0
+        intro_replanned = False
         start_time = time.time()
+        self.scene.clear_health_snapshot()
+        switch_key_sent_at = 0
+        last_index_check = 0
 
         logger.info(
             f"{log_prefix} {current_char_name} -> {self._get_char_log_name(switch_to)}, "
             f"has_intro {has_intro}"
         )
 
-        while True:
-            self.check_combat()
-            current_time = time.time()
-            switch_to_name = self._get_char_log_name(switch_to)
+        with self.skip_sleep_checks() as skip:
+            skip.check_combat = True
 
-            if self.is_char_at_index(switch_to.index):
-                self._set_current_char(current_char, switch_to, has_intro)
-                break
+            while True:
+                current_time = time.time()
+                elapsed = current_time - start_time
+                switch_to_name = self._get_char_log_name(switch_to)
+                frame = self.next_frame()
 
-            if (  # [lw] 增加"正切向就绪支援时不改道"守卫
-                retry_intro
-                and not has_intro
-                and current_time - last_decide_time > 0.12
-                and not self._committing_to_ready_support(switch_to)  # [lw]
-            ):
-                last_decide_time = current_time
-                new_switch_to, new_has_intro = self._decide_switch_to(
-                    current_char, free_intro, require_intro=True
+                if self.is_in_team(frame=frame):
+                    self.check_combat()
+                else:
+                    info = f"{log_prefix} not in team {elapsed}s"
+                    if elapsed > self.switch_char_time_out:
+                        self.raise_not_in_combat(info)
+
+                    if self._mark_dead_char_if_detected(switch_to):
+                        return
+
+                    self.run_with_interval(lambda: logger.info(info), interval=1)
+                    self.sleep(0.01)
+                    continue
+                if self.scene.health_snapshot() is None:
+                    self.is_health_changed(frame)
+
+                detected_reason, last_index_check = self._switch_detection_reason(
+                    switch_to,
+                    frame,
+                    switch_key_sent_at,
+                    current_time,
+                    last_index_check,
+                    start_time,
+                    time_out,
                 )
-                if new_has_intro and new_switch_to != current_char:
-                    switch_to = new_switch_to
-                    has_intro = new_has_intro
-                    switch_to.has_intro = True
-                    switch_to_name = self._get_char_log_name(switch_to)
-                    logger.info(
-                        f"{log_prefix} updated target to {switch_to_name}, "
-                        f"has_intro {switch_to.has_intro}"
-                    )
+                if detected_reason:
+                    logger.info(f"{log_prefix} detected by {detected_reason}")
+                    self._set_current_char(current_char, switch_to, has_intro)
+                    break
 
-            if not self.is_in_team():
-                logger.info(
-                    f"not in world while switching {current_char_name} -> {switch_to_name},"
-                    f" {current_time - start_time}"
+                intro_ready = current_char is not None and (
+                    free_intro or current_char.is_cycle_full()
                 )
-                if current_time - start_time > self.switch_char_time_out:
-                    self.raise_not_in_combat(
-                        f"switch too long failed {current_char_name} -> {switch_to_name},"
-                        f" {current_time - start_time}"
+                if (
+                    retry_intro
+                    and not has_intro
+                    and not intro_replanned
+                    and intro_ready
+                    and not self._committing_to_ready_support(switch_to)  # [lw] 正切向就绪支援时不改道
+                ):
+                    intro_replanned = True
+                    new_switch_to, new_has_intro = self._decide_switch_to(
+                        current_char,
+                        free_intro,
+                        require_intro=True,
                     )
+                    if new_has_intro and new_switch_to != current_char:
+                        if not self.combat_planner.has_strict_route(current_char):
+                            self._wait_switch_in_guard(current_char, new_switch_to, new_has_intro)
+                        switch_to = new_switch_to
+                        has_intro = new_has_intro
+                        switch_to.has_intro = True
+                        switch_to_name = self._get_char_log_name(switch_to)
+                        logger.info(
+                            f"{log_prefix} updated target to {switch_to_name}, "
+                            f"has_intro {switch_to.has_intro}"
+                        )
+
+                self.send_key(
+                    switch_to.index + 1,
+                    action_name="switch_char_send",
+                    interval=0.15,
+                    down_time=0.05,
+                )
+                self.sleep(0.001)
+                self.click(action_name="switch_char_click", interval=0.3)
+                if switch_key_sent_at <= 0:
+                    switch_key_sent_at = current_time
+
+                if elapsed > time_out:
+                    if self.debug:
+                        self.screenshot(
+                            f"switch_not_detected_{current_char_name}_to_{switch_to_name}"
+                        )
+                    self.mark_char_unavailable(switch_to, f"{log_prefix} failed")  # [lw] 原为 raise_not_in_combat
+                    raise CharUnavailableException(f"{log_prefix} failed {switch_to_name}")  # [lw]
+
                 self.sleep(0.01)
-                continue
-
-            self.click(action_name="switch_char_click", interval=0.25)
-            self.sleep(0.001)
-            self.send_key(switch_to.index + 1, action_name="switch_char_send", interval=0.25)
-
-            if current_time - start_time > time_out:
-                if self.debug:
-                    self.screenshot(f"switch_not_detected_{current_char_name}_to_{switch_to_name}")
-                self.mark_char_unavailable(switch_to, f"{log_prefix} failed")  # [lw] 原为 raise_not_in_combat
-                raise CharUnavailableException(f"{log_prefix} failed {switch_to_name}")  # [lw]
-
-            self.sleep(0.01)
 
         if has_intro and current_char:
-            self.record_element_ring_reaction(current_char, switch_to)
+            if self.record_element_reaction(current_char, switch_to):
+                self.combat_planner.record_entry_reaction(current_char, switch_to)
+        self.combat_planner.record_switch(switch_to)
 
         if post_action:
             logger.debug(f"post_action {post_action}")
             post_action(switch_to, has_intro)
 
         logger.info(f"{log_prefix} end {(time.time() - start_time):.3f}s")
+
+    def _mark_dead_char_if_detected(self, switch_to: "BaseChar"):
+        if self.find_confirm(self.box_of_screen(0.655, 0.694, 0.709, 0.787, hcenter=True)):
+            switch_to.mark_dead("not in team while revive confirm is visible")
+            self.ensure_main(in_world=False)
+            return True
+        return False
+
+    def _switch_detection_reason(
+        self,
+        switch_to: "BaseChar",
+        frame,
+        switch_key_sent_at,
+        current_time,
+        last_index_check,
+        start_time,
+        time_out,
+    ):
+        if switch_key_sent_at > 0 and current_time - switch_key_sent_at >= 0.04:
+            if self.is_health_changed(frame) is True:
+                return "active health change", last_index_check
+
+        if current_time - last_index_check < 0.35:
+            return None, last_index_check
+
+        use_index_fallback = (
+            self.scene.health_snapshot() is None
+            or switch_key_sent_at <= 0
+            or current_time - switch_key_sent_at > 0.45
+            or current_time - start_time > max(time_out - 0.75, time_out * 0.8)
+        )
+        if not use_index_fallback:
+            return None, last_index_check
+
+        last_index_check = current_time
+        if self.is_char_at_index(switch_to.index, frame=frame, char_count=self.team_size):
+            return "char index fallback", last_index_check
+        return None, last_index_check
 
     def switch_next_char(self, current_char: "BaseChar", post_action=None, free_intro=False):
         """切换到下一个最优角色。
@@ -518,14 +641,28 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
             self.click(action_name="switch_char_click", interval=0.1)
             return
 
-        current_char.wait_switch_cd()
-
-        switch_to, has_intro = self._find_switch_target(current_char, free_intro)
-
+        decision = self.combat_planner.decide_switch(
+            current_char,
+            free_intro=free_intro,
+        )
+        switch_to = decision.target
+        has_intro = decision.has_intro
         if switch_to is None or switch_to == current_char:
-            logger.warning(f"{current_char} failed to find a valid switch target")
+            current_char.click_with_interval()
+            self.run_with_interval(
+                lambda: logger.debug(
+                    f"planner keeps current char {current_char}: {decision.reason}"
+                ),
+                0.5,
+                action_name=("planner_keep_current", current_char.index, decision.reason),
+            )
             return
 
+        if not self.combat_planner.has_strict_route(current_char):
+            self._wait_switch_in_guard(current_char, switch_to, has_intro)
+            current_char.wait_switch_cd()
+
+        self.combat_planner.expect_entry_action(switch_to, decision.expected_entry)
         self._switch_to_char(
             switch_to,
             current_char=current_char,
@@ -533,7 +670,35 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
             post_action=post_action,
             free_intro=free_intro,
             retry_intro=True,
-            log_prefix="switch_next_char",
+            log_prefix=f"planner switch_next_char ({decision.reason})",
+        )
+
+    def switch_other_char(self, current_char: "BaseChar"):
+        from src.tasks.trigger.AutoCombatTask import AutoCombatTask
+
+        if isinstance(self, AutoCombatTask):
+            current_char.logger.debug("AutoCombatTask, skip switch_other_char")
+            return
+        target_index = next(
+            (c.index for c in self.chars if c and c.index != current_char.index),
+            (current_char.index + 1) % len(self.chars),
+        )
+        next_char = str(target_index + 1)
+        current_char.logger.debug(
+            f"{current_char.char_name} on_combat_end {current_char.index} "
+            f"switch next char: {next_char}"
+        )
+        start = time.time()
+        while time.time() - start < 6:
+            in_team, current_index, _ = self.in_team()
+            if in_team and current_index != current_char.index:
+                for char in filter(None, self.chars):
+                    char.is_current_char = char.index == current_index
+                break
+            self.send_key(next_char)
+            current_char.sleep(0.2, False)
+        current_char.logger.debug(
+            f"switch_other_char on_combat_end {current_char.index} switch end"
         )
 
     def switch_to_combat_start_char(self):
@@ -541,14 +706,11 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
         # 否则起始角色已在场时本方法会提前 return,残留的 in_animation=True 会让该角色的
         # click_ultimate 误判"正在大招动画中"、不发招直接空等 unfreeze,卡住十几秒。
         self.in_animation = False  # [lw]
-        start_chars = [
-            char for char in self.chars if char is not None and getattr(char, "start_combat", False)
-        ]
-        if not start_chars:
-            return
-
-        switch_to = random.choice(start_chars)
         current_char = self.get_current_char(raise_exception=False)
+        decision = self.combat_planner.decide_combat_start_char(current_char)
+        switch_to = decision.target
+        if switch_to is None:
+            return
         if current_char == switch_to:
             logger.info(f"combat start char already current {switch_to}")
             return
@@ -556,7 +718,8 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
         self._switch_to_char(
             switch_to,
             current_char=current_char,
-            log_prefix="switch to combat start char",
+            has_intro=decision.has_intro,
+            log_prefix=f"planner combat start ({decision.reason})",
             time_out=self.switch_char_time_out,
         )
 
@@ -615,7 +778,7 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
         """获取当前操作的角色对象。
 
         Args:
-            raise_exception (bool, optional): 如果找不到当前角色是否抛出异常。默认为 True。
+            raise_exception (bool, optional): 如果找不到当前角色是否抛出异常。默认为 False。
 
         Returns:
             BaseChar: 当前角色对象 (`BaseChar`) 或 None。
@@ -623,7 +786,8 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
         for char in self.chars:
             if char and char.is_current_char:
                 return char
-        if raise_exception and not self.in_team()[0]:
+        if raise_exception:
+            self.screenshot("get_current_char_failed")
             self.raise_not_in_combat("can find current char!!")
         return None
 
@@ -634,23 +798,66 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
         current_char = self.get_current_char(raise_exception=False)
         if current_char:
             self.get_current_char().on_combat_end(self.chars)
+        self._clear_dead_chars()
+
+    def _clear_dead_chars(self):
+        for char in self.chars:
+            if char is not None:
+                char.clear_dead()
+
+    def _wrap_wait_until_action(self, action):
+        def wrapped_action():
+            if action is not None:
+                action()
+            self.sleep(0.001)
+
+        return wrapped_action
+
+    def wait_until(
+        self,
+        condition,
+        time_out=0,
+        pre_action=None,
+        post_action=None,
+        settle_time=-1,
+        raise_if_not_found=False,
+    ):
+        return super().wait_until(
+            condition,
+            time_out=time_out,
+            pre_action=self._wrap_wait_until_action(pre_action),
+            post_action=post_action,
+            settle_time=settle_time,
+            raise_if_not_found=raise_if_not_found,
+        )
+
+    @contextmanager
+    def skip_sleep_checks(self):
+        old_values = {
+            field.name: getattr(self.sleep_check_skip, field.name)
+            for field in fields(self.sleep_check_skip)
+        }
+        try:
+            yield self.sleep_check_skip
+        finally:
+            for check, old_value in old_values.items():
+                setattr(self.sleep_check_skip, check, old_value)
 
     def sleep_check(self):
-        if self.skip_sleep_check:
-            return
-
-        if SoundCombatContext.should_interrupt_combat():
+        if (
+            not self.sleep_check_skip.sound_combat_context
+            and not self.in_animation
+            and SoundCombatContext.should_interrupt_combat()
+        ):
             self.log_info("Combat sleep interrupted by sound action")
             SoundCombatContext().execute_pending_action()
             SoundCombatContext.wait_for_resume()
 
-        if self._in_combat:
-            self.check_team_changed_during_combat()  # [lw]
-            self.next_frame()
-            if not self.in_combat():
-                self.raise_not_in_combat("sleep check not in combat")
+        if not self.sleep_check_skip.check_combat:
+            self.check_combat()
 
-    def _apply_sound_config(self):
+    def _apply_sound_config(self, dodge_action=ACTION_UNSET, counter_action=ACTION_UNSET):
+        sound_context = SoundCombatContext()
         if self.sound_config:
             enable = self.sound_config.get("Enable Sound Trigger", True)
             dodge_all_attacks = self.sound_config.get("Dodge All Attacks", True)
@@ -658,18 +865,22 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
             counter_thresh = self.sound_config.get("Counter Attack Threshold", 0.12)
             dodge_thresh = np.clip(dodge_thresh, 0.0, 1.0)
             counter_thresh = np.clip(counter_thresh, 0.0, 1.0)
-            SoundCombatContext().update_config(
-                enable, dodge_all_attacks, dodge_thresh, counter_thresh
-            )
-        SoundCombatContext().update_task(self)
+            sound_context.update_config(enable, dodge_all_attacks, dodge_thresh, counter_thresh)
+        sound_context.update_task(self, dodge_action=dodge_action, counter_action=counter_action)
 
     def check_combat(self):
         """检查当前是否处于战斗状态, 如果不是则抛出异常。"""
         self.check_team_changed_during_combat()  # [lw]
-        if self._in_combat and not self.in_combat():
-            # if self.debug:
-            #     self.screenshot('not_in_combat_calling_check_combat')
-            self.raise_not_in_combat("combat check not in combat")
+        if self._in_combat:
+            if not self.in_combat():
+                # if self.debug:
+                #     self.screenshot('not_in_combat_calling_check_combat')
+                self.raise_not_in_combat("combat check not in combat")
+
+    def in_combat(self):
+        with self.skip_sleep_checks() as skip:
+            skip.check_combat = True
+            return super().in_combat()
 
     def set_key(self, key, box):
         best = self.find_best_match_in_box(box, ["t", "e", "r", "q"], threshold=0.7)
@@ -691,19 +902,25 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
 
     def _do_load_char(self, index: int, fixed_slots) -> "BaseChar":
         fixed_slot = safe_get(fixed_slots, index)
-        fixed_char_name = ""
-        fixed_combo_ref = ""
+        fixed_char_id = ""
+        fixed_combo_id = ""
         if isinstance(fixed_slot, dict):
-            fixed_char_name = str(fixed_slot.get("char_name", "") or "").strip()
-            fixed_combo_ref = str(fixed_slot.get("combo_ref", "") or "").strip()
-
-        if fixed_char_name:
-            self.log_debug(
-                f"load_chars use fixed slot {index + 1}: {fixed_char_name} {fixed_combo_ref}"
-            )
-            return get_char_by_name(
-                self, index, fixed_char_name, confidence=1, combo_ref=fixed_combo_ref
-            )
+            fixed_char_id = fixed_slot.get("char_id", "")
+            fixed_combo_id = fixed_slot.get("combo_id", "")
+            if fixed_char_id:
+                char_info = CustomCharManager().get_character_info_by_id(fixed_char_id)
+                if not char_info:
+                    self.logger.warning(f"Fixed char {index} not found: {fixed_char_id}")
+                    fixed_char_id = ""
+                    fixed_combo_id = ""
+                else:
+                    fixed_char_name = char_info["char_name"]
+                    self.logger.info(
+                        f"Using fixed char {index}: {fixed_char_name} {fixed_combo_id}"
+                    )
+                    return get_char_by_id(
+                        self, index, fixed_char_id, confidence=1, combo_id=fixed_combo_id
+                    )
 
         box_scaled = self.get_char_box(index).scale(1.1, 1.1)
 
@@ -725,7 +942,7 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
             count = 4
         self.log_info(f"load_chars count {count} current_index {current_index}")
 
-        self.clear_element_ring_reactions()
+        self.clear_element_reactions()
         fixed_team = CustomCharManager().get_fixed_team()
         fixed_slots = fixed_team.get("slots", []) if fixed_team.get("enabled", False) else []
         new_chars = []
@@ -743,15 +960,13 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
 
         elements = [char.element for char in new_chars]
         self.chars = new_chars
+        self.combat_planner.reset(self.chars)
         self.info_set("char elements", elements)
 
-        healer_count = 0
         self.info_set("chars", [])
         for char in self.chars:
             if char is not None:
                 char.reset_state()
-                if isinstance(char, Healer):
-                    healer_count += 1
                 if char.index == current_index:
                     char.is_current_char = True
                 else:
@@ -760,7 +975,7 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
                 conf = char.confidence
                 elem = char.element
                 self.log_info(f"load char success {char} {name} {conf:.2f} {elem}")
-                self.info_add_to_list("chars", f"{char.char_name}: {char.combo_label}")
+                self.info_add_to_list("chars", f"{char.char_name}: {char.combo_name}")
 
         if self.team_size > 0:
             self.combat_start = time.time()
@@ -768,110 +983,6 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
             self._apply_sound_config()
         logger.debug(f"load_chars cost {time.perf_counter() - now:.3f}s")
         return ret
-
-    def load_chars_element(self, indices: List[int]) -> dict:
-        def preprocess_image(image):
-            return iu.binarize_bgr_by_adaptive_center(image)
-
-        def process_transparency(img):
-            """
-            如果图片有透明通道，将其转为黑色背景
-            """
-            if img.shape[2] == 4:
-                b, g, r, a = cv2.split(img)
-                black_bg = np.zeros_like(img[:, :, :3])
-                alpha_factor = a.astype(float) / 255.0
-                alpha_factor = cv2.merge([alpha_factor, alpha_factor, alpha_factor])
-
-                foreground = cv2.merge([b, g, r]).astype(float)
-                background = black_bg.astype(float)
-
-                final_img = cv2.add(
-                    cv2.multiply(foreground, alpha_factor),
-                    cv2.multiply(background, 1.0 - alpha_factor),
-                )
-                return final_img.astype(np.uint8)
-            return img
-
-        results = {}
-        target_elements = [
-            Element.BLUE,
-            Element.GREEN,
-            Element.RED,
-            Element.PURPLE,
-            Element.YELLOW,
-            Element.WHITE,
-        ]
-
-        base_box = self.get_base_char_element_box()
-
-        if not self._element_template_cache:
-            element_scale = 0.5
-            for element in target_elements:
-                raw_template = cv2.imread(
-                    f"assets/esper_icons/{element.value}.png", cv2.IMREAD_UNCHANGED
-                )
-                if raw_template is not None:
-                    h, w = raw_template.shape[:2]
-                    raw_template = process_transparency(raw_template)
-                    raw_template = cv2.resize(
-                        raw_template,
-                        (int(w * element_scale), int(h * element_scale)),
-                        interpolation=cv2.INTER_NEAREST,
-                    )
-                    template_bin = preprocess_image(raw_template)
-                    _, mask = cv2.threshold(template_bin, 127, 255, cv2.THRESH_BINARY)
-                    kernel = np.ones((30, 30), np.uint8)
-                    mask = cv2.dilate(mask, kernel, iterations=1)
-                    # iu.show_images([mask], [f"mask_{element}"])
-                    self._element_template_cache[element] = (raw_template, mask)
-
-        _frame = self.frame
-        # self.screenshot("load_chars_element", _frame)
-
-        for i in indices:
-            base_scale = 8
-            scale = base_scale * 1440 / self.height
-            current_box = self.get_box_by_char_spacing(base_box, i)
-            crop_img = current_box.crop_frame(_frame)
-            crop_h, crop_w = crop_img.shape[:2]
-            crop_resized = cv2.resize(
-                crop_img,
-                (int(crop_w * scale), int(crop_h * scale)),
-                interpolation=cv2.INTER_NEAREST,
-            )
-            # iu.show_images([crop_resized, crop_img], [f"crop_resized_{i}", f"crop_img_{i}"])
-
-            best_element = Element.DEFAULT
-            max_score = -1.0
-
-            for element in target_elements:
-                template_data = self._element_template_cache.get(element)
-                if template_data is None:
-                    continue
-                template_img, template_mask = template_data
-
-                match_score = 0
-                if crop_resized is not None and template_img is not None:
-                    res = cv2.matchTemplate(
-                        crop_resized, template_img, cv2.TM_CCOEFF_NORMED, mask=template_mask
-                    )
-                    res[np.isinf(res)] = 0
-                    _, match_score, _, _ = cv2.minMaxLoc(res)
-
-                if match_score > max_score:
-                    max_score = match_score
-                    best_element = element
-
-            current_box.confidence = max_score
-            current_box.name = best_element.name
-            results[i] = best_element
-            self.draw_boxes(boxes=current_box, color="red")
-            self.log_debug(
-                f"char_{i + 1} identified as {best_element.name} (score: {max_score:.4f})"
-            )
-
-        return results
 
     def is_cycle_full(self) -> bool:
         img = self.box_of_screen_scaled(
@@ -939,7 +1050,7 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
             self.send_key_down(direction)
             if run:
                 self.sleep(0.1)
-                self.send_key_down("lshift")
+                self.send_key("lshift")
             ret = bool(
                 self.wait_until(
                     self.in_combat,
@@ -949,10 +1060,84 @@ class BaseCombatTask(CombatExtMixin, CombatCheck):  # [lw] 插入用户扩展基
             )
             self.sleep(delay)
         finally:
-            if run:
-                self.send_key_up("lshift")
-                self.sleep(0.1)
             self.send_key_up(direction)
+        return ret
+
+    def ultimate_available(self, index) -> Box | None:
+        def mask_function(image):
+            return iu.mask_corners(image, ratio_w=0.5, ratio_h=0.5, corners="all")
+
+        def overlap_confidence(x, y, template, search_area, mask):
+            height, width = template.shape[:2]
+            hit = search_area[y : y + height, x : x + width]
+            if hit.shape[:2] != template.shape[:2]:
+                return 0.0
+
+            active = mask > 0
+            template_active = (template > 0) & active
+            hit_active = (hit > 0) & active
+            template_count = template_active.sum()
+            hit_count = hit_active.sum()
+            if template_count == 0 or hit_count == 0:
+                return 0.0
+
+            intersection = np.logical_and(template_active, hit_active).sum()
+            precision = intersection / hit_count
+            recall = intersection / template_count
+            return min(precision, recall)
+
+        def find_best_overlap(template, search_area, mask, search_box):
+            template_height, template_width = template.shape[:2]
+            search_height, search_width = search_area.shape[:2]
+            if template_height > search_height or template_width > search_width:
+                return None
+
+            best_confidence = 0.0
+            best_x = 0
+            best_y = 0
+            for y in range(search_height - template_height + 1):
+                for x in range(search_width - template_width + 1):
+                    confidence = overlap_confidence(x, y, template, search_area, mask)
+                    if confidence > best_confidence:
+                        best_confidence = confidence
+                        best_x = x
+                        best_y = y
+
+            return Box(
+                search_box.x + best_x,
+                search_box.y + best_y,
+                template_width,
+                template_height,
+                best_confidence,
+                Labels.ult_ready,
+            )
+
+        box = self.get_box_by_name(Labels.ult_ready)
+        box = self._shift_char_ui_box(box, expend=True)
+        target_box = self.get_box_by_char_spacing(box, index).scale(1.1)
+        self.draw_boxes(boxes=target_box, color="blue")
+
+        feature = self.get_feature_by_name(Labels.ult_ready).mat
+        mask = mask_function(feature)
+        # image = target_box.scale(1.1).crop_frame(self.frame)
+
+        # iu.show_images([feature, image], ["feature", "image"])
+        search_area = gf.ultimate_ready_filter(target_box.crop_frame(self.frame))
+        ret = find_best_overlap(feature, search_area, mask, target_box)
+        conf = ret.confidence if ret else -1
+        if ret and ret.confidence >= 0.7:
+            ret.name = str(index)
+            self.draw_boxes(boxes=ret, color="red")
+        else:
+            ret = None
+        self.log_info("char:{}, ult:{}, conf:{}".format(index, bool(ret), conf))
+        # self.run_with_interval(
+        #     lambda: self.log_info(
+        #         "char:{}, ult:{}, conf:{}".format(index, bool(ret), conf)
+        #     ),
+        #     interval=1,
+        #     action_name="ultimate_available",
+        # )
         return ret
 
 

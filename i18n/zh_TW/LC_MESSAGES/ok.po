@@ -81,9 +81,6 @@ msgstr "{fixed_team}已清空"
 msgid "{} 号位"
 msgstr "{} 號位"
 
-msgid "不扫描也可自动战斗，将使用通用脚本"
-msgstr "不掃描也可自動戰鬥，將使用通用腳本"
-
 msgid "任务跳过对话"
 msgstr "任務跳過對話"
 
@@ -100,8 +97,8 @@ msgstr "儲存成功"
 msgid "停用"
 msgstr "停用"
 
-msgid "先扫描或手动填写"
-msgstr "先掃描或手動填寫"
+msgid "先扫描并关联特征或手动填写"
+msgstr "先掃描並關聯特徵或手動填寫"
 
 msgid "出招表"
 msgstr "出招表"
@@ -124,6 +121,15 @@ msgstr "重新整理列表"
 msgid "匹配成功: {}"
 msgstr "比對成功: {}"
 
+msgid "置信度: {:.2f}"
+msgstr "信心度: {:.2f}"
+
+msgid "特征已加入"
+msgstr "特徵已加入"
+
+msgid "加入特征"
+msgstr "加入特徵"
+
 msgid "匹配文字"
 msgstr "比對文字"
 
@@ -145,8 +151,8 @@ msgstr "地圖中自動點擊傳送"
 msgid "填入扫描"
 msgstr "填入掃描"
 
-msgid "增加 <b style=\"color: #0078d7;\">角色特征</b> 后将自动判断当前角色。<br>如果不想管理 <b style=\"color: #0078d7;\">角色特征</b>，可以直接启用 <b style=\"color: #0078d7;\">{fixed_team}</b> 功能。"
-msgstr "增加 <b style=\"color: #0078d7;\">角色特徵</b> 後將自動判斷當前角色。<br>如果不想管理 <b style=\"color: #0078d7;\">角色特徵</b>，可以直接啟用 <b style=\"color: #0078d7;\">{fixed_team}</b> 功能。"
+msgid "这是个用于向数据库关联或添加 <b style=\"color: #0078d7;\">角色特征</b> 的工具面板。<br>点击 <b style=\"color: #0078d7;\">{scan_team}</b> 后点击 <b style=\"color: #0078d7;\">关联或添加</b> 特征，自动战斗时就会识别对应的角色。<br><b style=\"color: #d83b01;\">💡 注意：</b>此面板 <b style=\"color: #d83b01;\">不会</b> 在进入战斗或更换阵容时实时自动刷新或同步显示, 因为这是工具面板。<br>如果不想管理 <b style=\"color: #0078d7;\">角色特征</b>，可以直接使用 <b style=\"color: #0078d7;\">{fixed_team}</b> 功能。"
+msgstr "這是個用於向資料庫關聯或添加 <b style=\"color: #0078d7;\">角色特徵</b> 的工具面板。<br>點擊 <b style=\"color: #0078d7;\">{scan_team}</b> 後點擊 <b style=\"color: #0078d7;\">關聯或添加</b> 特徵，自動戰鬥時就會識別對應的角色。<br><b style=\"color: #d83b01;\">💡 注意：</b>此面板 <b style=\"color: #d83b01;\">不會</b> 在進入戰鬥或更換陣容時即時自動重新整理或同步顯示, 因為這是工具面板。<br>如果不想管理 <b style=\"color: #0078d7;\">角色特徵</b>，可以直接使用 <b style=\"color: #0078d7;\">{fixed_team}</b> 功能。"
 
 msgid "完成每日活跃度"
 msgstr "完成每日活躍度"
@@ -162,9 +168,6 @@ msgstr "導入數據"
 
 msgid "导出数据"
 msgstr "匯出數據"
-
-msgid "将优先使用固定角色进行战斗，未启用或槽位为空时自动识别"
-msgstr "將優先使用固定角色進行戰鬥，未啟用或槽位為空時自動識別"
 
 msgid "已保存 {}/4"
 msgstr "已儲存 {}/4"
@@ -245,8 +248,8 @@ msgstr "未能識別該特徵"
 msgid "未获取到特征"
 msgstr "未獲取到特徵"
 
-msgid "未识别，关联新特征"
-msgstr "未識別，關聯新特徵"
+msgid "关联特征"
+msgstr "關聯特徵"
 
 msgid ""
 "此为内建 Python 脚本，不可在此修改。\n"
@@ -297,9 +300,6 @@ msgstr "自動目標"
 msgid "自动钓鱼"
 msgstr "自動釣魚"
 
-msgid "角色"
-msgstr "角色"
-
 msgid "角色中心"
 msgstr "角色中心"
 
@@ -324,8 +324,8 @@ msgstr "跳過劇情"
 msgid "运行一次测试"
 msgstr "運行一次測試"
 
-msgid "选择或输入{combo}名"
-msgstr "選擇或輸入{combo}名"
+msgid "下拉选择，或直接输入名称以创建新{combo}"
+msgstr "下拉選擇，或直接輸入名稱以建立新{combo}"
 
 msgid "重命名失败"
 msgstr "重新命名失敗"
@@ -576,29 +576,11 @@ msgstr "選擇日常任務中的一咖舍處理方式"
 msgid "不执行"
 msgstr "不執行"
 
-msgid "记录新特征"
-msgstr "記錄新特徵"
-
 msgid "输入或选择关联的角色名称"
 msgstr "輸入或選擇關聯的角色名稱"
 
 msgid "输入或选择绑定的{combo} (可选)"
 msgstr "輸入或選擇綁定的{combo}（可選）"
-
-msgid ""
-"功能说明：本功能仅负责『自动退出关卡』与『重新开启关卡』的点击循环，不包含任何局内的制作食物或招待客人操作。\n"
-"\n"
-"使用方法：\n"
-"1. 确保您已配置好游戏内的挂机流派。\n"
-"2. 站在咖啡店可进行 F 交互的位置。\n"
-"3. 首次启动需录制目标, 点击[开始]后请跟随指示操作。"
-msgstr ""
-"功能說明：本功能僅負責「自動退出關卡」與「重新開啟關卡」的點擊循環，不包含任何局內的製作食物或招待客人操作。\n"
-"\n"
-"使用方法：\n"
-"1. 確保您已配置好遊戲內的掛機流派。\n"
-"2. 站在咖啡店可進行 F 互動的位置。\n"
-"3. 首次啟動需錄製目標，點擊[開始]後請依照指示操作。"
 
 msgid "循环次数(0为无限次)"
 msgstr "循環次數（0 為無限次）"
@@ -618,34 +600,548 @@ msgstr "黑暗賽車"
 msgid "Record has been reset"
 msgstr "記錄已重置"
 
-msgid ""
-"No recorded operations were found. Please wait for the recording prompt, then "
-"follow the instructions carefully to record your actions."
-msgstr "未找到已記錄的操作。請等待錄製提示出現，然後依照指示，仔細完成操作錄製。"
-
 msgid "Updated successfully"
 msgstr "更新成功"
-
-msgid ""
-"记录点击目标关卡的操作，分为两个步骤：\n"
-"1. 使用滚轮滚动至目标可见 (若不需要则点击目标)\n"
-"2. 点击目标"
-msgstr ""
-"記錄點擊目標關卡的操作，分為兩個步驟：\n"
-"1. 使用滾輪滾動至目標可見（若不需要則點擊目標）\n"
-"2. 點擊目標"
-
-msgid ""
-"记录点击目标关卡的操作，分为两个步骤：\n"
-"1. 点击滚动条至目标可见 (若不需要则点击目标)\n"
-"2. 点击目标"
-msgstr ""
-"記錄點擊目標關卡的操作，分為兩個步驟：\n"
-"1. 點擊捲動條至目標可見（若不需要則點擊目標）\n"
-"2. 點擊目標"
 
 msgid "都市闲趣"
 msgstr "都市閒趣"
 
 msgid "日常/周常"
 msgstr "日常/週常"
+
+msgid "※ 列表可直接输入并创建"
+msgstr "※ 列表可直接輸入並建立"
+
+msgid "输入或选择角色"
+msgstr "輸入或選擇角色"
+
+msgid "自动战斗任务不可用"
+msgstr "自動戰鬥任務不可用"
+
+msgid ""
+"※ 关联角色特征后，软件将能自动识别角色并使用绑定的出招表；未关联时，将使用通用脚本。\n"
+"游戏内换人/换队自动适配，无需手动调整"
+msgstr ""
+"※ 關聯角色特徵後，軟體將能自動識別角色並使用綁定的出招表；未關聯時，將使用通用腳本。\n"
+"遊戲內換人/換隊會自動適配，無需手動調整"
+
+msgid ""
+"※ {fixed_team}会优先使用已填写槽位；未填写的槽位仍会自动识别。\n"
+"如果游戏内切换队伍，已填写槽位需要在软件里手动修改。"
+msgstr ""
+"※ {fixed_team}會優先使用已填寫槽位；未填寫的槽位仍會自動識別。\n"
+"如果遊戲內切換隊伍，已填寫槽位需要在軟體裡手動修改。"
+
+msgid "<span style=\"color: #2ecc71;\">● 自动识别：已启用</span>"
+msgstr "<span style=\"color: #2ecc71;\">● 自動識別：已啟用</span>"
+
+msgid "<span style=\"color: #95a5a6;\">○ 自动识别：仅空槽启用</span>"
+msgstr "<span style=\"color: #95a5a6;\">○ 自動識別：僅空槽啟用</span>"
+
+msgid "<span style=\"color: #2ecc71;\">● {fixed_team}：已启用 ({count}/4)</span>"
+msgstr "<span style=\"color: #2ecc71;\">● {fixed_team}：已啟用 ({count}/4)</span>"
+
+msgid "<span style=\"color: #95a5a6;\">○ {fixed_team}：已停用</span>"
+msgstr "<span style=\"color: #95a5a6;\">○ {fixed_team}：已停用</span>"
+
+msgid "启动失败"
+msgstr "啟動失敗"
+
+msgid "21键自然音布局 (已禁用)"
+msgstr "21鍵自然音佈局 (已禁用)"
+
+msgid "36键半音布局 (12x3)"
+msgstr "36鍵半音佈局 (12x3)"
+
+msgid "中音"
+msgstr "中音"
+
+msgid "低音"
+msgstr "低音"
+
+msgid "全部歌曲"
+msgstr "全部歌曲"
+
+msgid "单曲循环"
+msgstr "單曲循環"
+
+msgid "可以弹奏"
+msgstr "可以彈奏"
+
+msgid "右下按键中心: "
+msgstr "右下按鍵中心:"
+
+msgid "定时关闭"
+msgstr "定時關閉"
+
+msgid "导入 MIDI"
+msgstr "匯入 MIDI"
+
+msgid "尚未载入音轨"
+msgstr "尚未載入音軌"
+
+msgid "左上按键中心: "
+msgstr "左上按鍵中心:"
+
+msgid "已收藏"
+msgstr "已收藏"
+
+msgid "当前游戏钢琴使用 36 键半音布局"
+msgstr "當前遊戲鋼琴使用 36 鍵半音佈局"
+
+msgid "打印键位映射"
+msgstr "列印鍵位映射"
+
+msgid "打开 mid_lib"
+msgstr "打開 mid_lib"
+
+msgid "按键坐标配置"
+msgstr "按鍵座標配置"
+
+msgid "搜索歌曲"
+msgstr "搜尋歌曲"
+
+msgid "播放"
+msgstr "播放"
+
+msgid "播放模式"
+msgstr "播放模式"
+
+msgid "播放设置"
+msgstr "播放設定"
+
+msgid "播放速度"
+msgstr "播放速度"
+
+msgid "收藏歌曲"
+msgstr "收藏歌曲"
+
+msgid "无法弹奏"
+msgstr "無法彈奏"
+
+msgid "智能音域压缩"
+msgstr "智能音域壓縮"
+
+msgid "未选择歌曲"
+msgstr "未選擇歌曲"
+
+msgid "每个测试音间隔约 1 秒，请用调音器确认实际发音。"
+msgstr "每個測試音間隔約 1 秒，請用調音器確認實際發音。"
+
+msgid "测试中音行"
+msgstr "測試中音行"
+
+msgid "测试全部键"
+msgstr "測試全部鍵"
+
+msgid "自动弹琴"
+msgstr "自動彈琴"
+
+msgid "自动战斗任务不可用"
+msgstr "自動戰鬥任務不可用"
+
+msgid "自动音高"
+msgstr "自動音高"
+
+msgid "试听选中音轨"
+msgstr "試聽選中音軌"
+
+msgid "调试校准"
+msgstr "調試校準"
+
+msgid "选中歌曲后可选择参与分析与播放的 MIDI 音轨。"
+msgstr "選中歌曲後可選擇參與分析與播放的 MIDI 音軌。"
+
+msgid "选择 MIDI 档案"
+msgstr "選擇 MIDI 檔案"
+
+msgid "随机播放"
+msgstr "隨機播放"
+
+msgid "音轨选择"
+msgstr "音軌選擇"
+
+msgid "音高与音域分析"
+msgstr "音高與音域分析"
+
+msgid "音高调整 (半音):"
+msgstr "音高調整 (半音):"
+
+msgid "顺序播放"
+msgstr "順序播放"
+
+msgid "高音"
+msgstr "高音"
+
+msgid "MIDI 分析失败"
+msgstr "MIDI 分析失敗"
+
+msgid "MIDI 播放失败"
+msgstr "MIDI 播放失敗"
+
+msgid "键盘布局"
+msgstr "鍵盤配置"
+
+msgid "de_DE"
+msgstr "Deutsch"
+
+msgid "en_US"
+msgstr "English"
+
+msgid "es_ES"
+msgstr "Español"
+
+msgid "fr_FR"
+msgstr "Français"
+
+msgid "ja_JP"
+msgstr "日本語"
+
+msgid "ru_RU"
+msgstr "Русский"
+
+msgid "zh_CN"
+msgstr "简体中文"
+
+msgid "zh_TW"
+msgstr "繁體中文"
+
+msgid "文案生成模型调用地址, 需兼容OpenAI接口请求格式"
+msgstr "文案生成模型調用連結，需相容OpenAI介面請求格式"
+
+msgid "模型调用超时时间(s)"
+msgstr "模型呼叫逾時時間(s)"
+
+msgid "文案生成调用模型的超时时间, 超时将回退使用本地词库, 留空使用30s"
+msgstr "文案生成呼叫模型的逾時時間, 逾時將退回使用本地詞庫, 留空使用30秒"
+
+msgid "关闭后将降级使用本地词库抽取发帖回复文案"
+msgstr "關閉後將降級使用本地詞庫抽取發文與回覆文案"
+
+msgid "发帖内容生成提示词"
+msgstr "發文內容生成提示詞"
+
+msgid "发帖内容生成提示词, 请先调试好提示词再使用"
+msgstr "發文內容生成提示詞，請先調整好提示詞再使用"
+
+msgid "发帖标题生成提示词"
+msgstr "發文標題生成提示詞"
+
+msgid "发帖标题生成提示词, 请先调试好提示词再使用"
+msgstr "發文標題生成提示詞，請先調整好提示詞再使用"
+
+msgid "呗果智能体"
+msgstr "唄果智能體"
+
+msgid "回复生成提示词"
+msgstr "回覆生成提示詞"
+
+msgid "回复生成提示词, 请先调试好提示词再使用"
+msgstr "回覆生成提示詞，請先調整好提示詞再使用"
+
+msgid "开启助手模式后, 将只会辅助生成文案"
+msgstr "開啟助手模式後，將僅會輔助生成文案"
+
+msgid "所调用模型名称"
+msgstr "所調用模型名稱"
+
+msgid "文案助手模式"
+msgstr "文案助手模式"
+
+msgid "智能体模式选项"
+msgstr "智能體模式選項"
+
+msgid "自动回帖会同时点赞"
+msgstr "自動回覆時會同步按讚"
+
+msgid "未设置请留空, 请勿泄露API_Key!"
+msgstr "未設置請留空，請勿外洩 API_Key！"
+
+msgid "需要支持视觉输入的视觉语言模型"
+msgstr "需要支援視覺輸入的視覺語言模型"
+
+msgid "模型调用API_Key"
+msgstr "模型調用 API_Key"
+
+msgid "模型调用地址"
+msgstr "模型調用位址"
+
+msgid "次数"
+msgstr "次數"
+
+msgid "游戏语言"
+msgstr "遊戲語言"
+
+msgid "请选择游戏所设置的语言"
+msgstr "請選擇遊戲內設定的語言"
+
+msgid "留言"
+msgstr "留言"
+
+msgid "自动发帖"
+msgstr "自動發文"
+
+msgid "自动呗果"
+msgstr "自動唄果"
+
+msgid "自动回帖"
+msgstr "自動回覆"
+
+msgid "自动按赞"
+msgstr "自動按讚"
+
+msgid "请详阅使用说明"
+msgstr "請詳閱使用說明"
+
+msgid "调用模型"
+msgstr "調用模型"
+
+msgid "过滤水贴"
+msgstr "過濾灌水文"
+
+msgid "1"
+msgstr ""
+
+msgid "2"
+msgstr ""
+
+msgid "3"
+msgstr ""
+
+msgid "4"
+msgstr ""
+
+msgid "使用任何路径前请先阅读使用说明"
+msgstr "使用任何路徑前請先閱讀使用說明"
+
+msgid "设置为0则一直运行"
+msgstr "設定為0則一直運行"
+
+msgid "战斗角色"
+msgstr "戰鬥角色"
+
+msgid "自动粉爪大劫案"
+msgstr "自動粉爪大劫案"
+
+msgid "跑图角色"
+msgstr "跑圖角色"
+
+msgid "路径"
+msgstr "路徑"
+
+msgid "路径1(路线参考自B站UP: 早柚大魔王丶)"
+msgstr "路徑1(路線參考自B站UP: 早柚大魔王丶)"
+
+msgid "路径2(在路径1基础上优化了大厅到办公层的路线)"
+msgstr "路徑2(在路徑1基礎上優化了大廳到辦公層的路線)"
+
+msgid "选0~1个"
+msgstr "選0~1個"
+
+msgid "选1~2个"
+msgstr "選1~2個"
+
+msgid "选1个"
+msgstr "選1個"
+
+msgid "避战方法"
+msgstr "避戰方法"
+
+msgid "避战角色"
+msgstr "避戰角色"
+
+msgid "长按shift"
+msgstr "長按shift"
+
+msgid "长按攻击"
+msgstr "長按攻擊"
+
+msgid ""
+"No recorded operations were found. Please wait for the recording prompt, then follow the instructions carefully to record your actions.\n"
+"DO NOT manually switch windows!\n"
+"Wait patiently for the software to bring the game window to the foreground."
+msgstr ""
+"未找到已記錄的操作。請等待錄製提示出現，然後依照指示，仔細完成操作錄製。\n"
+"切勿手動切換視窗！\n"
+"耐心等待軟體將遊戲視窗喚起至前景。"
+
+msgid "影院约会"
+msgstr "影院約會"
+
+msgid "约会目标"
+msgstr "約會目標"
+
+msgid "自动小旋风"
+msgstr "自動小旋風"
+
+msgid "可交互「小旋风」下按开始"
+msgstr "可交互「小旋風」下按開始"
+
+msgid "难度选项"
+msgstr "難度選項"
+
+msgid "异象家具"
+msgstr "異象家具"
+
+msgid "每2小时重新登入"
+msgstr "每2小時重新登入"
+
+
+msgid "除了选择内建存在的<b style=\"color: #0078d7;\">{combo}</b>外，您也可以自己输入名称来建立自己的<b style=\"color: #0078d7;\">{combo}</b>。"
+msgstr "除了選擇內建存在的<b style=\"color: #0078d7;\">{combo}</b>外，您也可以自己輸入名稱來建立自己的<b style=\"color: #0078d7;\">{combo}</b>。"
+
+msgid "九百九十九夜"
+msgstr "九百九十九夜"
+
+msgid "巧克力火山-底层最左边的篝火"
+msgstr "巧克力火山-底層最左邊的篝火"
+
+msgid "挂机刷经验"
+msgstr "掛機刷經驗"
+
+msgid "位置"
+msgstr "位置"
+
+msgid "赤龙古堡-龙之高塔室外篝火"
+msgstr "赤龍古堡-龍之高塔室外篝火"
+
+msgid "使用终结技"
+msgstr "使用終結技"
+
+msgid "Background Audio Routing"
+msgstr "背景音訊路由"
+
+msgid "Enable Background Audio Routing"
+msgstr "啟用背景音訊路由"
+
+msgid "SoundVolumeCommandLine Path"
+msgstr "SoundVolumeCommandLine 路徑"
+
+msgid "Background Output Device"
+msgstr "背景輸出裝置"
+
+msgid "Open SoundVolumeCommandLine Download Page"
+msgstr "開啟 SoundVolumeCommandLine 下載頁面"
+
+msgid "Optionally route the game to a selected Windows output device while it is in the background. SoundVolumeCommandLine is not bundled; select your own downloaded copy."
+msgstr "當遊戲處於背景時，可選擇性地將遊戲音訊路由到選定的 Windows 輸出裝置。本軟體未內置 SoundVolumeCommandLine，請選擇您自己下載的版本。"
+
+msgid "Switch game audio output when the game window leaves the foreground"
+msgstr "當遊戲視窗離開前景時，切換遊戲音訊輸出"
+
+msgid "Select svcl.exe downloaded from NirSoft"
+msgstr "選擇從 NirSoft 下載的 svcl.exe"
+
+msgid "Output device used while the game is in the background"
+msgstr "遊戲處於背景時使用的輸出裝置"
+
+msgid "Open the official NirSoft SoundVolumeCommandLine page"
+msgstr "開啟 NirSoft SoundVolumeCommandLine 官方頁面"
+
+msgid "SoundVolumeCommandLine (svcl.exe);;Executable Files (*.exe);;All Files (*)"
+msgstr "SoundVolumeCommandLine (svcl.exe);;可執行檔 (*.exe);;所有檔案 (*)"
+
+msgid "Select svcl.exe"
+msgstr "選擇 svcl.exe"
+
+msgid "Open Download Page"
+msgstr "開啟下載頁面"
+
+msgid "⚠️ 正在运行{rob_mode}\n该模式会高频占用/争夺鼠标。如需停止，请使用热键暂停 ok-nte, 再手动停止任务。\n当前热键: {hotkey} (如无法确认当前热键则点击取消, 主动确认后再运行)"
+msgstr "⚠️ 正在運行{rob_mode}\n該模式會高頻佔用/爭奪滑鼠。如需停止，請使用熱鍵暫停 ok-nte, 再手動停止任務。\n當前熱鍵: {hotkey} (如無法確認當前熱鍵則點擊取消, 主動確認後再運行)"
+
+msgid "赤龙古堡-残丝长巷篝火"
+msgstr "赤龍古堡-殘絲長巷篝火"
+
+msgid "战斗时长上限"
+msgstr "戰鬥時長上限"
+
+msgid "战斗时不切人"
+msgstr "戰鬥時不切人"
+
+msgid "主界面检测失败。建议操作: \n1. 关闭显卡滤镜与锐化功能；\n2. 尝试开启 Windows “自动管理应用的颜色”设置。"
+msgstr "主介面檢測失敗。建議操作: \n1. 關閉顯示卡濾鏡與銳化功能；\n2. 嘗試開啟 Windows 「自動管理應用程式的色彩」設定。"
+
+msgid "大世界检测失败: 请检查游戏内 UI 透明度是否已设置为 1.0。"
+msgstr "大世界檢測失敗: 請檢查遊戲內 UI 透明度是否已設置為 1.0。"
+
+msgid "当前 CPU 不支持 AVX2, 无法运行 OpenVINO 2026 CPU 推理；自动战斗的目标检测将不可用。"
+msgstr "目前 CPU 不支援 AVX2，無法執行 OpenVINO 2026 CPU 推理；自動戰鬥的目標檢測將不可用。"
+
+msgid "战斗后等待至时长上限"
+msgstr "戰鬥後等待至時長上限"
+
+msgid "羁遇赠礼"
+msgstr "羈遇贈禮"
+
+msgid "新增角色"
+msgstr "新增角色"
+
+msgid "更新当前角色"
+msgstr "更新當前角色"
+
+msgid "删除当前角色"
+msgstr "刪除當前角色"
+
+msgid "开始赠礼"
+msgstr "開始贈禮"
+
+msgid "继续赠礼"
+msgstr "繼續贈禮"
+
+msgid "停止"
+msgstr "停止"
+
+msgid "在游戏赠礼页点击{}。点击礼物卡片可设定优先级，再次点击取消。"
+msgstr "在遊戲贈禮頁點擊{}。點擊禮物卡片可設定優先級，再次點擊取消。"
+
+msgid "赠礼状态"
+msgstr "贈禮狀態"
+
+msgid "已启用"
+msgstr "已啟用"
+
+msgid "名称"
+msgstr "名稱"
+
+msgid "角色显示名称"
+msgstr "角色顯示名稱"
+
+msgid "赠送次数"
+msgstr "贈送次數"
+
+msgid "角色名称"
+msgstr "角色名稱"
+
+msgid "礼物优先级"
+msgstr "禮物優先級"
+
+msgid "不赠送"
+msgstr "不贈送"
+
+msgid "优先级 {}"
+msgstr "優先級 {}"
+
+msgid "不可赠送"
+msgstr "不可贈送"
+
+msgid "未命名角色"
+msgstr "未命名角色"
+
+msgid "捕获失败"
+msgstr "捕獲失敗"
+
+msgid "保存失败"
+msgstr "儲存失敗"
+
+msgid "无法开始"
+msgstr "無法開始"
+
+msgid "赠礼任务未注册"
+msgstr "贈禮任務未註冊"
+
+msgid "没有可用的游戏画面"
+msgstr "沒有可用的遊戲畫面"
+
+msgid "请先捕获、选择礼物并启用至少一个角色。"
+msgstr "請先捕獲、選擇禮物並啟用至少一個角色。"

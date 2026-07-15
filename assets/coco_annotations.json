@@ -86,7 +86,7 @@
         },
         {
             "id": 16,
-            "file_name": "images/0.png",
+            "file_name": "images/3.png",
             "width": 2560,
             "height": 1440
         },
@@ -110,19 +110,19 @@
         },
         {
             "id": 20,
-            "file_name": "images/7.png",
+            "file_name": "images/10.png",
             "width": 1920,
             "height": 1080
         },
         {
             "id": 21,
-            "file_name": "images/3.png",
+            "file_name": "images/4.png",
             "width": 2560,
             "height": 1440
         },
         {
             "id": 22,
-            "file_name": "images/4.png",
+            "file_name": "images/5.png",
             "width": 2560,
             "height": 1440
         },
@@ -134,13 +134,13 @@
         },
         {
             "id": 24,
-            "file_name": "images/5.png",
+            "file_name": "images/6.png",
             "width": 2560,
             "height": 1440
         },
         {
             "id": 25,
-            "file_name": "images/6.png",
+            "file_name": "images/7.png",
             "width": 2560,
             "height": 1440
         },
@@ -165,6 +165,42 @@
         {
             "id": 29,
             "file_name": "images/0.png",
+            "width": 2560,
+            "height": 1440
+        },
+        {
+            "id": 30,
+            "file_name": "images/0.png",
+            "width": 2560,
+            "height": 1440
+        },
+        {
+            "id": 31,
+            "file_name": "images/11.png",
+            "width": 1600,
+            "height": 900
+        },
+        {
+            "id": 32,
+            "file_name": "images/8.png",
+            "width": 2560,
+            "height": 1440
+        },
+        {
+            "id": 33,
+            "file_name": "images/0.png",
+            "width": 2560,
+            "height": 1440
+        },
+        {
+            "id": 34,
+            "file_name": "images/1.png",
+            "width": 2560,
+            "height": 1440
+        },
+        {
+            "id": 35,
+            "file_name": "images/9.png",
             "width": 2560,
             "height": 1440
         }
@@ -376,6 +412,19 @@
                 28
             ],
             "area": 1176,
+            "iscrowd": 0
+        },
+        {
+            "id": 17,
+            "image_id": 1,
+            "category_id": 17,
+            "bbox": [
+                2438,
+                296,
+                31,
+                31
+            ],
+            "area": 961,
             "iscrowd": 0
         },
         {
@@ -936,6 +985,162 @@
             ],
             "area": 9025,
             "iscrowd": 0
+        },
+        {
+            "id": 61,
+            "image_id": 16,
+            "category_id": 42,
+            "bbox": [
+                26,
+                22,
+                55,
+                63
+            ],
+            "area": 3465,
+            "iscrowd": 0
+        },
+        {
+            "id": 62,
+            "image_id": 30,
+            "category_id": 62,
+            "bbox": [
+                513,
+                339,
+                156,
+                141
+            ],
+            "area": 21996,
+            "iscrowd": 0
+        },
+        {
+            "id": 63,
+            "image_id": 31,
+            "category_id": 63,
+            "bbox": [
+                1065,
+                285,
+                30,
+                31
+            ],
+            "area": 930,
+            "iscrowd": 0
+        },
+        {
+            "id": 64,
+            "image_id": 32,
+            "category_id": 67,
+            "bbox": [
+                1555,
+                737,
+                166,
+                104
+            ],
+            "area": 17264,
+            "iscrowd": 0
+        },
+        {
+            "id": 65,
+            "image_id": 32,
+            "category_id": 65,
+            "bbox": [
+                36,
+                45,
+                84,
+                77
+            ],
+            "area": 6468,
+            "iscrowd": 0
+        },
+        {
+            "id": 66,
+            "image_id": 32,
+            "category_id": 66,
+            "bbox": [
+                179,
+                844,
+                52,
+                62
+            ],
+            "area": 3224,
+            "iscrowd": 0
+        },
+        {
+            "id": 67,
+            "image_id": 33,
+            "category_id": 64,
+            "bbox": [
+                1322,
+                734,
+                165,
+                117
+            ],
+            "area": 19305,
+            "iscrowd": 0
+        },
+        {
+            "id": 68,
+            "image_id": 34,
+            "category_id": 68,
+            "bbox": [
+                1439,
+                754,
+                28,
+                32
+            ],
+            "area": 896,
+            "iscrowd": 0
+        },
+        {
+            "id": 69,
+            "image_id": 28,
+            "category_id": 69,
+            "bbox": [
+                109,
+                468,
+                38,
+                35
+            ],
+            "area": 1330,
+            "iscrowd": 0
+        },
+        {
+            "id": 70,
+            "image_id": 32,
+            "category_id": 71,
+            "bbox": [
+                1560,
+                950,
+                147,
+                128
+            ],
+            "area": 18816,
+            "iscrowd": 0
+        },
+        {
+            "id": 71,
+            "image_id": 35,
+            "category_id": 70,
+            "bbox": [
+                48,
+                46,
+                61,
+                69
+            ],
+            "area": 4209,
+            "iscrowd": 0
+        },
+        {
+            "id": 72,
+            "image_id": 35,
+            "category_id": 72,
+            "bbox": [
+                1359,
+                678,
+                35,
+                29
+            ],
+            "area": 1015,
+            "iscrowd": 0
         }
     ],
     "categories": [
@@ -1017,6 +1222,11 @@
         {
             "id": 16,
             "name": "skip_dialog",
+            "supercategory": ""
+        },
+        {
+            "id": 17,
+            "name": "ult_ready",
             "supercategory": ""
         },
         {
@@ -1140,6 +1350,11 @@
             "supercategory": ""
         },
         {
+            "id": 42,
+            "name": "in_domain",
+            "supercategory": ""
+        },
+        {
             "id": 43,
             "name": "launcher_start_game",
             "supercategory": ""
@@ -1232,6 +1447,61 @@
         {
             "id": 61,
             "name": "confirm_btn_2",
+            "supercategory": ""
+        },
+        {
+            "id": 62,
+            "name": "heist_exit",
+            "supercategory": ""
+        },
+        {
+            "id": 63,
+            "name": "launcher_popup_close",
+            "supercategory": ""
+        },
+        {
+            "id": 64,
+            "name": "anomaly_wooden_crate",
+            "supercategory": ""
+        },
+        {
+            "id": 65,
+            "name": "f5_house_panel",
+            "supercategory": ""
+        },
+        {
+            "id": 66,
+            "name": "f5_house_lock",
+            "supercategory": ""
+        },
+        {
+            "id": 67,
+            "name": "anomaly_fluff",
+            "supercategory": ""
+        },
+        {
+            "id": 68,
+            "name": "bonfire_teleport",
+            "supercategory": ""
+        },
+        {
+            "id": 69,
+            "name": "map_zoom_in",
+            "supercategory": ""
+        },
+        {
+            "id": 70,
+            "name": "bond_panel",
+            "supercategory": ""
+        },
+        {
+            "id": 71,
+            "name": "anomaly_hamster_ball",
+            "supercategory": ""
+        },
+        {
+            "id": 72,
+            "name": "unlimit_gift",
             "supercategory": ""
         }
     ]

@@ -1,45 +1,33 @@
-import time  # noqa
-from enum import IntEnum, StrEnum  # noqa
-from typing import Any, Union, Optional, List  # noqa
+import time
+from enum import StrEnum
+from typing import TYPE_CHECKING
 
-import cv2  # noqa
-import numpy as np  # noqa
+from ok import Logger
 
-from ok import Config, Logger, Box  # noqa
-from src import text_white_color  # noqa
+from src import text_white_color
+from src.combat.planner import (
+    ActionExecutor,
+    ActionIntent,
+    ActionPredicate,
+    ActionSlot,
+    ActionTag,
+    CombatContext,
+    FieldClaim,
+    FieldPreference,
+    CombatPlan,
+    Role,
+    RoleProfile,
+    SwitchInGuard,
+)
 from src.Labels import Labels
 from src.lw.char_ext import CharExtMixin  # [lw]
+from src.lw.legacy_priority import Role as LwRole  # [lw] 旧版Role(planner版无DEFAULT/HEALER)
 from src.utils import game_filters as gf
-
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.combat.BaseCombatTask import BaseCombatTask
 
 SKILL_TIME_OUT = 15
-
-
-class Priority(IntEnum):
-    """定义切换角色的优先级枚举。"""
-
-    MIN = -999999999  # 最低优先级
-    SWITCH_CD = -1000  # 切换冷却中
-    CURRENT_CHAR = -100  # 当前角色
-    CURRENT_CHAR_PLUS = CURRENT_CHAR + 1  # 当前角色稍高优先级 (特殊情况)
-    SKILL_AVAILABLE = 100  # 有可用技能
-    BASE_MINUS_1 = -1
-    BASE = 0
-    MAX = 9999999999  # 最高优先级
-    FAST_SWITCH = MAX - 100  # 快速切换优先级 (例如应对特殊机制)
-
-
-class Role(StrEnum):
-    """定义角色定位枚举。"""
-
-    DEFAULT = "Default"  # 默认/未知定位
-    SUB_DPS = "Sub DPS"  # 副输出
-    MAIN_DPS = "Main DPS"  # 主输出
-    HEALER = "Healer"  # 治疗者
 
 
 class Element(StrEnum):
@@ -54,15 +42,12 @@ class Element(StrEnum):
     WHITE = "White"  # 白
 
 
-role_values = list(Role)
-
-
 class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
     """角色基类，定义了游戏角色的通用属性和行为。"""
 
     INTRO_MOTION_FREEZE_DURATION = 1.5
 
-    def __init__(self, task, index, char_name=None, confidence=1):
+    def __init__(self, task, index, char_id="", confidence=1):
         """初始化角色基础属性。
 
         Args:
@@ -70,13 +55,15 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             index (int): 角色在队伍中的索引 (0, 1, 2)。
             char_name (str, optional): 角色名称。默认为 None。
         """
-        self.priority = Priority.BASE
         self.task: "BaseCombatTask" = task
-        self.char_name = char_name
-        self.builtin_key = None
+        self.char_name = "default"
+        self.combo_name = "default"
+        self.char_id = char_id
+        self.combo_id = ""
+        self.builtin = False
         self.index = index
         self.last_switch_time = -1
-        self.last_ultimate = -1
+        self.last_ultimate_time = -1
         self.has_intro = False
         self.is_current_char = False
         self._ultimate_available = False
@@ -84,13 +71,13 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         self.last_perform = 0
         self.last_skill_time = -1
         self.last_outro_time = -1
-        self.start_combat = False
         self.confidence = confidence
         self.logger = Logger.get_logger(self.name)
         self.cycle_start_time = 0.0
-        self.combo_label = "default"
         self.element = Element.DEFAULT
-        self.role = Role.DEFAULT  # [lw]
+        self.role = LwRole.DEFAULT  # [lw]
+        self.planner_handles_arc = False
+        self.is_dead = False
 
     def cycle_start(self):
         self.cycle_start_time = time.time()
@@ -108,6 +95,11 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             bool: 如果跳过则返回 True。
         """
         return False
+
+    def has_element_reaction_teammate(self) -> bool:
+        """当前队伍中是否有可以和自己形成环合反应的角色。"""
+
+        return self.task.find_element_reaction_target(self) is not None
 
     @property
     def name(self):
@@ -129,12 +121,17 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         self.last_perform = time.time()
         if self.has_intro:
             self.add_intro_motion_freeze(self.last_perform)
-        if self.need_fast_perform():
-            self.do_fast_perform()
-        else:
-            self.do_perform()
+            self.wait_intro()
+        self._try_default_arc_click()
+
+        self.task.combat_planner.perform_current_char(self)
         self.logger.debug(f"set current char false {self.index}")
+        self.task.refresh_cd()
         self.switch_next_char()
+
+    def _try_default_arc_click(self):
+        if not self.planner_handles_arc:
+            self.click_arc()
 
     def add_intro_motion_freeze(self, start):
         self.add_freeze_duration(start, self.INTRO_MOTION_FREEZE_DURATION, freeze_time=-100, cause="入场/环合")  # [lw] cause=
@@ -175,20 +172,233 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         """发送按键 (代理到 task.send_key)。"""
         return self.task.send_key
 
-    def do_perform(self):
-        """执行角色的标准战斗行动。"""
-        if self.has_intro:
-            self.logger.debug("has_intro wait click 1.2 sec")
-            self.continues_normal_attack(1.2, click_skill_if_ready_and_return=True)
-        self.click_arc()
-        self.click_ultimate()
-        if self.click_skill()[0]:
-            return
-        self.continues_normal_attack(0.3)
+    def describe_role(self):
+        return RoleProfile(role=Role.SUB_DPS, field_preference=FieldPreference.SUB_DPS)
 
-    def do_fast_perform(self):
-        """执行角色的快速战斗行动 (通常在需要快速切换时)。"""
-        self.do_perform()
+    def switch_in_guard(
+        self,
+        context: CombatContext,
+        from_char: "BaseChar",
+        has_intro: bool,
+    ) -> SwitchInGuard:
+        """声明当前角色是否允许被切入。
+
+        默认立即允许。特殊角色若需要等自身状态或前置动作稳定后再进场，可返回
+        `SwitchInGuard.delay_until_ready(...)`。
+        """
+
+        return SwitchInGuard.allow()
+
+    def combat_plan(self, context: CombatContext) -> CombatPlan:
+        """声明角色交给 planner 的完整战斗计划。
+
+        `CombatPlan.actions` 表达“进场后有哪些 planner 可见动作”，用于评分、
+        route/request/reservation 匹配；`claims` 表达“为什么应该被切进来”；
+        `entry` 表达普通进场后的 Python 动作流。
+
+        规则:
+            - 这里只创建 plan，不要在创建 plan 时发送输入或发布一次性请求。
+            - 普通进场默认按 actions 声明顺序尝试 allowed action。
+            - 切人评分会从该角色 ready actions 中挑最高分 action 代表角色参赛。
+            - 复杂角色可传入 entry generator，用普通 Python 控制动作之间的分支。
+
+        Args:
+            context: planner 上下文，仅用于查询，不应用来发布一次性请求。
+
+        Returns:
+            `CombatPlan`。
+        """
+
+        return self.plan(
+            self.click_ultimate_action("base_ultimate"),
+            self.click_skill_action("base_skill"),
+        )
+
+    def combat_policies(self, context: CombatContext) -> None:
+        """声明随队伍生命周期生效的 planner 策略。
+
+        这里适合发布常驻 reservation 这类长期策略。普通角色通常不需要覆盖。
+        `combat_plan()` 应保持为动作/入场诉求声明，不要在评分扫描时发布请求。
+
+        planner reset 当前队伍后会调用此方法。适合发布由队伍组成决定的长期规则，
+        不适合发布“本次 Q/E 成功后才出现”的临时窗口。
+
+        Args:
+            context: 可用于 `reserve_actions()` 等长期策略发布。
+        """
+
+        return None
+
+    def plan(
+        self,
+        *actions: ActionIntent | None,
+        claims: list[FieldClaim] | tuple[FieldClaim, ...] | None = None,
+        entry=None,
+    ) -> CombatPlan:
+        """创建角色 `CombatPlan`，并过滤空动作。
+
+        用法:
+            return self.plan(action_or_none, claims=[claim], entry=entry)
+        """
+
+        return CombatPlan(
+            actions=[action for action in actions if action is not None],
+            claims=[claim for claim in claims or [] if claim is not None],
+            entry=entry,
+        )
+
+    def click_arc_action(
+        self,
+        name: str | None = None,
+        tags: set[ActionTag] | None = None,
+        reason: str = "arc action available",
+        can_execute=None,
+        priority_ready: ActionPredicate | None = None,
+    ):
+        """创建一个 弧盘 动作声明。
+
+        Args:
+            name: 动作名。默认 `"{角色名}_arc"`，用于日志和高级精确匹配。
+            tags: 动作标签。默认 `{ActionTag.ARC_ACTION}`。
+            reason: 切人/执行日志理由。
+            can_execute: 额外硬限制；slot reservation 由 planner 统一检查。
+            priority_ready: 只用于切人评分。默认永远不因为 arc 主动切人。
+
+        Returns:
+            `ActionIntent`。
+        """
+
+        name = name or f"{self.__str__()}_arc"
+        action_tags = tags or {ActionTag.ARC_ACTION}
+
+        return self.planner_action(
+            tags=action_tags,
+            slot=ActionSlot.ARC,
+            execute=lambda context: self.click_arc(),
+            name=name,
+            reason=reason,
+            can_execute=can_execute,
+            priority_ready=priority_ready or (lambda _: False),
+        )
+
+    def click_ultimate_action(
+        self,
+        name: str | None = None,
+        tags: set[ActionTag] | None = None,
+        reason: str = "ultimate action available",
+        can_execute=None,
+    ):
+        """创建一个 Q 动作声明。
+
+        Args:
+            name: 动作名。默认 `"{角色名}_ultimate"`，用于日志和高级精确匹配。
+            tags: 动作标签。默认 `{ActionTag.ULTIMATE_ACTION}`。
+            reason: 切人/执行日志理由。
+            can_execute: 额外硬限制；slot reservation 由 planner 统一检查。
+
+        Behavior:
+            - 自动设置 `slot=ActionSlot.ULTIMATE`。
+            - `priority_ready` 自动使用 `self.ultimate_available()`。
+            - `execute` 调用 `self.click_ultimate()`。
+            - planner 会自动用 `slot=ULTIMATE` 检查 reservation。
+        """
+
+        name = name or f"{self.__str__()}_ultimate"
+        action_tags = tags or {ActionTag.ULTIMATE_ACTION}
+
+        return self.planner_action(
+            tags=action_tags,
+            slot=ActionSlot.ULTIMATE,
+            execute=lambda context: self.click_ultimate(),
+            name=name,
+            reason=reason,
+            can_execute=can_execute,
+            priority_ready=lambda _: self.ultimate_available(),
+        )
+
+    def click_skill_action(
+        self,
+        name: str | None = None,
+        tags: set[ActionTag] | None = None,
+        reason: str = "skill action available",
+        down_time: float = 0.01,
+        can_execute=None,
+    ):
+        """创建一个 E 动作声明。
+
+        Args:
+            name: 动作名。默认 `"{角色名}_skill"`，用于日志和高级精确匹配。
+            tags: 动作标签。默认 `{ActionTag.SKILL_ACTION}`。
+            reason: 切人/执行日志理由。
+            down_time: 传给 `click_skill(down_time=...)` 的按下时间。
+            can_execute: 额外硬限制；slot reservation 由 planner 统一检查。
+
+        Behavior:
+            - 自动设置 `slot=ActionSlot.SKILL`。
+            - `priority_ready` 自动使用 `self.skill_available()`。
+            - `execute` 调用 `self.click_skill(...)`。
+            - planner 会自动用 `slot=SKILL` 检查 reservation。
+        """
+
+        name = name or f"{self.__str__()}_skill"
+        action_tags = tags or {ActionTag.SKILL_ACTION}
+
+        return self.planner_action(
+            tags=action_tags,
+            slot=ActionSlot.SKILL,
+            execute=lambda context: self.click_skill(down_time=down_time),
+            name=name,
+            reason=reason,
+            can_execute=can_execute,
+            priority_ready=lambda _: self.skill_available(),
+        )
+
+    def planner_action(
+        self,
+        tags: set[ActionTag] | ActionTag,
+        execute: ActionExecutor,
+        name: str | None = None,
+        slot: ActionSlot | None = None,
+        reason: str = "",
+        can_execute: ActionPredicate | None = None,
+        priority_ready: ActionPredicate | None = None,
+    ):
+        """创建一个交给 `CombatPlanner` 调度的动作声明。
+
+        `name` 是高级精确匹配用的动作名；普通自定义动作不传时保持空字串。
+        动作真正执行多久由 `execute` 自己负责；长时间动作应在 `execute` 内完成。
+
+        Args:
+            tags: 动作标签集合。推荐写 `{ActionTag.X}`；传单个 tag 时会被包装成 set。
+            execute: 接收 `CombatContext` 的执行函数。只有严格返回 True 才算成功；
+                False/None/无 return 都算失败。可手写返回 `ActionResult`。
+            name: 高级动作名和日志名。普通动作可以不传。
+            slot: 动作槽位。需要被 route/reservation 匹配时应设置。
+            reason: 日志和切人理由。
+            can_execute: 额外 planner 层硬限制；False 时不执行也不评分。
+            priority_ready: 只用于切人评分；False 不代表已在场时不能尝试。
+
+        Returns:
+            `ActionIntent`。
+
+        Note:
+            只要 `slot` 不为 None，`CombatPlanner` 会自动检查 reservation。
+            开发者传入的 `can_execute` 只表达额外机制限制，不需要重复写
+            `context.can_execute_action(...)`。
+        """
+
+        if not isinstance(tags, set):
+            tags = {tags}
+
+        return ActionIntent(
+            name=name or "",
+            tags=tags,
+            slot=slot,
+            execute=execute,
+            reason=reason,
+            can_execute=can_execute,
+            priority_ready=priority_ready,
+        )
 
     def has_cd(self, box_name):
         """检查指定技能是否在冷却中 (代理到 task.has_cd)。
@@ -219,6 +429,20 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         self.is_current_char = False
         self.has_intro = False
 
+    def mark_dead(self, reason: str = ""):
+        """标记角色已死亡，让 planner 后续调度跳过该角色。"""
+
+        if not self.is_dead:
+            self.logger.info(f"mark dead {reason}".strip())
+        self.is_dead = True
+        self.is_current_char = False
+        self.has_intro = False
+
+    def clear_dead(self):
+        """清除死亡标记。战斗结束或重新加载队伍时调用。"""
+
+        self.is_dead = False
+
     def __repr__(self):
         """返回角色类名作为其字符串表示。"""
         return self.__class__.__name__
@@ -234,17 +458,23 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         self._ultimate_available = self.ultimate_available()
         self.task.switch_next_char(self, post_action=post_action, free_intro=free_intro)
 
+    def switch_other_char(self):
+        """切换到其他角色 (代理到 task.switch_other_char)。"""
+
+        self.task.switch_other_char(self)
+
     def sleep(self, sec, sleep_check=True):
-        try:
-            if not sleep_check:
-                self.task.skip_sleep_check = True
+        if not sleep_check:
+            with self.task.skip_sleep_checks() as skip:
+                skip.all = True
+                self.task.sleep(sec)
+        else:
             self.task.sleep(sec)
-        finally:
-            self.task.skip_sleep_check = False
 
     def alert_skill_failed(self):
         self.task.log_error(
-            "Click skill failed, check if the keybinding is correct in ok-ww settings!", notify=True
+            "Click skill failed, check if the keybinding is correct in ok-nte settings!",
+            notify=True,
         )
         self.task.screenshot("click_skill too long, breaking")
 
@@ -256,14 +486,13 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         send_click=True,
         time_out=SKILL_TIME_OUT,
         has_animation=False,
-        animation_min_duration=0,
-        release_check=None,
     ):
         start = time.time()
         result = {
             "clicked": False,
             "action_time": 0,
             "animation_start": 0,
+            "animation_pending_start": 0,
             "status": "unavailable",
             "timed_out": False,
         }
@@ -276,8 +505,6 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
                 time_out,
                 available,
                 has_animation=has_animation,
-                animation_min_duration=animation_min_duration,
-                release_check=release_check,
             )
             if status != "continue":
                 result["status"] = status
@@ -285,16 +512,17 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
 
             if available():
                 self.logger.debug(f"{action_type} available click/send")
-                if send_click:
-                    self.click(action_name=f"{action_type}_click", interval=0.25)
-                    self.sleep(0.001, sleep_check=False)
+                action_time = time.time()
                 sent = send_action()
-                if sent is not False and not result["clicked"]:
+                if send_click:
+                    self.sleep(0.001, sleep_check=False)
+                    self.click(action_name=f"{action_type}_click", interval=0.3)
+                if sent is not False:
                     result["clicked"] = True
-                    result["action_time"] = time.time()
+                    result["action_time"] = action_time
 
-            self.task.next_frame()
-            self.check_combat()  # [lw] 等待循环里补战斗检查
+            self.task.next_frame()  # [lw]
+            self.check_combat()  # [lw] 等待循环里补战斗检查(上游为 sleep(0.01, sleep_check=False))
 
     def _check_available_action_result(
         self,
@@ -304,37 +532,44 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         time_out,
         available,
         has_animation=False,
-        animation_min_duration=0,
-        release_check=None,
     ):
         now = time.time()
         elapsed = now - start
+
         if elapsed > time_out:
             result["timed_out"] = True
-            self.task.in_animation = False
             return "timeout"
-        if self.task.in_animation and elapsed > 6:
-            self.task.in_animation = False
-            return "animation_timeout"
-        if has_animation and not self.task.is_in_team():
-            self.task.in_animation = True
-            result["animation_start"] = result["animation_start"] or now
-            return "animation"
 
-        self.check_combat()
-        if release_check and release_check():
-            return "released"
-        if not available() and (not has_animation or elapsed > animation_min_duration):
+        if has_animation:
+            if not self.task.is_in_team():
+                if result["animation_start"] == 0:
+                    self.task.in_animation = True
+                    result["animation_start"] = result["action_time"] or now
+
+                return "animation"
+            elif result["animation_start"] != 0:
+                self.task.in_animation = False
+                result["animation_start"] = 0
+
+        if self.task.is_in_team() and not available():
+            waiting_for_animation = (
+                has_animation and result["clicked"] and result["animation_start"] == 0
+            )
+            if waiting_for_animation:
+                result["animation_pending_start"] = result["animation_pending_start"] or now
+                if now - result["animation_pending_start"] < 0.5:
+                    return "continue"
             self.logger.debug(f"{action_type} not available break")
             return "released" if result["clicked"] else "unavailable"
+        result["animation_pending_start"] = 0
         return "continue"
 
-    def click_ultimate(self, send_click=True, wait_if_cd_ready=0.1):
+    def click_ultimate(self, send_click=True, wait_if_no_cd=0):
         """尝试释放终结技。
 
         Args:
             send_click (bool, optional): 进入动画后是否发送普通点击。默认为 False。
-            wait_if_cd_ready (float, optional): 如果技能冷却即将完成, 等待多少秒。默认为 0。
+            wait_if_no_cd (float, optional): 如果技能冷却已完成, 等待多少秒。默认为 0。
 
         Returns:
             bool: 如果成功释放则返回 True。
@@ -343,18 +578,21 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             return False
 
         if self.ultimate_available():
-            if not self.wait_ultimate_combat_settle():  # [lw] settle等待/超时强制放, 原为裸while轮询
+            if not self.wait_ultimate_combat_settle():  # [lw] settle等待/超时强制放, 原为combat_detect_uncertain裸轮询
                 return False  # [lw]
+        else:
+            self._wait_for_ultimate_ready(wait_if_no_cd)
 
         self.logger.debug("click_ultimate start")
         if not self.task.in_animation:
             result = self._try_available_action(
                 "ultimate",
                 self.ultimate_available,
-                lambda: self.send_ultimate_key(action_name="ultimate_send", interval=0.25),
+                lambda: self.send_ultimate_key(
+                    action_name="ultimate_send", interval=0.15, down_time=0.05
+                ),
                 send_click=send_click,
                 has_animation=True,
-                release_check=lambda: not self.task.is_in_team(),
             )
         else:
             result = {
@@ -365,63 +603,51 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
                 "timed_out": False,
             }
 
-        return self._finish_ultimate_action(result, send_click, wait_if_cd_ready)
+        return self._finish_ultimate_action(result, send_click)
 
-    def _finish_ultimate_action(self, result, send_click, wait_if_cd_ready):
+    def _finish_ultimate_action(self, result, send_click):
         if result.get("timed_out"):
             self.alert_skill_failed()
             self.task.raise_not_in_combat("too long clicking a ultimate")
 
         if result["status"] == "animation":
             self.logger.debug("not in_team successfully casted ultimate")
-        elif result["clicked"]:
-            if self.task.wait_until(
-                lambda: not self.task.is_in_team(),
-                time_out=0.4,
-                post_action=self.click_with_interval,
-            ):
-                self.task.in_animation = True
-                self.logger.debug("not in_team successfully casted ultimate")
-            else:
-                self.task.in_animation = False
-                self.logger.error("clicked ultimate but no effect")
-                return False
-        elif not self._wait_for_ultimate_ready(wait_if_cd_ready):
+        elif not result["clicked"]:
+            return False
+        elif result["status"] != "animation":
+            self.logger.error("clicked ultimate but no effect")
             return False
 
         clicked = result["clicked"]
         start = result["animation_start"] or time.time()
-        while not self.task.is_in_team():
-            self.task.in_animation = True
-            clicked = True
-            if send_click:
-                self.click(action_name="ultimate_click", interval=0.25)
-            if time.time() - start > 7:
-                self.task.in_animation = False
-                self.task.raise_not_in_combat(
-                    "too long a ultimate, the boss was killed by the ultimate"
-                )
-            self.task.next_frame()
+        ultimate_animation_click = (
+            (lambda: self.click(action_name="ultimate_click", interval=0.25))
+            if send_click
+            else None
+        )
+        with self.task.skip_sleep_checks() as skip:
+            skip.all = True
+            animated = self._wait_action_animation(
+                start=start,
+                timeout=7,
+                on_wait=ultimate_animation_click,
+            )
+            clicked = clicked or animated
 
-        duration = self._wait_ultimate_unfreeze(start)
-        self.task.in_animation = False
+            duration = self._wait_ultimate_unfreeze(start)
         self._ultimate_available = False
+        self.last_ultimate_time = time.time()
         if clicked:
             self.logger.info(f"click_ultimate end {duration}")
         return clicked
 
-    def _wait_for_ultimate_ready(self, wait_if_cd_ready):
-        start = time.time()
-        while not self.has_cd("ultimate") and time.time() - start < wait_if_cd_ready:
-            self.send_ultimate_key(after_sleep=0.05, action_name="ultimate_send", interval=0.25)
-            if self.task.wait_until(lambda: not self.task.is_in_team(), time_out=0.1):
-                self.task.in_animation = True
-                self.logger.debug("not in_team successfully casted ultimate")
-                return True
-        return self.task.in_animation
+    def _wait_for_ultimate_ready(self, wait_if_no_cd):
+        deadline = time.time() + wait_if_no_cd
+        while not self.has_cd("ultimate") and time.time() < deadline:
+            self.sleep(0.1)
 
     def _wait_ultimate_unfreeze(self, start):
-        self.logger.debug("waiting for time unfrozen")
+        self.logger.info("waiting for ultimate unfrozen")
         self.task.wait_until(
             lambda: self.has_cd("ultimate"),
             post_action=self._click_during_ultimate_unfreeze,  # [lw] 点击时顺带查战斗
@@ -450,17 +676,16 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             time_out=self.ULTIMATE_UNFREEZE_TIMEOUT,  # [lw] 原10s, 识别失效时空等太久
             post_action=self._click_during_ultimate_unfreeze,  # [lw]
         )
-        duration = time.time() - start - 0.1
+        duration = time.time() - start
         self.add_freeze_duration(start, duration, cause="大招时停")  # [lw] cause=
         return duration
 
     def click_skill(
         self,
-        down_time=0.01,
+        down_time=0.05,
         post_sleep=0,
         has_animation=False,
         send_click=True,
-        animation_min_duration=0,
         time_out=0,
     ):
         """尝试释放技能。
@@ -470,10 +695,9 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             post_sleep (float, optional): 释放技能后的休眠时间。默认为 0。
             has_animation (bool, optional): 技能是否有释放动画。默认为 False。
             send_click (bool, optional): 在释放技能前是否发送普通点击。默认为 True。
-            animation_min_duration (float, optional): 动画的最短持续时间。默认为 0。
             time_out (float, optional): 技能释放的超时时间。默认为 0。
         Returns:
-            tuple: (是否成功点击 (bool), 技能持续时间 (float), 是否检测到动画 (bool))。
+            bool: 是否成功点击。
         """
         self.logger.debug("click_skill start")
         the_time_out = SKILL_TIME_OUT if time_out == 0 else time_out
@@ -484,42 +708,51 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             send_click=send_click,
             time_out=the_time_out,
             has_animation=has_animation,
-            animation_min_duration=animation_min_duration,
         )
         if result["timed_out"] and time_out == 0:
             self.alert_skill_failed()
-        clicked, duration, animated = self._finish_skill_action(result, post_sleep, has_animation)
+        clicked, duration, animated = self._finish_skill_action(result, post_sleep)
         self.logger.debug(
             f"click_skill end clicked {clicked} duration {duration} animated {animated}"
         )
-        return clicked, duration, animated
+        return clicked
 
-    def _finish_skill_action(self, result, post_sleep=0, has_animation=False):
+    def _finish_skill_action(self, result, post_sleep=0):
         clicked = result["clicked"]
         skill_click_time = result["action_time"]
         animation_start = result["animation_start"]
         if animation_start > 0:
-            self._wait_skill_animation(animation_start, skill_click_time)
-        self.task.in_animation = False
+            self._wait_action_animation(
+                start=animation_start,
+                timeout=6,
+            )
+            self.add_freeze_duration(animation_start, time.time() - animation_start, cause="技能动画")  # [lw] cause=
         if clicked:
             self.last_skill_time = skill_click_time
-            if has_animation:  # sleep if there will be an animation like Jinhsi
-                self.sleep(0.2, sleep_check=False)
             self.sleep(post_sleep)
         duration = time.time() - skill_click_time if skill_click_time != 0 else 0
-        if animation_start > 0:
-            self.add_freeze_duration(skill_click_time, time.time() - animation_start, cause="技能动画")  # [lw] cause=
         return clicked, duration, animation_start > 0
 
-    def _wait_skill_animation(self, animation_start, skill_click_time):
-        while not self.task.is_in_team():
-            self.task.in_animation = True
-            if skill_click_time > 0 and time.time() - skill_click_time > 6:
-                self.task.in_animation = False
-                self.logger.error("skill animation too long, breaking")
-                break
-            self.task.next_frame()
-            self.check_combat()
+    def _wait_action_animation(
+        self,
+        start,
+        timeout,
+        on_wait=None,
+    ):
+        animated = False
+        timeout_start = start
+        try:
+            while not self.task.is_in_team():
+                self.task.in_animation = True
+                animated = True
+                if on_wait is not None:
+                    on_wait()
+                if timeout_start > 0 and time.time() - timeout_start > timeout:
+                    self.task.raise_not_in_combat("animation too long")
+                self.sleep(0.005, sleep_check=False)
+        finally:
+            self.task.in_animation = False
+        return animated
 
     def click_arc(self):
         self.send_arc_key()
@@ -578,6 +811,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
     def reset_state(self):
         """重置角色的战斗相关状态 (如入场技标记)。"""
         self.has_intro = False
+        self.clear_dead()
         self._ultimate_available = False
         self._skill_available = False
 
@@ -611,58 +845,6 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         """获取弧盘技能按键 (代理到 task.get_arc_key)。"""
         return self.task.get_arc_key()
 
-    def get_switch_priority(self, current_char, has_intro):
-        """获取切换到此角色的优先级。
-
-        Args:
-            current_char (BaseChar): 当前场上角色。
-            has_intro (bool): 当前场上角色是否拥有入场技。
-
-        Returns:
-            Priority: 优先级数值。
-        """
-        priority = self.do_get_switch_priority(current_char, has_intro)
-        if (
-            priority < Priority.MAX
-            and self.time_elapsed_accounting_for_freeze(self.last_switch_time) < 0.9
-            and not has_intro
-        ):
-            return Priority.SWITCH_CD
-        else:
-            return priority
-
-    def do_get_switch_priority(self, current_char, has_intro=False):
-        """计算切换到此角色的基础优先级 (不考虑切换CD)。
-
-        Args:
-            current_char (BaseChar): 当前场上角色。
-            has_intro (bool): 当前场上角色是否拥有入场技。
-
-        Returns:
-            int: 优先级数值。
-        """
-        priority = self.priority
-        if self.count_ultimate_priority() and self.ultimate_available():
-            priority += self.count_ultimate_priority()
-        if self.count_skill_priority() and self.skill_available():
-            priority += self.count_skill_priority()
-        if priority > self.priority:
-            priority += Priority.SKILL_AVAILABLE
-        priority += self.count_base_priority()
-        return priority
-
-    def count_base_priority(self):
-        """计算角色的基础优先级值。"""
-        return 0
-
-    def count_ultimate_priority(self):
-        """计算终结技技能对切换优先级的贡献值。"""
-        return 1
-
-    def count_skill_priority(self):
-        """计算技能对切换优先级的贡献值。"""
-        return 10
-
     def skill_available(self, check_color=True):
         """判断技能是否可用。
 
@@ -675,9 +857,13 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         return self.available("skill", check_color=check_color)
 
     def available(self, box, check_color=True, check_cd=True):
+        if box == "ultimate" and not self.task.use_ultimate:
+            return False
         if self.is_current_char:
             return self.task.available(box, check_color=check_color, check_cd=check_cd)
         else:
+            if box == "ultimate":
+                return self.task.ultimate_available(self.index)
             return not self.task.has_cd(box, self.index)
 
     def is_cycle_full(self):
@@ -758,14 +944,16 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             direction_key (str, optional): 如果指定，则在点击期间同时按下此键
                 （如 'w'、'a'、's'、'd'）。
         """
-        if direction_key is not None:
-            self.task.send_key_down(direction_key)
-            self.task.next_frame()
-        start = time.time()
-        while time.time() - start < duration:
-            self.click(interval=interval, key="right")
-        if direction_key is not None:
-            self.task.send_key_up(direction_key)
+        try:
+            if direction_key is not None:
+                self.task.send_key_down(direction_key)
+                self.sleep(0.1)
+            start = time.time()
+            while time.time() - start < duration:
+                self.click(interval=interval, key="right")
+        finally:
+            if direction_key is not None:
+                self.task.send_key_up(direction_key)
 
     def normal_attack(self):
         """执行一次普通攻击。"""
@@ -801,27 +989,6 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             text_white_color, self.task.get_box_by_name("box_ultimate")
         )
 
-    def need_fast_perform(self):
-        """判断是否需要执行快速行动序列 (通常为了快速切换给高优先级队友)。
-
-        Returns:
-            bool: 如果需要则返回 True。
-        """
-        current_char = self.task.get_current_char(raise_exception=False)
-        for char in self.task.chars:
-            if char != current_char:
-                if char.need_fast_perform_entry(current_char):
-                    self.logger.info(f"In fast perform entry with {char}")
-                    return True
-                priority = char.do_get_switch_priority(current_char, has_intro=False)
-                if priority >= Priority.FAST_SWITCH:
-                    self.logger.info(f"In lock with {char}")
-                    return True
-        return False
-
-    def need_fast_perform_entry(self, current_char) -> bool:
-        return False
-
     def check_outro(self):
         """协奏入场时判断延奏来源
 
@@ -847,36 +1014,3 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         if result:
             self.logger.info("first engage")
         return result
-
-    def wait_switch(self):
-        """检查是否要暂缓切人。"""
-        return False
-
-    def switch_other_char(self):
-        from src.char.Healer import Healer
-
-        target_index = (self.index + 1) % len(self.task.chars)
-        for char in self.task.chars:
-            if char and isinstance(char, Healer) and char.index != self.index:
-                target_index = char.index
-                break
-        next_char = str(target_index + 1)
-
-        from src.tasks.trigger.AutoCombatTask import AutoCombatTask
-
-        if isinstance(self.task, AutoCombatTask):
-            self.logger.debug("AutoCombatTask, skip switch_other_char")
-            return
-        self.logger.debug(
-            f"{self.char_name} on_combat_end {self.index} switch next char: {next_char}"
-        )
-        start = time.time()
-        while time.time() - start < 6:
-            self.task.load_chars()
-            current_char = self.task.get_current_char(raise_exception=False)
-            if current_char and current_char.name != self.name:
-                break
-            else:
-                self.send_key(next_char)
-            self.sleep(0.2, sleep_check=False)
-        self.logger.debug(f"switch_other_char on_combat_end {self.index} switch end")

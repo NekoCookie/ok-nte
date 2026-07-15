@@ -1,5 +1,7 @@
-# [lw] CharUIMixin 的用户扩展: 大招菱形检测 + 当前角色稳定判定常量。
-# 通过 class CharUIMixin(CharUIExtMixin, _TaskProxy) 接线, self 即任务实例。
+# [lw] CharUIMixin 的用户扩展: 大招菱形检测。
+# 通过 class CharUIMixin(CharUIExtMixin, BaseTask) 接线(src/tasks/mixin/CharUIMixin.py), self 即任务实例。
+# 注: 原 lw_stable_current_char"稳定判定放宽"已随上游更换当前角色检测算法
+# (current_char_detector 的 active_marker + sticky tracker)退役, 上游 sticky 粘滞机制覆盖了同一需求。
 import time
 from typing import TYPE_CHECKING
 
@@ -18,8 +20,6 @@ else:
 
 
 class CharUIExtMixin(_TaskProxy):
-    CURRENT_CHAR_STABLE_ACCEPT_REASONS = {"raw_core_agree", "core_strong", "raw_strong"}
-
     # 下场(后台)角色头像右侧的"大招就绪菱形"格:有大招才亮菱形,前台角色无菱形。
     # 菱形下面还有个常驻圆形(技能图标),框千万别骑到圆形上,否则判的是"在不在后台"而非"有无大招"。
     # 用边缘能量(Laplacian 方差)判:≥PRESENT 算有大招;≤ABSENT 算没有;中间 None(回退原逻辑)。
@@ -32,13 +32,6 @@ class CharUIExtMixin(_TaskProxy):
     ULT_DIAMOND_SIZE = 32
     ULT_DIAMOND_LAP_PRESENT = 17000
     ULT_DIAMOND_LAP_ABSENT = 8000
-
-    def lw_stable_current_char(self, detection, score):
-        """识别理由属于稳定类且分数未超拒绝线时放宽接受, 防在场角色显示跳变。"""
-        return (
-            detection.reason in self.CURRENT_CHAR_STABLE_ACCEPT_REASONS
-            and score <= self.CURRENT_CHAR_REJECT_SCORE
-        )
 
     def get_ultimate_diamond_box(self, index: int) -> "Box":
         """第 index 个角色头像右侧"大招就绪菱形"格的区域框(随分辨率缩放、跟 UI 偏移)。"""

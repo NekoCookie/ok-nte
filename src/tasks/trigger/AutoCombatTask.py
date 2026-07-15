@@ -1,27 +1,16 @@
 import time
 
 from ok import Logger, TriggerTask
-from PySide6.QtCore import QObject, Signal
 from qfluentwidgets import FluentIcon
 
-from src.char.CharFactory import get_char_feature_by_pos
-from src.char.custom.CustomCharManager import CustomCharManager
 from src.combat.BaseCombatTask import BaseCombatTask, CharDeadException, NotInCombatException
-
-
-class ScannerSignals(QObject):
-    # Sends list of dicts: {"index": i, "feat_id": tmp_id, "mat": ndarray, "match": str|None}
-    scan_done = Signal(list, str)
-
-
-scanner_signals = ScannerSignals()
 
 logger = Logger.get_logger(__name__)
 
 
 class AutoCombatTask(BaseCombatTask, TriggerTask):
-    txt_team_not_exist = "队伍不存在"
-    txt_team_not_enough = "队伍人数少于2人"
+    CONF_USE_ULT = "使用终结技"
+    CONF_AUTO_TARGET = "自动目标"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -33,17 +22,15 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         self.last_is_click = False
         self.default_config.update(
             {
-                "自动目标": True,
+                self.CONF_AUTO_TARGET: True,
+                self.CONF_USE_ULT: True
             }
         )
         self.config_description = {
-            "自动目标": "关闭时仅在中键选中敌人且画面识别到 'Lv' 文字时开启战斗",
+            self.CONF_AUTO_TARGET: "关闭时仅在中键选中敌人且画面识别到 'Lv' 文字时开启战斗",
         }
         self.op_index = 0
         self.origin_func = {}
-        if self._app is not None:
-            self.tr(self.txt_team_not_exist)
-            self.tr(self.txt_team_not_enough)
 
     def run(self):
         if self.LW_COMBAT_RUN:  # [lw] 开=龙威战斗主循环(src/lw/combat_ext.py), 关=下面的上游原版(仅排查对照)
@@ -52,13 +39,14 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         if not self.scene.is_in_team(self.is_in_team):
             return
 
-        combat_start = time.time()
         while self.in_combat():
             try:
                 if not ret:
                     ret = True
+                    combat_start = time.time()
+                    self.use_ultimate = self.config.get(self.CONF_USE_ULT, True)
                     self.switch_to_combat_start_char()
-                self.get_current_char().perform()
+                self.get_current_char(raise_exception=True).perform()
             except CharDeadException:
                 self.log_error("Characters dead", notify=True)
                 break
@@ -67,30 +55,3 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
                 break
         if ret:
             self.combat_end()
-
-    def scan_team(self):
-        self.log_info("开始扫描当前队伍...")
-        in_team, _, count = self.in_team()
-        if not in_team or count == 0:
-            scanner_signals.scan_done.emit([], self.tr(self.txt_team_not_exist))
-            self.log_info("队伍不存在, 扫描结束")
-            return
-        if count < 2:
-            scanner_signals.scan_done.emit([], self.tr(self.txt_team_not_enough))
-            self.log_info("队伍人数少于2人, 扫描结束")
-            return
-
-        manager = CustomCharManager()
-        results = []
-        frame = self.frame
-        for i in range(count):
-            feature_mat, w, h = get_char_feature_by_pos(self, i, frame=frame)
-            if feature_mat is not None and feature_mat.size > 0:
-                is_match, match_name, confidence = manager.match_feature(self, feature_mat)
-                name = match_name if is_match else None
-                results.append(
-                    {"index": i, "mat": feature_mat, "width": w, "height": h, "match": name}
-                )
-                self.log_debug(f"char_{i + 1}: {name}, confidence={confidence:.2f}")
-        scanner_signals.scan_done.emit(results, "")
-        self.log_info("扫描完成！")

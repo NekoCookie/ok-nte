@@ -46,21 +46,37 @@
 </p>
 
 - **Background Operation**: Automate game actions while in the background.
-- **One-click Dailies**: Automatically complete daily routines.
+
+### 📅 Dailies/Weeklies
+- **One-click Dailies**: Automatically complete daily routines. Supports sub-items: EXP & Beetle Coins, Ability Upgrade, Arc Ascension, Console, Cafe Tasks, Cinema Date, and Bond Gifts.
+- **Bond Gifts**: Automatically send gifts to characters.
+
+### 🍹 Hobbies
 - **Auto Fishing**: Fully automated fishing process.
-- **Auto Combat**: Computer vision-based combat algorithm.
-- **Anomaly**: Automate Anomaly challenges.
 - **Auto Drum Rhythm Game**: Automatically complete drum rhythm games.
 - **Owner's Selection**: Automatically loop entering and exiting stages (requires an in-game AFK build).
-- **Skip Dialog**: Rapidly skip through story dialogs.
-- **Fast Travel**: Automatic map teleportation.
+- **Auto Pink Paws Heist**: Automatically complete Pink Paws Heist (410,000+ Force/hour, 2500+ Pink Paws Coins/hour).
 - **Pink Paws Heist Convenience Features**
   - **Quick Pickup**: Quickly pick up items in stages.
   - **Auto Character Switch for Sprinting**: Automatically switch characters to maintain fast running.
-- **Character Center**
+
+### 📋 Specific AFK & Instances (Tasks)
+- **999 Nights**: AFK farming for EXP.
+- **Anomaly**: Automate Anomaly challenges.
+- **Auto Whirlwind**: Automatically completes 'Whirlwind' challenges.
+- **Bagel Agent**: Automatically posts, replies, and likes in the Bagel community, or assists in generating copy in assistant mode.
+
+### ⚡ Constant Triggers & Combat (Triggers/Character Center)
+- **Auto Combat**: Computer vision-based combat algorithm, supported by **Character Center** for custom combo lists and feature management.
+- **Character Center**: Provides support for **Auto Combat**.
   - **Character Management**: Supports custom combo lists.
   - **Feature Management**: Adapts to different character skins.
 - **Audio Driven**: Auto dodge and counter based on audio feedback.
+- **Skip Dialog**: Rapidly skip through story dialogs.
+- **Fast Travel**: Automatic map teleportation.
+
+### 🎹 Independent Entertainment & Utilities
+- **Auto Piano**: Automatically analyzes MIDI tracks and plays the piano.
 
 ## 🖥️ System Requirements & Compatibility
 
@@ -116,12 +132,17 @@ To ensure the program runs stably, please carefully read the following configura
 >
 > *   **Graphics Settings**
 >     *   **Game Brightness**: Use the **default** in-game brightness.
->     *   **UI Settings**: **Disable** all settings that cause the UI to differ from the default.
+>     *   **UI Settings**: **Disable** all settings that cause the UI to differ from the default
+>         *   **UI Opacity** must be set to **1.0**.
 >     *   **Graphics Filters**: **Disable** all graphics card filters and sharpening effects (e.g., NVIDIA Freestyle, AMD FidelityFX).
+>     *   **GPU Color (AMD users)**: Display colors need to match standard NVIDIA defaults to avoid image recognition issues. If color discrepancies cause failures, try enabling **"Automatically manage color for apps"** in Windows system settings.
 > *   **Resolution**
 >     *   Recommended to use **1920x1080** or higher **16:9** resolutions.
 > *   **Keybindings**
 >     *   Please use the game's **default** keybindings.
+> *   **Camera Settings**
+>     *   **Movement Camera Correction**: Disabled
+>     *   **Press to Reset Camera**: Enabled
 > *   **Third-party Software**
 >     *   Disable any overlays that display information on the game screen, such as the **framerate counter** from MSI Afterburner.
 
@@ -147,6 +168,18 @@ If the solutions above do not resolve your issue, feel free to report it via [**
 *   **Screenshot**: A clear image of the error or unusual behavior.
 *   **Log File**: Attach the `.log` file from the program's directory.
 *   **Detailed Description**: What were you doing? What exactly happened? Can you reproduce the issue consistently, or does it happen randomly?
+
+## 💻 Command Line Arguments
+
+You can automate startup by using command line arguments.
+
+```bash
+# Example: Automatically execute the second task (daily tasks) upon startup, and exit the program once the task completes
+ok-nte.exe -t 2 -e
+```
+
+*   `-t` or `--task`: Automatically execute the N-th task upon startup. `1` represents the first task in the task list.
+*   `-e` or `--exit`: Automatically exit the program after the task is completed.
 
 ## 💬 Community
 

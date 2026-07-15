@@ -1,26 +1,50 @@
 from src.char.BaseChar import BaseChar
+from src.combat.planner import (
+    ActionTag,
+    CombatContext,
+    FieldPreference,
+    Role,
+    RoleProfile,
+)
 
 
 class Jiuyuan(BaseChar):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def do_perform(self):
-        self.wait_intro()
-        self.click_ultimate()
-        if self.click_skill()[0]:
-            self.continues_normal_attack(1.4)
-            self.sleep(0.5)
-        self.fire_bullets()
+    def describe_role(self):
+        return RoleProfile(
+            role=Role.SUB_DPS,
+            field_preference=FieldPreference.SUB_DPS,
+            max_field_time=1.0,
+        )
 
-    def fire_bullets(self):
+    def combat_plan(self, context):
+        ultimate = self.click_ultimate_action()
+        skill = self.click_skill_action()
+        bullets = self.planner_action(
+            tags=ActionTag.DEFAULT_ACTION,
+            execute=self.fire_bullets,
+        )
+
+        def entry():
+            yield ultimate
+            skill_result = yield skill
+            if not skill_result:
+                yield bullets
+
+        return self.plan(ultimate, skill, bullets, entry=entry)
+
+    def fire_bullets(self, context: CombatContext = None):
+        if context.has_strict_route():
+            return
         box = self.task.box_of_screen(
             0.4191, 0.8799, 0.4348, 0.9076, name="jiuyuan_bullet", hcenter=True
         )
         if not self.has_bullets(box):
             return
         self.heavy_attack()
-        self.sleep(0.1)
+        return True
 
     def has_bullets(self, box):
         pct = self.task.calculate_color_percentage(bullet_color, box)

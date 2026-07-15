@@ -11,7 +11,8 @@ import numpy as np
 from ok import Logger, safe_get
 
 from src import text_white_color
-from src.char.BaseChar import BaseChar, Element, Priority
+from src.char.BaseChar import BaseChar, Element
+from src.lw.legacy_priority import Priority  # [lw] 上游已移除, 迁移到 src/lw/
 from src.char.custom.CustomCharManager import CustomCharManager
 from src.char.Healer import Healer
 from src.sound_trigger.SoundCombatContext import SoundCombatContext
@@ -89,6 +90,8 @@ class CombatExtMixin(_TaskProxy):
     def is_char_unavailable(self, char: "BaseChar | None") -> bool:
         if char is None:
             return False
+        if getattr(char, "is_dead", False):  # 吸收上游fb360f3: 死亡角色也视为不可用
+            return True
         until = self.unavailable_char_until.get(char.index)
         if until is None:
             return False
@@ -571,7 +574,7 @@ class CombatExtMixin(_TaskProxy):
             # 辅助大招就绪待铺时,先上场铺大招 buff,不被环合反应覆盖
             # (按优先级切到该辅助开大);没有大招待铺时环合照常走。
             if not self._any_support_ultimate_pending(current_char):
-                reaction_target = self.find_element_ring_reaction_target(current_char)
+                reaction_target = self.find_element_reaction_target(current_char)  # 上游改名(原find_element_ring_reaction_target)
                 if reaction_target and not self.is_char_unavailable(reaction_target):
                     return reaction_target, has_intro
 
@@ -1019,9 +1022,10 @@ class CombatExtMixin(_TaskProxy):
         self._pending_team_signature_change = None
         self._last_team_change_check = 0.0
         self._last_team_signature_check = 0.0
-        self.clear_element_ring_reactions()
+        self.clear_element_reactions()  # 上游改名(原clear_element_ring_reactions)
         elements = [char.element for char in chars]
         self.chars = chars
+        self.combat_planner.reset(self.chars)  # 上游planner架构要求换队后重置(record_switch等仍走planner)
         self.info_set("char elements", elements)
 
         healer_count = 0
@@ -1036,7 +1040,7 @@ class CombatExtMixin(_TaskProxy):
                 conf = char.confidence
                 elem = char.element
                 self.log_info(f"load char success {char} {name} {conf:.2f} {elem}")
-                self.info_add_to_list("chars", f"{char.char_name}: {char.combo_label}")
+                self.info_add_to_list("chars", f"{char.char_name}: {char.combo_name}")  # 上游改名(原combo_label)
 
         if self.team_size > 0:
             self.combat_start = time.time()

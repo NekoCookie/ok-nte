@@ -418,11 +418,11 @@ class HeistPathA(HeistPath):
         self.send_key_up("s")
         self.sleep(0.20)
         self.send_key_down("d")
-        self.sleep(3.00)
+        self.sleep(2.50)
         self.send_key_up("d")
         self.sleep(0.20)
         self.send_key_down("w")
-        self.sleep(1.00)
+        self.sleep(0.75)
         self.send_key_up("w")
         self.sleep(0.20)
         self.send_key_down("a")
@@ -524,7 +524,7 @@ class HeistPathA(HeistPath):
         self.log_round_info("LG2 WP1尝试出口1")
         self.sleep(2.65)  # 2.65
         self.send_key_down("w")
-        self.sleep(4.92)
+        self.sleep(5.00)
         self.send_key_up("w")
         self.sleep(0.13)
         self.send_key_down("f")  # start pick
@@ -802,11 +802,12 @@ class HeistPathA(HeistPath):
         self.sleep(0.60)
         self.send_key_up("s")
         self.sleep(0.11)
-        self.send_key_up("f")  # end pick
         self.switch_to_runner()
         self.sleep(0.11)
         self.send_key_down("w")
-        self.sleep(2.56)
+        self.sleep(0.56)
+        self.send_key_up("f")  # end pick
+        self.sleep(2.00)
         self.send_key_down("a")
         self.sleep(0.40)
         self.send_key_up("a")

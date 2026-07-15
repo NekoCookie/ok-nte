@@ -17,9 +17,9 @@ class AutoLoginTask(BaseNTETask, TriggerTask):
         self.icon = FluentIcon.ACCEPT
 
     def run(self):
-        if self._logged_in:
-            pass
+        if self.scene.logged_in():
+            return
         elif self.scene.is_in_team(self.is_in_team):
-            self._logged_in = True
+            self.scene.set_logged_in()
         else:
             self.wait_login()

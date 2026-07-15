@@ -1,6 +1,7 @@
+from enum import Enum
 from typing import Any
 
-from ok import og
+from ok import get_path_relative_to_exe, og
 from PySide6.QtCore import (
     QEasingCurve,
     QObject,
@@ -23,6 +24,8 @@ from qfluentwidgets import (
     IconWidget,
     ListWidget,
     SearchLineEdit,
+    Theme,
+    getIconColor,
 )
 
 
@@ -85,10 +88,10 @@ class SearchableComboBox(EditableComboBox):
         self.setCompleter(completer)
 
     def addItem(
-        self, text: str, icon: QIcon | str | FluentIconBase | None = None, user_data: Any = None
+        self, text: str, icon: QIcon | str | FluentIconBase | None = None, userData: Any = None
     ):
         """重写以同步更新搜寻清单"""
-        super().addItem(text, icon, user_data)
+        super().addItem(text, icon, userData)
         self.search_items.append(text)
         self._sync_completer_model()
 
@@ -152,6 +155,9 @@ class SearchableListWidget(QWidget):
             # 如果关键字在文本中，hidden 为 False（显示）；否则为 True（隐藏）
             should_hide = normalized not in item.text().lower()
             item.setHidden(should_hide)
+
+    def reapply_filter(self):
+        self._apply_filter(self.search_edit.text())
 
     def __getattr__(self, name):
         if hasattr(self.list_widget, name):
@@ -243,3 +249,18 @@ class SmoothSearchBar(QWidget):
             self.search_edit.clearFocus()
 
         super().leaveEvent(event)
+
+
+class FluentSystemIcon(FluentIconBase, Enum):
+    """Custom icons"""
+
+    MUSIC_NOTE = "MusicNote1"
+    NEXT = "Next"
+    PREVIOUS = "Previous"
+    HEART_FILL = "HeartFill"
+
+    def path(self, theme=Theme.AUTO):
+        path = get_path_relative_to_exe(
+            "assets", "fluenticons", f"{self.value}_{getIconColor(theme)}.svg"
+        )
+        return path or ""

@@ -3,8 +3,14 @@
 import os
 
 from ok import Box, ConfigOption
+
+from src import GAME_EXE
+from src.audio_routing import create_background_audio_routing_config_option
 from src.interaction.NTEInteraction import NTEInteraction
 from src.process_feature import process_feature
+
+if "PATH" not in os.environ:
+    os.environ["PATH"] = ""
 
 version = "dev"
 # 不需要修改version, Github Action打包会自动修改
@@ -53,6 +59,8 @@ sound_trigger_config_option = ConfigOption(
     },
 )
 
+background_audio_routing_config_option = create_background_audio_routing_config_option()
+
 
 def blur_area(width, height):
     return Box(width * 0, height * 0.9769, to_x=width * 0.0943, to_y=height * 1)
@@ -63,7 +71,12 @@ config = {
     "debug": False,  # Optional, default: False
     "use_gui": True,  # 目前只支持True
     "config_folder": "configs",  # 最好不要修改
-    "global_configs": [key_config_option, monthly_card_config_option, sound_trigger_config_option],
+    "global_configs": [
+        key_config_option,
+        monthly_card_config_option,
+        sound_trigger_config_option,
+        background_audio_routing_config_option,
+    ],
     # "screenshot_processor": make_bottom_left_black,  # 在截图的时候对frame进行修改, 可选
     "blur_area": blur_area,
     "gui_icon": "icons/icon.png",  # 窗口图标, 最好不需要修改文件名
@@ -87,7 +100,7 @@ config = {
         # },
     },
     "windows": {  # Windows游戏请填写此设置
-        "exe": "HTGame.exe",
+        "exe": GAME_EXE,
         "hwnd_class": "UnrealWindow",
         "interaction": [NTEInteraction],
         # Genshin:某些操作可以后台, 部分游戏支持 PostMessage:可后台点击, 极少游戏支持 ForegroundPostMessage:前台使用PostMessage Pynput/PyDirect:仅支持前台使用
@@ -175,10 +188,11 @@ config = {
         ["src.tasks.RhythmTask", "RhythmTask"],
         ["src.tasks.OwnerSelectionTask", "OwnerSelectionTask"],
         ["src.tasks.AutoHeistTask", "AutoHeistTask"],
-        ["src.tasks.DarkTask", "DarkTask"],
-        # ["src.tasks.MyOneTimeWithAGroup", "MyOneTimeWithAGroup"],
-        # ["src.tasks.MyOneTimeWithAGroup2", "MyOneTimeWithAGroup2"],
-        # ["src.tasks.MyOneTimeWithBGroup", "MyOneTimeWithBGroup"],
+        # ["src.tasks.DarkTask", "DarkTask"],
+        ["src.tasks.BagelAITools", "BagelAITools"],
+        ["src.tasks.WhirlwindTask", "WhirlwindTask"],
+        ["src.tasks.DSDFarmTask", "DSDFarmTask"],
+        ["src.tasks.GiftTask", "GiftTask"],
         ["ok", "DiagnosisTask"],
         # ["src.tasks.custom.TeamScannerTask", "TeamScannerTask"],
         # ["src.tasks.DebugCharTask", "DebugCharTask"],
@@ -194,13 +208,15 @@ config = {
         ["src.tasks.trigger.AutoLoginTask", "AutoLoginTask"],
     ],
     "custom_tabs": [
-        ["src.ui.CharHubTab", "CharHubTab"]
+        ["src.ui.CharHubTab", "CharHubTab"],
+        ["src.ui.GiftManagerTab", "GiftManagerTab"],
+        ["src.ui.MidiPlayerTab", "MidiPlayerTab"],
         # ['src.ui.MyTab', 'MyTab'], #可选, 自定义UI, 显示在侧边栏
     ],
     "scene": ["src.scene.NTEScene", "NTEScene"],
-    'update_pyappify': {
-        'to_version': '1.1.3',
-        'zip_url': 'https://github.com/BnanZ0/ok-nte/releases/download/v0.0.53/ok-nte-win32.zip',
-        'sha256': '2d7aef33111d0db8f722dc69af528f6bf29df2b5411010dc9bea1c646eec22ce',
-    }
+    "update_pyappify": {
+        "to_version": "1.1.6",
+        "zip_url": "https://github.com/BnanZ0/ok-nte/releases/download/v1.1.32/ok-nte-win32.zip",
+        "sha256": "3525566f5eee67243339614139dfde52f57c9e592e90bf66b141a54c04942f89",
+    },
 }

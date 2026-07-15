@@ -19,12 +19,11 @@ class DodgeCounterTrigger:
     def __init__(
         self,
         task,
-        execute_action: Optional[Callable] = None,
-        counter_execute_action: Optional[Callable] = None,
+        dodge_action: Optional[Callable] = None,
+        counter_action: Optional[Callable] = None,
     ):
         self.task = task
-        self.execute_action = execute_action or self._default_dodge_action
-        self.counter_execute_action = counter_execute_action or self._default_counter_action
+        self.set_actions(dodge_action, counter_action)
 
         self._is_executing = False
         self._execute_lock = threading.Lock()
@@ -32,6 +31,14 @@ class DodgeCounterTrigger:
         self._last_counter_time = 0.0
         self._min_dodge_interval = 0.5
         self._min_counter_interval = 1.0
+
+    def set_actions(
+        self,
+        dodge_action: Optional[Callable] = None,
+        counter_action: Optional[Callable] = None,
+    ):
+        self.dodge_action = dodge_action or self._default_dodge_action
+        self.counter_action = counter_action or self._default_counter_action
 
     def execute_dodge(self):
         now = time.time()
@@ -46,7 +53,7 @@ class DodgeCounterTrigger:
 
         try:
             logger.info("Executing dodge")
-            self.execute_action()
+            self.dodge_action()
             self._last_dodge_time = now
             logger.info(f"Dodge executed successfully at {now:.3f}")
             # [lw] 闪避键按下后, 主线程内立即执行"闪避后钩子"(如安魂曲强制平A打出闪避反击)。
@@ -71,7 +78,7 @@ class DodgeCounterTrigger:
 
         try:
             logger.info("Executing counter attack")
-            self.counter_execute_action()
+            self.counter_action()
             self._last_counter_time = now
             logger.info(f"Counter attack executed successfully at {now:.3f}")
         except Exception as e:
@@ -81,8 +88,14 @@ class DodgeCounterTrigger:
 
     def _default_dodge_action(self):
         logger.info("Dodge sequence: Left Shift")
-        self.task.send_key("lshift")
-        time.sleep(0.02)
+        try:
+            self.task.send_key_down("d")
+            time.sleep(0.02)
+            self.task.send_key("lshift")
+            time.sleep(0.02)
+        finally:
+            self.task.send_key_up("d")
+            time.sleep(0.02)
         self.task.send_key("lshift")
         time.sleep(0.02)
 

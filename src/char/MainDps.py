@@ -1,6 +1,7 @@
 import time
 
-from src.char.BaseChar import BaseChar, Priority, Role
+from src.char.BaseChar import BaseChar
+from src.lw.legacy_priority import Priority, Role  # 上游已从BaseChar移除, 迁移到src/lw/
 
 
 class MainDps(BaseChar):

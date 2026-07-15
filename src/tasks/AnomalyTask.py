@@ -117,15 +117,7 @@ class AnomalyTask(NTEOneTimeTask, BaseCombatTask):
         # 共同操作 1
         self.ensure_main()
         self.log_info("打开F1面板并选择对应功能")
-        self.openF1panel()
-
-        box = self.box_of_screen(0.785, 0.022, 0.814, 0.076, name="stamina_icon")
-        self.wait_until(
-            lambda: self.find_one(Labels.stamina_icon, box=box),
-            pre_action=lambda: self.operate_click(0.0563, 0.4924, interval=0.5),
-            settle_time=0.5,
-            time_out=10,
-        )
+        self.open_f1_domain_page()
 
         self.sleep(0.5)
 
@@ -150,9 +142,11 @@ class AnomalyTask(NTEOneTimeTask, BaseCombatTask):
 
         # 共同操作 2
         self.log_info("正在传送至目标地点")
-        self.operate_click(0.9168, 0.2903)
+        btns = self.find_confirms(self.box_of_screen(0.925, 0.190, 0.982, 0.760))
+        btn = min(btns, key=lambda x: x.y)
+        self.operate_click(btn)
         self.click_traval_button()
-        self.wait_in_team_and_world()
+        self.wait_in_team()
 
         stamina_units = stamina // self.TASK_COST
         if stamina_target is not None:
@@ -169,8 +163,9 @@ class AnomalyTask(NTEOneTimeTask, BaseCombatTask):
         completed_count = 0
         while completed_count < total_count:
             double = completed_count < double_count
+            self.wait_until(lambda: self.find_one(Labels.in_domain), time_out=30)
             self.wait_in_team()
-            self.sleep(2)
+            self.sleep(1)
             if not self.do_combat_and_claim(double):
                 self.log_warning("本次未成功领取奖励，退出副本后重试当前目标")
                 self.exit_anomaly()
@@ -192,6 +187,7 @@ class AnomalyTask(NTEOneTimeTask, BaseCombatTask):
             lambda: not self.find_interac(),
             post_action=lambda: self.send_interac(handle_claim=False),
             time_out=10,
+            settle_time=0.5,
         )
 
         self.wait_until(lambda: self.find_one(Labels.stamina_icon), settle_time=0.5, time_out=10)
@@ -210,9 +206,11 @@ class AnomalyTask(NTEOneTimeTask, BaseCombatTask):
         )
 
     def exit_anomaly(self):
-        # [lw] 搜索框必须大于95x95的按钮模板, 否则matchTemplate直接崩溃; 范围与钓鱼任务同弹窗位置对齐
+        # [lw] 搜索框必须大于95x95的按钮模板, 否则matchTemplate直接崩溃; 上游新range已满足该约束, 采用上游
         self.wait_click_confirm(
-            lambda: self.send_key("esc", interval=2), range=(0.656, 0.618, 0.700, 0.699)  # [lw] 改range
+            lambda: self.send_key("esc", interval=2),
+            range=(0.619, 0.609, 0.709, 0.708),
+            settle_time=0.4,
         )
         self.wait_in_team_and_world()
 

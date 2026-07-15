@@ -1,7 +1,10 @@
 # [lw] BaseChar 的用户扩展: 技能收尾结算、大招 settle 等待/强制、空闲平A填充、
-# 输入模式重试等。接线: class BaseChar(CharExtMixin), self 即角色实例。
+# 输入模式重试、旧版切换优先级机制(上游 planner 化后移除, 迁移至此)等。
+# 接线: class BaseChar(CharExtMixin), self 即角色实例。
 import time
 from typing import TYPE_CHECKING
+
+from src.lw.legacy_priority import Priority
 
 if TYPE_CHECKING:
     from src.char.BaseChar import BaseChar
@@ -14,6 +17,7 @@ else:
 
 
 class CharExtMixin(_CharProxy):
+    priority = Priority.BASE  # [lw] 旧版切换优先级基准(原 BaseChar.__init__ 字段)
     ULTIMATE_COMBAT_SETTLE_TIMEOUT = 2.5
     ULTIMATE_COMBAT_SETTLE_CLICK = True
     ULTIMATE_COMBAT_SETTLE_FORCE_ON_TIMEOUT = True
@@ -119,12 +123,13 @@ class CharExtMixin(_CharProxy):
         return True
 
     def wait_ultimate_combat_settle(self):
-        if self.task._combat_settle.time is None:
+        # 上游状态机重构(f245cbd)后 _combat_settle 已移除, 改读 combat_detect_uncertain
+        if not self.task.combat_detect_uncertain:
             return True
 
-        self.logger.info("click_ultimate blocked by combat_detect_settle")
+        self.logger.info("click_ultimate blocked by combat_detect_uncertain")
         start = time.time()
-        while self.task._combat_settle.time is not None:
+        while self.task.combat_detect_uncertain:
             if time.time() - start >= self.ULTIMATE_COMBAT_SETTLE_TIMEOUT:
                 return self._force_ultimate_after_combat_settle_timeout()
             self.task.next_frame()
@@ -151,6 +156,62 @@ class CharExtMixin(_CharProxy):
             and self.task.is_in_team()
             and self.skill_available()
         )
+
+    # ---------- 旧版切换优先级机制(上游 planner 化后从 BaseChar 移除, 迁移至此) ----------
+    # 供 lw_decide_switch_to(combat_ext.py)与用户角色(MainDps.py 等)使用;
+    # 来源: merge-base 46e9225 的 BaseChar 原版实现。
+
+    def get_switch_priority(self, current_char, has_intro):
+        """获取切换到此角色的优先级。
+
+        Args:
+            current_char (BaseChar): 当前场上角色。
+            has_intro (bool): 当前场上角色是否拥有入场技。
+
+        Returns:
+            Priority: 优先级数值。
+        """
+        priority = self.do_get_switch_priority(current_char, has_intro)
+        if (
+            priority < Priority.MAX
+            and self.time_elapsed_accounting_for_freeze(self.last_switch_time) < 0.9
+            and not has_intro
+        ):
+            return Priority.SWITCH_CD
+        else:
+            return priority
+
+    def do_get_switch_priority(self, current_char, has_intro=False):
+        """计算切换到此角色的基础优先级 (不考虑切换CD)。
+
+        Args:
+            current_char (BaseChar): 当前场上角色。
+            has_intro (bool): 当前场上角色是否拥有入场技。
+
+        Returns:
+            int: 优先级数值。
+        """
+        priority = self.priority
+        if self.count_ultimate_priority() and self.ultimate_available():
+            priority += self.count_ultimate_priority()
+        if self.count_skill_priority() and self.skill_available():
+            priority += self.count_skill_priority()
+        if priority > self.priority:
+            priority += Priority.SKILL_AVAILABLE
+        priority += self.count_base_priority()
+        return priority
+
+    def count_base_priority(self):
+        """计算角色的基础优先级值。"""
+        return 0
+
+    def count_ultimate_priority(self):
+        """计算终结技技能对切换优先级的贡献值。"""
+        return 1
+
+    def count_skill_priority(self):
+        """计算技能对切换优先级的贡献值。"""
+        return 10
 
     def lw_send_skill_action_factory(self, down_time):
         """click_skill 的发键动作: 首次按键后若技能仍就绪(输入模式没吃到键), 重试一次。"""

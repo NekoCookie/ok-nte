@@ -13,11 +13,19 @@ class NTEScene(BaseScene):
         self.cd_refreshed = False
         self._ocr_warm_up = False
         self._is_in_team_record = {"state": None, "timestamp": 0}
+        self._logged_in = False
+        self._health_snapshot = None
 
     def reset(self):
         self._is_in_team = None
         self._in_combat = None
         self.cd_refreshed = False
+
+    def logged_in(self):
+        return self._logged_in
+
+    def set_logged_in(self, value=True):
+        self._logged_in = value
 
     def in_combat(self):
         return self._in_combat
@@ -40,3 +48,12 @@ class NTEScene(BaseScene):
 
     def get_is_in_team_record(self):
         return self._is_in_team_record["state"], self._is_in_team_record["timestamp"]
+
+    def health_snapshot(self, image=None):
+        import numpy as np
+        if isinstance(image, np.ndarray):
+            self._health_snapshot = image
+        return self._health_snapshot
+
+    def clear_health_snapshot(self):
+        self._health_snapshot = None

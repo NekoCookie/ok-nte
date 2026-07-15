@@ -5,8 +5,6 @@ from threading import Event
 from ok import Logger, get_path_relative_to_exe
 from PySide6.QtCore import QObject
 
-from src.sound_trigger.SoundCombatContext import SoundCombatContext
-
 logger = Logger.get_logger(__name__)
 
 
@@ -24,9 +22,12 @@ class Globals(QObject):
         threading.Thread(
             target=self.init_sound_context, daemon=True, name="SoundContextInit"
         ).start()
+        threading.Thread(target=self.init_openvino, daemon=True, name="OpenVINOInit").start()
 
     def stop(self):
         self._sound_context_stop_event.set()
+        from src.sound_trigger.SoundCombatContext import SoundCombatContext
+
         SoundCombatContext().shutdown()
         self.shutdown_thread_pool_executor()
 
@@ -78,6 +79,7 @@ class Globals(QObject):
             "callable",
             getattr(func, "__module__", None),
             getattr(func, "__qualname__", func_name),
+            None,
         )
 
     def _get_periodic_task_name(self, task):
@@ -170,25 +172,35 @@ class Globals(QObject):
     def openvino_latency_async(self):
         return self._openvino_model_async.latency
 
-    def openvino_detect_async(self, image, box=None, threshold=0.5, force=False, mask_regions=None):
-        """异步检测，返回结果可能为缓存值"""
-        ret = self.openvino_model_async.detect(
-            image,
-            box=box,
-            threshold=threshold,
-            label="target",
-            force=force,
-            mask_regions=mask_regions,
-        )
-        # logger.debug(f"openvino async: {ret}, cost {self.openvino_latency_async:.3f} s")
-        return ret
+    @property
+    def openvino_latest_image(self):
+        return self._openvino_model_async.latest_image if self._openvino_model_async else None
 
-    def openvino_detect_sync(self, image, box=None, threshold=0.5, mask_regions=None):
-        """同步检测"""
-        ret = self.openvino_model_async.detect_sync(
-            image, box=box, threshold=threshold, label="target", mask_regions=mask_regions
-        )
-        # logger.debug(f"openvino sync: {ret}, cost {self.openvino_latency_async:.3f} s")
+    def openvino_detect(
+        self, image, sync=False, box=None, threshold=0.5, force=False, mask_regions=None
+    ):
+        """异步检测，返回结果可能为缓存值"""
+        if not sync:
+            ret = self.openvino_model_async.detect(
+                image,
+                box=box,
+                threshold=threshold,
+                label="target",
+                force=force,
+                mask_regions=mask_regions,
+            )
+        else:
+            ret = self.openvino_model_async.detect_sync(
+                image,
+                box=box,
+                threshold=threshold,
+                label="target",
+                mask_regions=mask_regions,
+            )
+        # latency = self.openvino_latency_async if ret is not None else -1
+        # logger.debug(
+        #     f"openvino: sync {sync}, result {ret}, cost {latency:.3f}s"
+        # )
         return ret
 
     def openvino_clear_cache(self):
@@ -196,6 +208,12 @@ class Globals(QObject):
         self.openvino_model_async.clear_cache()
 
     def init_sound_context(self):
+        from src.ui.util import wait_main_window
+
+        wait_main_window()
+
+        from src.sound_trigger.SoundCombatContext import SoundCombatContext
+
         context = SoundCombatContext()
         if self._sound_context_stop_event.is_set():
             return
@@ -213,3 +231,9 @@ class Globals(QObject):
             logger.info("SoundCombatContext initialized globally")
         else:
             context.shutdown()
+
+    def init_openvino(self):
+        from src.ui.util import wait_main_window
+
+        wait_main_window()
+        self.openvino_model_async

@@ -1,7 +1,8 @@
 import threading
+import time
 from typing import Any
 
-from ok import Logger
+from ok import Logger, og
 from PySide6.QtCore import QEvent, QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -196,3 +197,43 @@ def show_dialog_and_wait(
     )
     event.wait()
     return result[0] if result else None
+
+
+def ensure_scan_capture():
+    try:
+        executor = og.executor
+        if getattr(executor, "thread", None) is None or getattr(executor, "paused", False):
+            if not og.app.start_controller.do_start():
+                return og.app.tr("启动失败")
+            return ""
+        og.device_manager.do_refresh(True)
+        return og.app.start_controller.check_device_error() or ""
+    except Exception as e:
+        return str(e).strip() or e.__class__.__name__
+
+
+def wait_main_window(after_sleep=0):
+    try:
+        ok = getattr(og, "ok", None)
+        if ok is None:
+            return
+        use_gui = ok.config.get("use_gui") and not ok.args.get("headless", False)
+        deadline = time.time() + 60
+        if use_gui:
+            while time.time() < deadline:
+                app = getattr(og, "app", None)
+                main_window = getattr(app, "main_window", None)
+                if main_window is not None and main_window.isVisible():
+                    break
+                time.sleep(1)
+            if after_sleep > 0:
+                time.sleep(after_sleep)
+    except Exception as e:
+        logger.error("wait main_window error", e)
+
+
+def tr_fmt(text_id, **kwargs):
+    t = og.app.tr(text_id)
+    for k, v in kwargs.items():
+        t = t.replace(f"{{{k}}}", str(v))
+    return t

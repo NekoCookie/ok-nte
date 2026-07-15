@@ -15,7 +15,7 @@ import cv2
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.char.MainDps import BuffSupport
-from src.tasks.CharUIMixin import CharUIMixin
+from src.lw.char_ui_ext import CharUIExtMixin as CharUIMixin  # 菱形常量已随上游重构迁到 src/lw/
 
 SAMPLE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "ult_diamond")
 

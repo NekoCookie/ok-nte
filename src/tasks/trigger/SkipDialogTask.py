@@ -4,12 +4,11 @@ from ok import Logger, TriggerTask
 
 from src.Labels import Labels
 from src.tasks.BaseNTETask import BaseNTETask
-from src.utils import game_filters as gf
 
 logger = Logger.get_logger(__name__)
 
 
-class SkipDialogTask(TriggerTask, BaseNTETask):
+class SkipDialogTask(TriggerTask, BaseNTETask): # type: ignore
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -83,7 +82,8 @@ class SkipDialogTask(TriggerTask, BaseNTETask):
         return self.find_one(Labels.message_dialog, vertical_variance=0.2, horizontal_variance=0.01)
 
     def skip_confirm(self):
-        if skip_button := self.find_confirm(threshold=0.8):
+        box = self.box_of_screen(0.659, 0.559, 0.733, 0.670)
+        if skip_button := self.find_confirm(box, threshold=0.8):
             # sleep 0.2 to stable click skip button
             now = time.time()
             ready_color = self.lw_confirm_ready_color(skip_button, skip_confirm_color)  # [lw] 粉色款按钮等粉不等白
@@ -97,7 +97,7 @@ class SkipDialogTask(TriggerTask, BaseNTETask):
                 self.sleep(0.4)
             self.operate_click(skip_button)
             self.sleep(0.5)
-            if not self.find_confirm(threshold=0.8):
+            if not self.find_confirm(box, threshold=0.8):
                 return True
         if self.is_in_team():
             return True
@@ -113,6 +113,9 @@ class SkipDialogTask(TriggerTask, BaseNTETask):
         skipped = False
         while skip := self.find_skip():
             logger.info("Click Skip Dialog")
+            box = self.box_of_screen(0.671, 0.58, 0.733, 0.670)
+            if self.find_confirm(box, threshold=0.8):
+                return True
             self.operate_click(skip)
             self.sleep(0.4)
             skipped = True

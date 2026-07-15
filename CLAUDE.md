@@ -7,8 +7,10 @@
 
 - **`src/lw/` 是用户专属包**,所有整块新增的方法/常量/类一律放这里,通过 Mixin 接入上游类:
   - `combat_ext.py` → `CombatExtMixin`,接入 `BaseCombatTask`(CD锚定、角色不可用、队伍变更检测、trigger重载等)
-  - `char_ext.py` → `CharExtMixin`,接入 `BaseChar`(技能结算、大招settle、空闲平A等)
-  - `char_ui_ext.py` → `CharUIExtMixin`,接入 `CharUIMixin`(大招菱形检测等)
+  - `char_ext.py` → `CharExtMixin`,接入 `BaseChar`(技能结算、大招settle、空闲平A、旧版切换优先级机制等)
+  - `char_ui_ext.py` → `CharUIExtMixin`,接入 `CharUIMixin`(位于 `src/tasks/mixin/CharUIMixin.py`,大招菱形检测等)
+  - `legacy_priority.py` → 旧版 `Priority`/`Role` 枚举(上游 planner 化后从 `BaseChar` 移除,
+    lw 切换决策与 `MainDps.py` 仍依赖,整体迁移至此维护)
   - `nte_task_ext.py` → `NTETaskExtMixin`,接入 `BaseNTETask`(find_confirm OCR认字等)
   - `sound_ext.py` → `SoundContextExtMixin`,接入 `SoundCombatContext`
   - `chars.py` → 用户角色注册表(`CharFactory.char_dict.update(lw_char_dict)`)

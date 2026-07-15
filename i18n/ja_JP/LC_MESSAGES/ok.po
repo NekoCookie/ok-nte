@@ -81,9 +81,6 @@ msgstr "{fixed_team}クリア済み"
 msgid "{} 号位"
 msgstr "{} 番目のスロット"
 
-msgid "不扫描也可自动战斗，将使用通用脚本"
-msgstr "スキャンしなくても自動戦闘が可能で、汎用スクリプトが使用されます"
-
 msgid "任务跳过对话"
 msgstr "会話スキップタスク"
 
@@ -100,8 +97,8 @@ msgstr "保存成功"
 msgid "停用"
 msgstr "無効化"
 
-msgid "先扫描或手动填写"
-msgstr "先にスキャンするか手動で入力してください"
+msgid "先扫描并关联特征或手动填写"
+msgstr "先にスキャンして特徴を関連付けるか、手動で入力してください"
 
 msgid "出招表"
 msgstr "コンボリスト"
@@ -124,6 +121,15 @@ msgstr "リスト更新"
 msgid "匹配成功: {}"
 msgstr "一致成功: {}"
 
+msgid "置信度: {:.2f}"
+msgstr "信頼度: {:.2f}"
+
+msgid "特征已加入"
+msgstr "特徴を追加しました"
+
+msgid "加入特征"
+msgstr "特徴を追加"
+
 msgid "匹配文字"
 msgstr "テキスト一致"
 
@@ -145,8 +151,8 @@ msgstr "マップ内で自動テレポート"
 msgid "填入扫描"
 msgstr "スキャン結果を入力"
 
-msgid "增加 <b style=\"color: #0078d7;\">角色特征</b> 后将自动判断当前角色。<br>如果不想管理 <b style=\"color: #0078d7;\">角色特征</b>，可以直接启用 <b style=\"color: #0078d7;\">{fixed_team}</b> 功能。"
-msgstr "キャラクター特徴を追加すると、現在のキャラクターを自動的に判別します。<br>キャラクター特徴を管理したくない場合は、直接 {fixed_team} 機能を有効にできます。"
+msgid "这是个用于向数据库关联或添加 <b style=\"color: #0078d7;\">角色特征</b> 的工具面板。<br>点击 <b style=\"color: #0078d7;\">{scan_team}</b> 后点击 <b style=\"color: #0078d7;\">关联或添加</b> 特征，自动战斗时就会识别对应的角色。<br><b style=\"color: #d83b01;\">💡 注意：</b>此面板 <b style=\"color: #d83b01;\">不会</b> 在进入战斗或更换阵容时实时自动刷新或同步显示, 因为这是工具面板。<br>如果不想管理 <b style=\"color: #0078d7;\">角色特征</b>，可以直接使用 <b style=\"color: #0078d7;\">{fixed_team}</b> 功能。"
+msgstr "これはデータベースに<b style=\"color: #0078d7;\">キャラクター特徴</b>を関連付け、または追加するためのツールパネルです。<br><b style=\"color: #0078d7;\">{scan_team}</b>をクリックした後に、特徴の<b style=\"color: #0078d7;\">関連付けまたは追加</b>をクリックすると、自動戦闘時に対応するキャラクターが識別されます。<br><b style=\"color: #d83b01;\">💡 注意：</b>このパネルはツールパネルであるため、戦闘に入ったときやチーム編成を変更したときにリアルタイムで自動更新または同期表示<b style=\"color: #d83b01;\">されません</b>。<br><b style=\"color: #0078d7;\">キャラクター特徴</b>を管理したくない場合は、<b style=\"color: #0078d7;\">{fixed_team}</b>機能を直接使用できます。"
 
 msgid "完成每日活跃度"
 msgstr "デイリーアクティビティを完了"
@@ -162,9 +168,6 @@ msgstr "データインポート"
 
 msgid "导出数据"
 msgstr "データエクスポート"
-
-msgid "将优先使用固定角色进行战斗，未启用或槽位为空时自动识别"
-msgstr "戦闘には固定キャラクターが優先的に使用され、無効またはスロットが空の場合は自動的に認識されます"
 
 msgid "已保存 {}/4"
 msgstr "保存済み {}/4"
@@ -237,7 +240,7 @@ msgid "更新"
 msgstr "更新"
 
 msgid "未启用"
-msgstr "未有効"
+msgstr "無効"
 
 msgid "未能识别该特征"
 msgstr "特徴を認識できませんでした"
@@ -245,8 +248,8 @@ msgstr "特徴を認識できませんでした"
 msgid "未获取到特征"
 msgstr "特徴を取得できませんでした"
 
-msgid "未识别，关联新特征"
-msgstr "未認識、新しい特徴を関連付け"
+msgid "关联特征"
+msgstr "特徴を関連付け"
 
 msgid ""
 "此为内建 Python 脚本，不可在此修改。\n"
@@ -297,9 +300,6 @@ msgstr "自動ターゲット"
 msgid "自动钓鱼"
 msgstr "自動釣り"
 
-msgid "角色"
-msgstr "キャラクター"
-
 msgid "角色中心"
 msgstr "キャラ中心"
 
@@ -324,8 +324,8 @@ msgstr "ストーリースキップ"
 msgid "运行一次测试"
 msgstr "テストを1回実行"
 
-msgid "选择或输入{combo}名"
-msgstr "{combo}名を選択または入力"
+msgid "下拉选择，或直接输入名称以创建新{combo}"
+msgstr "ドロップダウンから選択するか、名前を直接入力して新しい{combo}を作成します"
 
 msgid "重命名失败"
 msgstr "名前変更失敗"
@@ -576,29 +576,11 @@ msgstr "デイリータスクでのカフェ処理方法を選択"
 msgid "不执行"
 msgstr "実行しない"
 
-msgid "记录新特征"
-msgstr "新しい特徴を記録"
-
 msgid "输入或选择关联的角色名称"
 msgstr "関連キャラクター名を入力または選択"
 
 msgid "输入或选择绑定的{combo} (可选)"
 msgstr "紐付け{combo}を入力または選択（任意）"
-
-msgid ""
-"功能说明：本功能仅负责『自动退出关卡』与『重新开启关卡』的点击循环，不包含任何局内的制作食物或招待客人操作。\n"
-"\n"
-"使用方法：\n"
-"1. 确保您已配置好游戏内的挂机流派。\n"
-"2. 站在咖啡店可进行 F 交互的位置。\n"
-"3. 首次启动需录制目标, 点击[开始]后请跟随指示操作。"
-msgstr ""
-"機能説明: この機能は「ステージを自動で退出する」と「ステージを再開する」クリック操作のループのみを行います。ステージ内での料理作成や接客操作は含まれません。\n"
-"\n"
-"使い方:\n"
-"1. ゲーム内の放置ビルドを設定済みであることを確認してください。\n"
-"2. カフェで F キーによるインタラクトができる位置に立ってください。\n"
-"3. 初回起動時はターゲットの記録が必要です。[開始]をクリックした後、指示に従って操作してください。"
 
 msgid "循环次数(0为无限次)"
 msgstr "ループ回数（0で無制限）"
@@ -618,34 +600,548 @@ msgstr "ダークレース"
 msgid "Record has been reset"
 msgstr "記録をリセットしました"
 
-msgid ""
-"No recorded operations were found. Please wait for the recording prompt, then "
-"follow the instructions carefully to record your actions."
-msgstr "記録済みの操作が見つかりません。記録の案内が表示されるまで待ち、指示に従って慎重に操作を記録してください。"
-
 msgid "Updated successfully"
 msgstr "更新しました"
-
-msgid ""
-"记录点击目标关卡的操作，分为两个步骤：\n"
-"1. 使用滚轮滚动至目标可见 (若不需要则点击目标)\n"
-"2. 点击目标"
-msgstr ""
-"対象ステージをクリックする操作を2つの手順で記録します:\n"
-"1. マウスホイールで対象が見える位置までスクロールします（不要な場合は対象をクリック）\n"
-"2. 対象をクリックします"
-
-msgid ""
-"记录点击目标关卡的操作，分为两个步骤：\n"
-"1. 点击滚动条至目标可见 (若不需要则点击目标)\n"
-"2. 点击目标"
-msgstr ""
-"対象ステージをクリックする操作を2つの手順で記録します:\n"
-"1. スクロールバーをクリックして対象が見える位置まで移動します（不要な場合は対象をクリック）\n"
-"2. 対象をクリックします"
 
 msgid "都市闲趣"
 msgstr "趣味"
 
 msgid "日常/周常"
 msgstr "デイリー/ウィークリー"
+
+msgid "※ 列表可直接输入并创建"
+msgstr "※ リストには直接入力して作成できます"
+
+msgid "输入或选择角色"
+msgstr "キャラクターを入力または選択"
+
+msgid "自动战斗任务不可用"
+msgstr "自動戦闘タスクは利用できません"
+
+msgid ""
+"※ 关联角色特征后，软件将能自动识别角色并使用绑定的出招表；未关联时，将使用通用脚本。\n"
+"游戏内换人/换队自动适配，无需手动调整"
+msgstr ""
+"※ キャラクター特徴を関連付けると、ソフトウェアがキャラクターを自動識別し、紐付けたコンボ表を使用します。未関連付けの場合は汎用スクリプトを使用します。\n"
+"ゲーム内のキャラクター切替/チーム切替には自動対応するため、手動調整は不要です"
+
+msgid ""
+"※ {fixed_team}会优先使用已填写槽位；未填写的槽位仍会自动识别。\n"
+"如果游戏内切换队伍，已填写槽位需要在软件里手动修改。"
+msgstr ""
+"※ {fixed_team}は入力済みのスロットを優先して使用します。未入力のスロットは引き続き自動認識されます。\n"
+"ゲーム内でチームを切り替えた場合、入力済みのスロットはソフト側で手動更新してください。"
+
+msgid "<span style=\"color: #2ecc71;\">● 自动识别：已启用</span>"
+msgstr "<span style=\"color: #2ecc71;\">● 自動認識：有効</span>"
+
+msgid "<span style=\"color: #95a5a6;\">○ 自动识别：仅空槽启用</span>"
+msgstr "<span style=\"color: #95a5a6;\">○ 自動認識：空きスロットのみ有効</span>"
+
+msgid "<span style=\"color: #2ecc71;\">● {fixed_team}：已启用 ({count}/4)</span>"
+msgstr "<span style=\"color: #2ecc71;\">● {fixed_team}：有効 ({count}/4)</span>"
+
+msgid "<span style=\"color: #95a5a6;\">○ {fixed_team}：已停用</span>"
+msgstr "<span style=\"color: #95a5a6;\">○ {fixed_team}：無効</span>"
+
+msgid "启动失败"
+msgstr "起動に失敗しました"
+
+msgid "21键自然音布局 (已禁用)"
+msgstr "21キー全音階レイアウト (無効)"
+
+msgid "36键半音布局 (12x3)"
+msgstr "36キー半音階レイアウト (12x3)"
+
+msgid "中音"
+msgstr "中音"
+
+msgid "低音"
+msgstr "低音"
+
+msgid "全部歌曲"
+msgstr "すべての曲"
+
+msgid "单曲循环"
+msgstr "1曲リピート"
+
+msgid "可以弹奏"
+msgstr "演奏可能"
+
+msgid "右下按键中心: "
+msgstr "右下ボタンの中心:"
+
+msgid "定时关闭"
+msgstr "タイマー停止"
+
+msgid "导入 MIDI"
+msgstr "MIDIをインポート"
+
+msgid "尚未载入音轨"
+msgstr "トラックが読み込まれていません"
+
+msgid "左上按键中心: "
+msgstr "左上ボタンの中心:"
+
+msgid "已收藏"
+msgstr "お気に入り"
+
+msgid "当前游戏钢琴使用 36 键半音布局"
+msgstr "現在のゲームのピアノは36キーの半音階レイアウトを使用しています"
+
+msgid "打印键位映射"
+msgstr "キーマッピングを出力"
+
+msgid "打开 mid_lib"
+msgstr "mid_libを開く"
+
+msgid "按键坐标配置"
+msgstr "キー座標設定"
+
+msgid "搜索歌曲"
+msgstr "曲を検索"
+
+msgid "播放"
+msgstr "再生"
+
+msgid "播放模式"
+msgstr "再生モード"
+
+msgid "播放设置"
+msgstr "再生設定"
+
+msgid "播放速度"
+msgstr "再生速度"
+
+msgid "收藏歌曲"
+msgstr "お気に入りに追加"
+
+msgid "无法弹奏"
+msgstr "演奏不可"
+
+msgid "智能音域压缩"
+msgstr "スマート音域圧縮"
+
+msgid "未选择歌曲"
+msgstr "曲が選択されていません"
+
+msgid "每个测试音间隔约 1 秒，请用调音器确认实际发音。"
+msgstr "各テスト音の間隔は約1秒です。チューナーで実際の音を確認してください。"
+
+msgid "测试中音行"
+msgstr "中音列をテスト"
+
+msgid "测试全部键"
+msgstr "すべてのキーをテスト"
+
+msgid "自动弹琴"
+msgstr "自動ピアノ"
+
+msgid "自动战斗任务不可用"
+msgstr "自動戦闘タスクは利用できません"
+
+msgid "自动音高"
+msgstr "自動ピッチ"
+
+msgid "试听选中音轨"
+msgstr "選択したトラックを試聴"
+
+msgid "调试校准"
+msgstr "デバッグキャリブレーション"
+
+msgid "选中歌曲后可选择参与分析与播放的 MIDI 音轨。"
+msgstr "曲を選択後、分析と再生に参加するMIDIトラックを選択できます。"
+
+msgid "选择 MIDI 档案"
+msgstr "MIDIファイルを選択"
+
+msgid "随机播放"
+msgstr "シャッフル"
+
+msgid "音轨选择"
+msgstr "トラック選択"
+
+msgid "音高与音域分析"
+msgstr "ピッチと音域の分析"
+
+msgid "音高调整 (半音):"
+msgstr "ピッチ調整 (半音):"
+
+msgid "顺序播放"
+msgstr "順番に再生"
+
+msgid "高音"
+msgstr "高音"
+
+msgid "MIDI 分析失败"
+msgstr "MIDI分析失敗"
+
+msgid "MIDI 播放失败"
+msgstr "MIDI再生失敗"
+
+msgid "键盘布局"
+msgstr "キーボードレイアウト"
+
+msgid "de_DE"
+msgstr "Deutsch"
+
+msgid "en_US"
+msgstr "English"
+
+msgid "es_ES"
+msgstr "Español"
+
+msgid "fr_FR"
+msgstr "Français"
+
+msgid "ja_JP"
+msgstr "日本語"
+
+msgid "ru_RU"
+msgstr "Русский"
+
+msgid "zh_CN"
+msgstr "简体中文"
+
+msgid "zh_TW"
+msgstr "繁體中文"
+
+msgid "文案生成模型调用地址, 需兼容OpenAI接口请求格式"
+msgstr "テキスト生成モデルのAPIエンドポイント（OpenAI互換形式）"
+
+msgid "模型调用超时时间(s)"
+msgstr "モデル呼び出しタイムアウト時間(s)"
+
+msgid "文案生成调用模型的超时时间, 超时将回退使用本地词库, 留空使用30s"
+msgstr "テキスト生成モデル呼び出しのタイムアウト時間。タイムアウト時はローカル単語帳にフォールバックします。空欄の場合は30秒。"
+
+msgid "关闭后将降级使用本地词库抽取发帖回复文案"
+msgstr "オフにすると、ローカル辞書を使用して投稿・返信テキストを生成します"
+
+msgid "发帖内容生成提示词"
+msgstr "投稿内容生成プロンプト"
+
+msgid "发帖内容生成提示词, 请先调试好提示词再使用"
+msgstr "投稿内容生成プロンプト（使用前に調整してください）"
+
+msgid "发帖标题生成提示词"
+msgstr "投稿タイトル生成プロンプト"
+
+msgid "发帖标题生成提示词, 请先调试好提示词再使用"
+msgstr "投稿タイトル生成プロンプト（使用前に調整してください）"
+
+msgid "呗果智能体"
+msgstr "ベーグル エージェント"
+
+msgid "回复生成提示词"
+msgstr "返信生成プロンプト"
+
+msgid "回复生成提示词, 请先调试好提示词再使用"
+msgstr "返信生成プロンプト（使用前に調整してください）"
+
+msgid "开启助手模式后, 将只会辅助生成文案"
+msgstr "アシスタントモードを有効にすると、テキスト生成の支援のみを行います"
+
+msgid "所调用模型名称"
+msgstr "使用するモデル名"
+
+msgid "文案助手模式"
+msgstr "ライティングアシスタントモード"
+
+msgid "智能体模式选项"
+msgstr "エージェントモード設定"
+
+msgid "自动回帖会同时点赞"
+msgstr "返信時にいいねも実行"
+
+msgid "未设置请留空, 请勿泄露API_Key!"
+msgstr "未設定の場合は空欄にしてください。APIキーの流出にご注意ください！"
+
+msgid "需要支持视觉输入的视觉语言模型"
+msgstr "視覚入力に対応したVLMモデルが必要です"
+
+msgid "模型调用API_Key"
+msgstr "モデルAPI_Key"
+
+msgid "模型调用地址"
+msgstr "モデルAPIエンドポイント"
+
+msgid "次数"
+msgstr "回数"
+
+msgid "游戏语言"
+msgstr "ゲーム言語"
+
+msgid "请选择游戏所设置的语言"
+msgstr "ゲーム内で設定されている言語を選択してください"
+
+msgid "留言"
+msgstr "コメント"
+
+msgid "自动发帖"
+msgstr "自動投稿"
+
+msgid "自动呗果"
+msgstr "ベーグル自動実行"
+
+msgid "自动回帖"
+msgstr "自動返信"
+
+msgid "自动按赞"
+msgstr "自動いいね"
+
+msgid "请详阅使用说明"
+msgstr "使用説明書をよくお読みください"
+
+msgid "调用模型"
+msgstr "モデル使用"
+
+msgid "过滤水贴"
+msgstr "スパム除外"
+
+msgid "1"
+msgstr ""
+
+msgid "2"
+msgstr ""
+
+msgid "3"
+msgstr ""
+
+msgid "4"
+msgstr ""
+
+msgid "使用任何路径前请先阅读使用说明"
+msgstr "ルートを使用する前に使用説明をお読みください"
+
+msgid "设置为0则一直运行"
+msgstr "0に設定すると無限実行"
+
+msgid "战斗角色"
+msgstr "戦闘キャラクター (Combat Team)"
+
+msgid "自动粉爪大劫案"
+msgstr "自動ピンクポウ強盗"
+
+msgid "跑图角色"
+msgstr "探索キャラクター (Exploration)"
+
+msgid "路径"
+msgstr "ルート (Route)"
+
+msgid "路径1(路线参考自B站UP: 早柚大魔王丶)"
+msgstr "ルート1 (Route 1) (Bilibili UP: 早柚大魔王丶のルートを参考)"
+
+msgid "路径2(在路径1基础上优化了大厅到办公层的路线)"
+msgstr "ルート2 (Route 2) (ルート1をベースにロビーからオフィスへのルートを最適化)"
+
+msgid "选0~1个"
+msgstr "0〜1個選択"
+
+msgid "选1~2个"
+msgstr "1〜2個選択"
+
+msgid "选1个"
+msgstr "1個選択"
+
+msgid "避战方法"
+msgstr "回避方法 (Stealth Method)"
+
+msgid "避战角色"
+msgstr "回避キャラクター (Stealth Character)"
+
+msgid "长按shift"
+msgstr "Shift長押し (Hold Shift)"
+
+msgid "长按攻击"
+msgstr "攻撃長押し (Hold Attack)"
+
+msgid ""
+"No recorded operations were found. Please wait for the recording prompt, then follow the instructions carefully to record your actions.\n"
+"DO NOT manually switch windows!\n"
+"Wait patiently for the software to bring the game window to the foreground."
+msgstr ""
+"記録済みの操作が見つかりません。記録の案内が表示されるまで待ち、指示に従って慎重に操作を記録してください。\n"
+"手動でウィンドウを切り替えないでください！\n"
+"ソフトウェアがゲームウィンドウをフォアグラウンドに表示するまでしばらくお待ちください。"
+
+msgid "影院约会"
+msgstr "映画館デート"
+
+msgid "约会目标"
+msgstr "デート対象"
+
+msgid "自动小旋风"
+msgstr "自動旋風"
+
+msgid "可交互「小旋风」下按开始"
+msgstr "インタラクティブ「旋風」の下で開始を押す"
+
+msgid "难度选项"
+msgstr "難易度オプション"
+
+msgid "异象家具"
+msgstr "アノマリー家具"
+
+msgid "每2小时重新登入"
+msgstr "2時間ごとに再ログイン"
+
+
+msgid "除了选择内建存在的<b style=\"color: #0078d7;\">{combo}</b>外，您也可以自己输入名称来建立自己的<b style=\"color: #0078d7;\">{combo}</b>。"
+msgstr "組み込みの<b style=\"color: #0078d7;\">{combo}</b>を選択するだけでなく、名前を入力して独自の<b style=\"color: #0078d7;\">{combo}</b>を作成することもできます。"
+
+msgid "九百九十九夜"
+msgstr "九百九十九夜"
+
+msgid "巧克力火山-底层最左边的篝火"
+msgstr "チョコレート火山-最下層一番左の篝火"
+
+msgid "挂机刷经验"
+msgstr "放置EXP稼ぎ"
+
+msgid "位置"
+msgstr "位置"
+
+msgid "赤龙古堡-龙之高塔室外篝火"
+msgstr "赤竜の古城-竜の高塔屋外の篝火"
+
+msgid "使用终结技"
+msgstr "アルティメットスキルを使用"
+
+msgid "Background Audio Routing"
+msgstr "バックグラウンドオーディオルーティング"
+
+msgid "Enable Background Audio Routing"
+msgstr "バックグラウンドオーディオルーティングを有効にする"
+
+msgid "SoundVolumeCommandLine Path"
+msgstr "SoundVolumeCommandLineのパス"
+
+msgid "Background Output Device"
+msgstr "バックグラウンド出力デバイス"
+
+msgid "Open SoundVolumeCommandLine Download Page"
+msgstr "SoundVolumeCommandLineダウンロードページを開く"
+
+msgid "Optionally route the game to a selected Windows output device while it is in the background. SoundVolumeCommandLine is not bundled; select your own downloaded copy."
+msgstr "ゲームがバックグラウンドにある間、ゲーム音声を指定したWindows出力デバイスにルーティングします。SoundVolumeCommandLineは同梱されていません。ダウンロードしたファイルを選択してください。"
+
+msgid "Switch game audio output when the game window leaves the foreground"
+msgstr "ゲームウィンドウが最前面（アクティブ）から外れたときにゲームの音声出力を切り替える"
+
+msgid "Select svcl.exe downloaded from NirSoft"
+msgstr "NirSoftからダウンロードしたsvcl.exeを選択する"
+
+msgid "Output device used while the game is in the background"
+msgstr "ゲームがバックグラウンドにあるときに使用する出力デバイス"
+
+msgid "Open the official NirSoft SoundVolumeCommandLine page"
+msgstr "NirSoft SoundVolumeCommandLineの公式サイトを開く"
+
+msgid "SoundVolumeCommandLine (svcl.exe);;Executable Files (*.exe);;All Files (*)"
+msgstr "SoundVolumeCommandLine (svcl.exe);;実行可能ファイル (*.exe);;すべてのファイル (*)"
+
+msgid "Select svcl.exe"
+msgstr "svcl.exeの選択"
+
+msgid "Open Download Page"
+msgstr "ダウンロードページを開く"
+
+msgid "⚠️ 正在运行{rob_mode}\n该模式会高频占用/争夺鼠标。如需停止，请使用热键暂停 ok-nte, 再手动停止任务。\n当前热键: {hotkey} (如无法确认当前热键则点击取消, 主动确认后再运行)"
+msgstr "⚠️ {rob_mode}を実行中\nこのモードは高頻度でマウスを占有/奪い合います。停止するには、ホットキーで ok-nte を一時停止してから、手動でタスクを停止してください。\n現在のホットキー: {hotkey} (現在のホットキーを確認できない場合はキャンセルをクリックし、自分で確認してから実行してください)"
+
+msgid "赤龙古堡-残丝长巷篝火"
+msgstr "赤竜の古城-残糸の長巷の篝火"
+
+msgid "战斗时长上限"
+msgstr "最大戦闘時間"
+
+msgid "战斗时不切人"
+msgstr "戦闘中にキャラクターを切り替えない"
+
+msgid "主界面检测失败。建议操作: \n1. 关闭显卡滤镜与锐化功能；\n2. 尝试开启 Windows “自动管理应用的颜色”设置。"
+msgstr "メイン画面の検出に失敗しました。推奨される操作: \n1. グラフィックボードのフィルターとシャープネス機能をオフにしてください；\n2. Windowsの「アプリのカラーを自動的に管理する」設定をオンにしてみてください。"
+
+msgid "大世界检测失败: 请检查游戏内 UI 透明度是否已设置为 1.0。"
+msgstr "オープンワールドの検出に失敗しました: ゲーム内のUI不透明度が1.0に設定されているか確認してください。"
+
+msgid "当前 CPU 不支持 AVX2, 无法运行 OpenVINO 2026 CPU 推理；自动战斗的目标检测将不可用。"
+msgstr "現在のCPUはAVX2をサポートしていないため、OpenVINO 2026 CPU推論を実行できません。自動戦闘のターゲット検出は利用不可になります。"
+
+msgid "战斗后等待至时长上限"
+msgstr "戦闘後に最大時間まで待機"
+
+msgid "羁遇赠礼"
+msgstr "絆の贈り物"
+
+msgid "新增角色"
+msgstr "キャラクターを追加"
+
+msgid "更新当前角色"
+msgstr "現在のキャラクターを更新"
+
+msgid "删除当前角色"
+msgstr "現在のキャラクターを削除"
+
+msgid "开始赠礼"
+msgstr "ギフト開始"
+
+msgid "继续赠礼"
+msgstr "ギフト再開"
+
+msgid "停止"
+msgstr "停止"
+
+msgid "在游戏赠礼页点击{}。点击礼物卡片可设定优先级，再次点击取消。"
+msgstr "ゲームのギフトページで{}をクリックします。ギフトカードをクリックして優先度を設定し、もう一度クリックするとキャンセルします。"
+
+msgid "赠礼状态"
+msgstr "ギフト状態"
+
+msgid "已启用"
+msgstr "有効"
+
+msgid "名称"
+msgstr "名前"
+
+msgid "角色显示名称"
+msgstr "キャラクター表示名"
+
+msgid "赠送次数"
+msgstr "贈呈回数"
+
+msgid "角色名称"
+msgstr "キャラクター名"
+
+msgid "礼物优先级"
+msgstr "ギフト優先度"
+
+msgid "不赠送"
+msgstr "ギフトしない"
+
+msgid "优先级 {}"
+msgstr "優先度 {}"
+
+msgid "不可赠送"
+msgstr "ギフト不可"
+
+msgid "未命名角色"
+msgstr "名前なしキャラクター"
+
+msgid "捕获失败"
+msgstr "キャプチャ失敗"
+
+msgid "保存失败"
+msgstr "保存失敗"
+
+msgid "无法开始"
+msgstr "開始できません"
+
+msgid "赠礼任务未注册"
+msgstr "ギフトタスクが未登録です"
+
+msgid "没有可用的游戏画面"
+msgstr "利用可能なゲーム画面がありません"
+
+msgid "请先捕获、选择礼物并启用至少一个角色。"
+msgstr "最初にキャプチャし、ギフトを選択して、少なくとも1つのキャラクターを有効にしてください。"

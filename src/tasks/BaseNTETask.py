@@ -1,5 +1,4 @@
-﻿import ctypes
-import inspect
+﻿import inspect
 import re
 import threading
 import time
@@ -7,25 +6,33 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Any, Callable, List
 
-import cv2
-import win32api
-import win32con
-import win32gui
-import win32process
-from ok import BaseTask, Box, CannotFindException, Logger, og, safe_get
+from ok import BaseTask, Box, CannotFindException, Logger, WaitFailedException, og, safe_get
 
 from src.Labels import Labels
 from src.lw.nte_task_ext import NTETaskExtMixin  # [lw]
 from src.scene.NTEScene import NTEScene
 from src.scene.ScreenPosition import ScreenPosition
-from src.tasks.CharUIMixin import CharUIMixin
+from src.tasks.mixin.CharUIMixin import CharUIMixin
+from src.tasks.mixin.MovementMixin import MovementMixin
+from src.tasks.mixin.OgMixin import OgMixin
+from src.tasks.mixin.VisionMixin import VisionMixin
 from src.utils import image_utils as iu
+from src.utils import vision_utils as vu
+from src.utils.log_gate import LogGateMixin
 
 logger = Logger.get_logger(__name__)
 stamina_re = re.compile(r"(\d+)/(\d+)")
+MSG_MAIN_DETECTION_FAILED = (
+    "主界面检测失败。建议操作: \n"
+    "1. 关闭显卡滤镜与锐化功能；\n"
+    "2. 尝试开启 Windows “自动管理应用的颜色”设置。"
+)
+MSG_WORLD_DETECTION_FAILED = "大世界检测失败: 请检查游戏内 UI 透明度是否已设置为 1.0。"
 
 
-class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [lw] 插入用户扩展基类
+class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMixin, LogGateMixin, BaseTask):  # type: ignore  # [lw] 插入用户扩展基类
+    CONF_ROUNDS = "循环次数"
+    INFINITE_ROUNDS_TEXT = "∞"
     DEFAULT_MOVE = False
 
     def __init__(self, *args, **kwargs):
@@ -34,13 +41,36 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
         self.key_config = self.get_global_config("Game Hotkey Config")
         self.monthly_card_config = self.get_global_config("Monthly Card Config")
         self.sound_config = self.get_global_config("Sound Trigger Config")
-        self._logged_in = False
-        self._rotated_template_cache = {}
         self.default_box = ScreenPosition(self)
         self._init_char_ui_state()
         self.next_monthly_card_start = 0
         self._last_interval_action_time = {}
         self._action_interval_lock = threading.Lock()
+        self._init_log_gate()
+
+    def configured_rounds(self, default=0) -> int:
+        """读取统一的循环次数配置: 0 表示无限运行。"""
+        value = self.config.get(self.CONF_ROUNDS, None)
+        if value is None:
+            value = default
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return max(0, int(default))
+
+    @staticmethod
+    def should_run_round(round_index: int, rounds: int) -> bool:
+        return rounds == 0 or round_index <= rounds
+
+    def rounds_total_text(self, rounds: int) -> str:
+        return self.INFINITE_ROUNDS_TEXT if rounds == 0 else str(rounds)
+
+    def rounds_info_text(self, round_index: int, rounds: int) -> str:
+        return f"{round_index} / {self.rounds_total_text(rounds)}"
+
+    def add_rounds_config(self, default=0):
+        self.default_config.update({self.CONF_ROUNDS: default})
+        self.config_description.update({self.CONF_ROUNDS: "设置为0则一直运行"})
 
     def sync_config(self, config=None):
         """同步并保存配置"""
@@ -49,27 +79,14 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
             target_config.save_file()
         self._refresh_config_ui(target_config)
 
-    def _refresh_config_ui(self, config):
-        """刷新指定配置对应的 UI 界面"""
-        if not (hasattr(og, "app") and og.app.main_window):
-            return
-
-        vBoxLayout = og.app.main_window.onetime_tab.vBoxLayout
-        for i in range(vBoxLayout.count()):
-            widget = vBoxLayout.itemAt(i).widget()
-            if widget and hasattr(widget, "config"):
-                # 如果 widget 绑定的 config 对象是一致的，则刷新
-                if widget.config is config:
-                    widget.update_config()
-                    break
-
     @property
     def thread_pool_executor(self) -> ThreadPoolExecutor | None:
         if og.my_app is None:
             return None
         return og.my_app.get_thread_pool_executor()
 
-    def submit_periodic_task(self, delay, task, *args, **kwargs):
+    @staticmethod
+    def submit_periodic_task(delay, task, *args, **kwargs):
         """
         提交一个循环任务到线程池。
         如果要停止循环，任务函数应返回 False。
@@ -83,49 +100,46 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
             return
         return og.my_app.submit_periodic_task(delay, task, *args, **kwargs)
 
-    def _openvino_detect(self, frame, sync, box, threshold, force=False, mask_regions=None):
+    def openvino_detect(
+        self,
+        frame=None,
+        sync: bool = False,
+        box: Box = None,
+        threshold: float = 0.7,
+        force: bool = False,
+        mask_regions=None,
+    ) -> List[Box] | None:
         if og.my_app is None:
             return []
         if box is None:
-            box = self.box_of_screen(0.0840, 0.1326, 0.9030, 0.8694, name="openvino_box")
+            box = self.box_of_screen(0, 0, 1, 1, name="openvino")
+        else:
+            box.name = "openvino"
         self.draw_boxes(boxes=box, color="blue")
         if frame is None:
             frame = self.frame
-        if sync:
-            results = og.my_app.openvino_detect_sync(
-                image=frame, box=box, threshold=threshold, mask_regions=mask_regions
-            )
-        else:
-            results = og.my_app.openvino_detect_async(
-                image=frame,
-                box=box,
-                threshold=threshold,
-                force=force,
-                mask_regions=mask_regions,
-            )
+        results = og.my_app.openvino_detect(
+            image=frame,
+            sync=sync,
+            box=box,
+            threshold=threshold,
+            force=force,
+            mask_regions=mask_regions,
+        )
         if results:
             self.draw_boxes(boxes=results, color="red")
         return results
-
-    def openvino_detect_async(
-        self, frame=None, box: Box = None, threshold=0.7, force=False, mask_regions=None
-    ) -> List[Box]:
-        """异步检测，返回结果可能为缓存值"""
-        return self._openvino_detect(
-            frame, False, box, threshold, force=force, mask_regions=mask_regions
-        )
-
-    def openvino_detect_sync(
-        self, frame=None, box: Box = None, threshold=0.7, mask_regions=None
-    ) -> List[Box]:
-        """同步检测，会等待结果返回"""
-        return self._openvino_detect(frame, True, box, threshold, mask_regions=mask_regions)
 
     def openvino_clear_cache(self):
         """清空缓存"""
         if og.my_app is None:
             return
         og.my_app.openvino_clear_cache()
+
+    def get_last_openvino_image(self):
+        if og.my_app is None:
+            return None
+        return getattr(og.my_app, "openvino_latest_image", None)
 
     @property
     def main_viewport(self):
@@ -136,7 +150,7 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
               interval=-1, move=None, down_time=0.02, after_sleep=0, key='left',
               hcenter=False, vcenter=False, action_name=None) -> Any:
         if action_name is not None:
-            if not self.check_action_interval(action_name, interval):
+            if not self._check_action_interval(action_name, interval):
                 return False
             interval = -1
 
@@ -154,7 +168,7 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
                       interval=-1, down_time=0.02, after_sleep=0, key='left',
                       hcenter=False, vcenter=False, action_name=None) -> Any:
         action_name = action_name or "operate_click"
-        if not self.check_action_interval(action_name, interval):
+        if not self._check_action_interval(action_name, interval):
             return False
         result = self.operate(
             lambda: self.click(
@@ -169,15 +183,20 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
 
     def send_key(self, key, down_time=0.02, interval=-1, after_sleep=0, action_name=None) -> Any:
         if action_name is not None:
-            if not self.check_action_interval(action_name, interval):
+            if not self._check_action_interval(action_name, interval):
                 return False
             interval = -1
         return super().send_key(
             key, down_time=down_time, interval=interval, after_sleep=after_sleep
         )
+
+    def scroll(self, x, y, count):
+        if isinstance(x, float) and isinstance(y, float):
+            x, y = min(x, 1.0) * self.width, min(y, 1.0) * self.height
+        return super().scroll(x=x, y=y, count=count)
     # fmt: on
 
-    def check_action_interval(self, action_name: Any, interval: float) -> bool:
+    def _check_action_interval(self, action_name: Any, interval: float) -> bool:
         if interval <= 0:
             return True
         # action_name must be a stable identifier, not a dynamic value.
@@ -192,17 +211,22 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
     def _get_interval_func_key(self, func: Callable):
         bound_func = getattr(func, "__func__", None)
         if bound_func is not None:
-            return ("func_interval", id(getattr(func, "__self__", None)), bound_func)
+            return (
+                "func_interval",
+                "bound_method",
+                id(getattr(func, "__self__", None)),
+                bound_func,
+            )
 
         code = getattr(func, "__code__", None)
         if code is not None:
-            return ("func_interval", code)
+            return ("func_interval", "code", code, None)
 
         try:
             hash(func)
         except TypeError:
-            return ("func_interval", id(func))
-        return ("func_interval", func)
+            return ("func_interval", "id", id(func), None)
+        return ("func_interval", "callable", func, None)
 
     def run_with_interval(
         self,
@@ -214,11 +238,11 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
     ) -> Any:
         """按函数自己的时间间隔执行，未到间隔时返回 False。"""
         action_name = action_name or self._get_interval_func_key(func)
-        if not self.check_action_interval(action_name, interval):
+        if not self._check_action_interval(action_name, interval):
             return False
         return func(*args, **kwargs)
 
-    def operate(self, func: Callable, block=False, restore_cursor=True):
+    def operate(self, func: Callable, block=True, restore_cursor=True):
         from src.interaction.NTEInteraction import NTEInteraction
 
         if isinstance(self.executor.interaction, NTEInteraction):
@@ -239,11 +263,17 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
             box = self._shift_char_ui_box(box)
         return box
 
-    def get_base_char_element_box(self):
-        return super().get_base_char_element_box()
+    def is_char_at_index(self, index, threshold=0.5, frame=None, char_count=None):
+        detection = self._get_current_char_detection(frame=frame, char_count=char_count)
+        score = detection.scores[index]
+        new = f"idx {index} conf {score:.3f} {detection.reason}"
+        if detection.accepted and detection.index == index and score < threshold:
+            self.info_set("current char", new)
+            return True
+        self.run_with_interval(lambda: self.info_set("current char", new), 0.5)
 
-    def is_in_team(self) -> Box | None:
-        frame = self.frame
+    def is_in_team(self, frame=None) -> Box | None:
+        frame = self.frame if frame is None else frame
         if frame is None:
             self.log_warning("Received an empty or None frame. Skipping...")
             time.sleep(1)
@@ -270,187 +300,46 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
         arr = self._update_char_ui_offset()
 
         # self.log_debug(f"in_team {arr}")
-        current = self.get_current_char_index()
         exist_count = 0
         for i in range(len(arr)):
             if arr[i] is not None:
                 exist_count += 1
-            elif current == -1:
-                current = i
 
-        if current != -1 and arr[current] is None:
+        if exist_count == 0:
+            self.log_warning("in_team exist_count is 0")
+            return False, -1, 0
+
+        current = self.get_current_char_index(char_count=exist_count)
+        if current != -1 and safe_get(arr, current) is None:
             exist_count += 1
 
-        self._logged_in = True
+        if current == -1:
+            self.log_warning("in_team not found current char")
+            return False, -1, 0
+
+        self.scene.set_logged_in()
         return True, current, exist_count
 
-    def get_box_by_char_spacing(self, box: Box, index: int):
-        return super().get_box_by_char_spacing(box, index)
-
-    def is_char_at_index(self, index, threshold=0.5, frame=None):
-        return super().is_char_at_index(index, threshold=threshold, frame=frame)
-
-    def get_current_char_index(self):
-        return super().get_current_char_index()
-
     def in_world(self) -> bool:
-        frame = self.frame
-        template_bgr = self.get_feature_by_name(Labels.mini_map_arrow).mat
-        mat = self.box_of_screen(0.0691, 0.1083, 0.0949, 0.1493, name="in_world").crop_frame(frame)
-        mat = iu.binarize_bgr_by_brightness(mat, threshold=200)
-        res, _ = self._find_rotated_template(
-            template_bgr,
-            mat,
-            threshold=0.75,
-            cache_key=Labels.mini_map_arrow,
-        )
-        # self.log_debug(f"in_world {res}, cost {cost} ms")
+        res = self.check_mini_map_arrow()
         return len(res) == 1
 
-    def _find_rotated_template(
-        self,
-        template,
-        scene,
-        threshold=0.75,
-        angle_range=range(-180, 180, 5),
-        min_non_zero=20,
-        cache_key=None,
-        template_angle=0,
-    ):
-        start_time = time.time()
-        scene_mask = self._first_channel_mask(scene)
-        if cv2.countNonZero(scene_mask) < min_non_zero:
-            return [], (time.time() - start_time) * 1000
-
-        best = None
-        for angle, rotated_template in self._get_rotated_templates(
-            template,
-            angle_range=angle_range,
-            min_non_zero=min_non_zero,
-            cache_key=cache_key,
-        ):
-            th, tw = rotated_template.shape[:2]
-            if th > scene_mask.shape[0] or tw > scene_mask.shape[1]:
-                continue
-
-            result = cv2.matchTemplate(scene_mask, rotated_template, cv2.TM_CCOEFF_NORMED)
-            _, score, _, top_left = cv2.minMaxLoc(result)
-            if best is None or score > best["score"]:
-                best = {
-                    "center": (top_left[0] + tw // 2, top_left[1] + th // 2),
-                    "angle": self._normalize_angle(angle + template_angle),
-                    "match_angle": angle,
-                    "score": score,
-                }
-
-        if best is None or best["score"] < threshold:
-            return [], (time.time() - start_time) * 1000
-
-        best["score"] = round(best["score"], 3)
-        return [best], (time.time() - start_time) * 1000
-
-    def _get_rotated_templates(
-        self,
-        template,
-        angle_range=range(-180, 180, 5),
-        min_non_zero=20,
-        cache_key=None,
-    ):
-        template_mask = self._trim_mask(self._first_channel_mask(template))
-        angles = tuple(angle_range)
-        template_key = (
-            cache_key or id(template),
-            template_mask.shape,
-            cv2.countNonZero(template_mask),
-            hash(template_mask.tobytes()),
-            angles,
-            min_non_zero,
+    def check_mini_map_arrow(self) -> list[dict]:
+        frame = self.frame
+        box = self.box_of_screen(0.0691, 0.1083, 0.0949, 0.1493, name="in_world")
+        # now = time.time()
+        res, _ = self.find_rotated_template(
+            Labels.mini_map_arrow,
+            box=box,
+            frame=frame,
+            threshold=0.75,
+            template_angle=15.5,
+            frame_processor=lambda cropped: iu.binarize_bgr_by_brightness(
+                cropped, threshold=200, to_bgr=False
+            ),
         )
-        cached = self._rotated_template_cache.get(template_key)
-        if cached is not None:
-            return cached
-
-        templates = []
-        for angle in angles:
-            rotated = self._rotate_mask(template_mask, angle)
-            rotated = self._trim_mask(rotated)
-            if cv2.countNonZero(rotated) >= min_non_zero:
-                templates.append((angle, rotated))
-
-        self._rotated_template_cache[template_key] = templates
-        return templates
-
-    def _first_channel_mask(self, mat):
-        if mat.ndim == 2:
-            return mat
-        return mat[:, :, 0]
-
-    def _normalize_angle(self, angle):
-        return (angle + 180) % 360 - 180
-
-    def _rotate_mask(self, mask, angle):
-        h, w = mask.shape[:2]
-        center = (w / 2, h / 2)
-        rotate_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
-        cos = abs(rotate_matrix[0, 0])
-        sin = abs(rotate_matrix[0, 1])
-        new_w = int(round(h * sin + w * cos))
-        new_h = int(round(h * cos + w * sin))
-        rotate_matrix[0, 2] += new_w / 2 - center[0]
-        rotate_matrix[1, 2] += new_h / 2 - center[1]
-        return cv2.warpAffine(
-            mask,
-            rotate_matrix,
-            (new_w, new_h),
-            flags=cv2.INTER_NEAREST,
-            borderValue=0,
-        )
-
-    def _trim_mask(self, mask):
-        points = cv2.findNonZero(mask)
-        if points is None:
-            return mask
-        x, y, w, h = cv2.boundingRect(points)
-        return mask[y : y + h, x : x + w]
-
-    def _find_contours_from_first_channel(self, bgr):
-        bin_mat = bgr[:, :, 0]
-        contours, _ = cv2.findContours(bin_mat, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        return contours
-
-    def _find_rotated_shape(self, target_contour, scene_contours, score_threshold=0.1):
-        """
-        target_contour: 要匹配的目标轮廓。
-        scene_contours: 在场景中找到的候选轮廓。
-        score_threshold: 越小越严格。通常 0.05-0.2 之间。
-        """
-        start_time = time.time()
-
-        results = []
-        for cnt in scene_contours:
-            if cv2.contourArea(cnt) < 50:
-                continue
-
-            # 核心算法：比较两个形状的胡氏矩 (I1 模式最常用)
-            # 返回值越小，匹配度越高（0 为完美匹配）
-            score = cv2.matchShapes(target_contour, cnt, cv2.CONTOURS_MATCH_I1, 0.0)
-
-            if score < score_threshold:
-                # 计算重心和角度
-                M = cv2.moments(cnt)
-                if M["m00"] != 0:
-                    cx = int(M["m10"] / M["m00"])
-                    cy = int(M["m01"] / M["m00"])
-
-                    # 使用最小外接矩形获取角度
-                    rect = cv2.minAreaRect(cnt)
-                    angle = rect[2]  # 得到角度
-
-                    results.append({"center": (cx, cy), "angle": angle, "score": round(score, 3)})
-
-        # 按分数升序排列（得分越低越好）
-        results = sorted(results, key=lambda x: x["score"])
-        return results, (time.time() - start_time) * 1000
+        # self.log_debug(f"in_world {res}, cost {time.time() - now} ms")
+        return res
 
     def in_team_and_world(self):
         in_team = self.is_in_team()
@@ -461,23 +350,32 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
         success = self.wait_until(
             self.is_in_team,
             time_out=time_out,
-            raise_if_not_found=raise_if_not_found,
+            raise_if_not_found=False,
             post_action=lambda: self.back(after_sleep=2) if esc else None,
             settle_time=settle_time,
         )
         if success:
             self.sleep(0.1)
+        elif raise_if_not_found:
+            msg = self.tr(MSG_MAIN_DETECTION_FAILED)
+            self.log_error(msg, notify=True)
+            raise CannotFindException(msg)
         return success
 
     def wait_in_team_and_world(self, time_out=30, raise_if_not_found=True, esc=False):
         success = self.wait_until(
             self.in_team_and_world,
             time_out=time_out,
-            raise_if_not_found=raise_if_not_found,
+            raise_if_not_found=False,
             post_action=lambda: self.back(after_sleep=2) if esc else None,
         )
         if success:
             self.sleep(0.1)
+        elif raise_if_not_found:
+            msg = self.tr(MSG_MAIN_DETECTION_FAILED)
+            msg += "\n" + self.tr(MSG_WORLD_DETECTION_FAILED)
+            self.log_error(msg, notify=True)
+            raise CannotFindException(msg)
         return success
 
     def set_pynput_interaction(self):
@@ -507,81 +405,6 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
             return
         og.device_manager.set_interaction(m)
         self.log_info(f"已切换交互式方式: {get_name(m)}")
-
-    def is_foreground(self):
-        """
-        检查窗口是否在最前端。
-        """
-        if not self.hwnd:
-            return False
-        return self.hwnd.is_foreground()
-
-    def bring_to_front(self, after_sleep=0):
-        """
-        强制将窗口带到最前端。
-        """
-        if not self.hwnd:
-            self.log_warning("bring_to_front skipped: hwnd_window unavailable")
-            return False
-        hwnd = self.hwnd.hwnd
-
-        if self.is_foreground():
-            self.log_info(f"bring_to_front {hwnd} already is foreground")
-            return True
-
-        self.log_info(f"try bring_to_front {hwnd}")
-
-        current_thread_id = 0
-        target_thread_id = 0
-        foreground_thread_id = 0
-        attached_target = False
-        attached_foreground = False
-
-        try:
-            current_thread_id = win32api.GetCurrentThreadId()
-            target_thread_id, _ = win32process.GetWindowThreadProcessId(hwnd)
-            foreground_hwnd = win32gui.GetForegroundWindow()
-            if foreground_hwnd:
-                foreground_thread_id, _ = win32process.GetWindowThreadProcessId(foreground_hwnd)
-
-            if target_thread_id and target_thread_id != current_thread_id:
-                attached_target = bool(
-                    ctypes.windll.user32.AttachThreadInput(
-                        current_thread_id, target_thread_id, True
-                    )
-                )
-            if (
-                foreground_thread_id
-                and foreground_thread_id != current_thread_id
-                and foreground_thread_id != target_thread_id
-            ):
-                attached_foreground = bool(
-                    ctypes.windll.user32.AttachThreadInput(
-                        current_thread_id, foreground_thread_id, True
-                    )
-                )
-
-            if win32gui.IsIconic(hwnd):
-                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-            win32gui.BringWindowToTop(hwnd)
-            win32gui.SetForegroundWindow(hwnd)
-            self.sleep(0.1)
-            if self.is_foreground():
-                self.log_info(f"bring_to_front {hwnd} succeeded")
-                self.sleep(after_sleep)
-                return True
-            self.log_info(f"bring_to_front {hwnd} did not keep foreground")
-            return False
-        except Exception as e:
-            logger.debug(f"bring_to_front failed: {e}")
-            return False
-        finally:
-            if attached_foreground:
-                ctypes.windll.user32.AttachThreadInput(
-                    current_thread_id, foreground_thread_id, False
-                )
-            if attached_target:
-                ctypes.windll.user32.AttachThreadInput(current_thread_id, target_thread_id, False)
 
     @property
     def interac_box(self):
@@ -665,20 +488,28 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
         self.click_traval_button()
         return teleport
 
-    def click_traval_button(self, travel_btn=None):
+    def click_traval_button(self, travel_btn=None, raise_if_not_found=True):
         if not isinstance(travel_btn, Box):
             travel_btn = self.wait_until(
-                self.find_traval_button, time_out=10, raise_if_not_found=True
+                self.find_traval_button, time_out=10, raise_if_not_found=raise_if_not_found
             )
-
+        if not travel_btn:
+            return False
         self.sleep(0.1)
-        self.operate_click(travel_btn)
-        self.sleep(1)
+        self.wait_until(
+            lambda: not self.find_traval_button(),
+            pre_action=lambda: self.operate_click(travel_btn, interval=1),
+            time_out=20,
+            settle_time=0.5,
+            raise_if_not_found=raise_if_not_found,
+        )
+        self.sleep(0.1)
+        return True
 
     def openF1panel(self):
         if hasattr(self, "reset_to_false"):
             self.reset_to_false("opening f1 panel")
-        if self.in_team_and_world():
+        if self.is_in_team():
             self.send_key("f1", after_sleep=1)
             self.log_info("send f1 key to open the panel")
 
@@ -692,7 +523,7 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
     def openF2panel(self):
         if hasattr(self, "reset_to_false"):
             self.reset_to_false("opening f2 panel")
-        if self.in_team_and_world():
+        if self.is_in_team():
             self.send_key("f2", after_sleep=1)
             self.log_info("send f2 key to open the panel")
 
@@ -706,7 +537,7 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
     def openF5panel(self):
         if hasattr(self, "reset_to_false"):
             self.reset_to_false("opening f5 panel")
-        if self.in_team_and_world():
+        if self.is_in_team():
             self.send_key("f5", after_sleep=1)
             self.log_info("send f5 key to open the panel")
 
@@ -720,7 +551,7 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
     def openESCpanel(self):
         if hasattr(self, "reset_to_false"):
             self.reset_to_false("opening esc panel")
-        if self.in_team_and_world():
+        if self.is_in_team():
             self.send_key("esc", after_sleep=1)
             self.log_info("send esc key to open the panel")
 
@@ -740,27 +571,39 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
         logger.info(f"found {feature} {result}")
         return result
 
-    def ensure_main(self, esc=True, time_out=30):
+    def ensure_main(self, esc=True, in_world=False, time_out=30):
         self.info_set("current task", f"wait main esc={esc}")
-        if not self._logged_in:
+        if not self.scene.logged_in():
             time_out = 600
         if not self.wait_until(
-            lambda: self.is_main(esc=esc), time_out=time_out, raise_if_not_found=False
+            lambda: self.is_main(esc=esc, in_world=in_world),
+            time_out=time_out,
+            raise_if_not_found=False,
+            settle_time=0.25,
         ):
-            raise Exception("Please start in game world and in team!")
+            msg = self.tr(MSG_MAIN_DETECTION_FAILED)
+            if in_world:
+                msg += "\n" + self.tr(MSG_WORLD_DETECTION_FAILED)
+            self.log_error(msg, notify=True)
+            raise CannotFindException(msg)
         self.sleep(0.5)
         self.info_set("current task", None)
 
-    def is_main(self, esc=True):
-        if self.in_team_and_world():
-            self._logged_in = True
+    def is_main(self, esc=True, in_world=True):
+        in_team_or_world = False
+        if in_world:
+            in_team_or_world = bool(self.in_team_and_world())
+        else:
+            in_team_or_world = bool(self.is_in_team())
+        if in_team_or_world:
+            self.scene.set_logged_in()
             return True
         if self.handle_monthly_card():
             return True
         if self.wait_login():
             return True
         if esc:
-            self.back(after_sleep=2)
+            self.send_key("esc", action_name="is_main", interval=2)
 
     def find_monthly_card(self):
         return self.find_one(Labels.monthly_card)
@@ -772,21 +615,26 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
         return False
 
     def handle_monthly_card(self):
+        if self.is_in_team():
+            return False
         monthly_card = self.find_monthly_card()
         # self.screenshot('monthly_card1')
         if monthly_card is not None:
             # self.screenshot('monthly_card1')
             self.log_info("monthly_card found click")
-            self.click(0.50, 0.89)
-            self.sleep(2)
-            # self.screenshot('monthly_card2')
-            self.click(0.50, 0.89)
-            self.sleep(2)
-            self.wait_until(
-                self.in_team_and_world,
-                time_out=10,
-                post_action=lambda: self.click(0.50, 0.89, after_sleep=1),
-            )
+            deadline = time.time() + 20
+            settle = -1
+            while time.time() < deadline:
+                if self.is_in_team():
+                    if settle < 0:
+                        settle = time.time()
+                    elif time.time() - settle > 2:
+                        break
+                else:
+                    self.operate_click(0.50, 0.89, after_sleep=2)
+                    settle = -1
+            else:
+                raise WaitFailedException()
             # self.screenshot('monthly_card3')
             self.set_check_monthly_card(next_day=True)
         # logger.debug(f'check_monthly_card {monthly_card}')
@@ -810,47 +658,10 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
             self.next_monthly_card_start = 0
 
     def wait_login(self):
-        if not self._logged_in:
-            if self.in_team_and_world():
+        if not self.scene.logged_in():
+            if self.is_in_team():
                 return True
             self.handle_monthly_card()
-            # texts = self.ocr(log=self.debug)
-            # if login := self.find_boxes(
-            #     texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match="登录"
-            # ):
-            #     if not self.find_boxes(
-            #         texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match="+86"
-            #     ):
-            #         self.click(login, after_sleep=1)
-            #         self.log_info("点击登录按钮!")
-            #     return False
-            # if agree := self.find_boxes(
-            #     texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match="同意"
-            # ):
-            #     self.log_debug(f"found agree {agree}")
-            #     if self.find_boxes(
-            #         texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7),
-            #         match=re.compile(r"\d{11}"),
-            #     ):
-            #         self.click(agree, after_sleep=1)
-            #         self.log_info("点击同意按钮!")
-            #     return False
-            # if self.find_boxes(texts, match=re.compile("游戏即将重启")):
-            #     self.log_info("游戏更新成功, 游戏即将重启")
-            #     self.click(self.find_boxes(texts, match="确认"), after_sleep=60)
-            #     result = self.start_device()
-            #     self.log_info(f"start_device end {result}")
-            #     self.sleep(30)
-            #     return False
-
-            # if start := self.find_boxes(
-            #     texts, boundary="bottom_right", match=["开始游戏", re.compile("进入游戏")]
-            # ):
-            #     if not self.find_boxes(texts, boundary="bottom_right", match="登录"):
-            #         self.click(start)
-            #         self.log_info(f"点击开始游戏! {start}")
-            #         return False
-
             if self.find_one(Labels.login_setting):
                 self.log_info("found login_setting, bring_to_front and click")
                 if not self.is_foreground():
@@ -858,6 +669,21 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
                     self.sleep(3)
                 self.operate_click(0.499, 0.865, after_sleep=3)
                 return False
+
+    def back_to_login(self):
+        self.ensure_main(in_world=False)
+        box = self.box_of_screen(0.6352, 0.6125, 0.7168, 0.7083, hcenter=True)
+
+        def action():
+            self.openESCpanel()
+            self.operate_click(0.9305, 0.8729)
+            self.sleep(0.5)
+            return self.find_confirm(box=box)
+
+        if self.retry_on_action(action, self.ensure_main):
+            if self.wait_click_confirm(range=box):
+                self.scene.set_logged_in(False)
+                return True
 
     def find_treasure(self):
         # now = time.time()
@@ -872,110 +698,10 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
         return result
 
     def walk_to_treasure(self):
-        if self.find_treasure():
-            self.walk_to_box(
-                self.find_treasure, end_condition=self.find_interac, y_offset=0.1, x_threshold=0.15
-            )
+        if self.walk_to_box(
+            self.find_treasure, end_condition=self.find_interac, y_offset=0.1, x_threshold=0.15
+        ):
             return True
-
-    def walk_to_box(
-        self, find_function, time_out=30, end_condition=None, y_offset=0.05, x_threshold=0.07
-    ):
-        start = time.time()
-        while time.time() - start < time_out:
-            if ended := self._do_walk_to_box(
-                find_function,
-                time_out=time_out - (time.time() - start),
-                end_condition=end_condition,
-                y_offset=y_offset,
-                x_threshold=x_threshold,
-            ):
-                return ended
-
-    @staticmethod
-    def _resolve_target(result):
-        """将 find_function 的返回值统一为单个目标或 None"""
-        if isinstance(result, list):
-            return result[0] if result else None
-        return result
-
-    def _calc_walk_direction(self, last_target, last_direction, y_offset, x_threshold, centered):
-        """根据目标位置计算下一步移动方向，返回 (direction, centered)"""
-        if last_target is None:
-            return self.opposite_direction(last_direction), centered
-
-        x, y = last_target.center()
-        y = max(0, y - self.height_of_screen(y_offset))
-        x_abs = abs(x - self.width_of_screen(0.5))
-        threshold = 0.04 if not last_direction else x_threshold
-        centered = x_abs <= self.width_of_screen(threshold)
-
-        if not centered:
-            direction = "d" if x > self.width_of_screen(0.5) else "a"
-        else:
-            if last_direction == "s":
-                v_center = 0.45
-            elif last_direction == "w":
-                v_center = 0.6
-            else:
-                v_center = 0.5
-            direction = "s" if y > self.height_of_screen(v_center) else "w"
-        return direction, centered
-
-    def _do_walk_to_box(
-        self, find_function, time_out=30, end_condition=None, y_offset=0.05, x_threshold=0.07
-    ):
-        if find_function:
-            self.wait_until(
-                lambda: (not end_condition or end_condition()) or find_function(),
-                raise_if_not_found=True,
-                time_out=time_out,
-            )
-        last_direction = None
-        start = time.time()
-        ended = False
-        last_target = None
-        centered = False
-        try:
-            while time.time() - start < time_out:
-                self.next_frame()
-                if end_condition:
-                    ended = end_condition()
-                    if ended:
-                        logger.info(f"_do_walk_to_box ended {ended}")
-                        break
-                target = self._resolve_target(find_function())
-                if target:
-                    last_target = target
-                if last_target is None:
-                    self.log_info("find_function not found, change to opposite direction")
-                next_direction, centered = self._calc_walk_direction(
-                    last_target, last_direction, y_offset, x_threshold, centered
-                )
-                if next_direction != last_direction:
-                    if last_direction:
-                        self.send_key_up(last_direction)
-                        self.sleep(0.001)
-                    last_direction = next_direction
-                    if next_direction:
-                        self.send_key_down(next_direction)
-        finally:
-            if last_direction:
-                self.send_key_up(last_direction)
-                self.sleep(0.001)
-        return ended if end_condition else last_direction is not None
-
-    def opposite_direction(self, direction):
-        if direction == "w":
-            return "s"
-        elif direction == "s":
-            return "w"
-        elif direction == "a":
-            return "d"
-        elif direction == "d":
-            return "a"
-        else:
-            return "w"
 
     def send_interac(self, handle_claim=True):
         if self.find_interac():
@@ -1001,34 +727,38 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
         return self.find_feature(Labels.claim_icon, box=box)
 
     def get_stamina(self):
+        def fix_stamina_ocr_slash(text):
+            if len(text) < 4:
+                return text
+
+            numerator = text[:-4]
+            maybe_slash = text[-4]
+            denominator = text[-3:]
+
+            if maybe_slash in ["1", "l", "|"]:
+                return f"{numerator}/{denominator}"
+
+            return text
+
         boxes = self.wait_ocr(0.814, 0.029, 0.898, 0.083, raise_if_not_found=False)
         if not boxes:
             self.screenshot("stamina_error")
             return -1
         current = 0
         for box in boxes:
-            box.name = self._fix_stamina_ocr_slash(box.name)
+            box.name = fix_stamina_ocr_slash(box.name)
             if match := stamina_re.search(box.name):
                 current = int(match.group(1))
         self.info_set("当前体力", current)
         return current
 
-    def _fix_stamina_ocr_slash(self, text):
-        # 如果長度小於 4，說明數據本身不完整，直接返回原文字
-        if len(text) < 4:
-            return text
-
-        numerator = text[:-4]
-        maybe_slash = text[-4]
-        denominator = text[-3:]
-
-        # 如果倒數第 4 位被誤識成了 1、l 或 |
-        if maybe_slash in ["1", "l", "|"]:
-            return f"{numerator}/{denominator}"
-
-        return text
-
-    def retry_on_action(self, action: Callable, reset_action: Callable | None = None, attempt=3):
+    def retry_on_action(
+        self,
+        action: Callable,
+        reset_action: Callable | None = None,
+        attempt=3,
+        raise_if_failed=False,
+    ):
         result = None
         count = 0
 
@@ -1046,22 +776,28 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
                 result = action()
             if not result and reset_action is not None:
                 reset_action()
+        if raise_if_failed and not result:
+            raise WaitFailedException()
         return result
 
     def wait_click_confirm(
         self,
         action: Any | None = None,
-        range: tuple[float, float, float, float] | None = None,
+        range: tuple[float, float, float, float] | Box | None = None,
+        time_out=10,
         settle_time=0.25,
         raise_if_not_found=True,
     ):
         if range is None:
             box = self.main_viewport
+        elif isinstance(range, Box):
+            box = range
         else:
             box = self.box_of_screen(*range, hcenter=True)
         button = self.wait_until(
             lambda: self.find_confirm(box=box),
             pre_action=action,
+            time_out=time_out,
             settle_time=settle_time,
             raise_if_not_found=raise_if_not_found,
         )
@@ -1071,13 +807,92 @@ class BaseNTETask(NTETaskExtMixin, BaseTask, CharUIMixin):  # type: ignore  # [l
         result = self.wait_until(
             lambda: not self.find_confirm(box=box),
             pre_action=lambda: self.operate_click(button, interval=1),
+            time_out=time_out,
             settle_time=settle_time,
             raise_if_not_found=raise_if_not_found,
         )
         return bool(result)
 
-    def find_confirm(self, box=None, threshold=0.7):
+    def find_confirm(self, box=None, threshold=0.7) -> Box:
         return self.lw_find_confirm(box=box, threshold=threshold)  # [lw] OCR认字防确认/取消调换
+
+    def find_confirms(self, box=None, threshold=0.7) -> list[Box]:
+        if not isinstance(box, Box):
+            box = self.main_viewport
+        match_feature: list[list[Box]] = []
+        for feature_name in [Labels.confirm_btn_1, Labels.confirm_btn_2]:
+            features = self.find_feature(feature_name=feature_name, box=box, threshold=threshold)
+            if features:
+                match_feature.append(features)
+
+        return vu.suppress_boxes(match_feature)
+
+    @staticmethod
+    def get_app_locale() -> str | None:
+        """get app locale."""
+
+        try:
+            return og.app.locale.name()
+        except Exception:
+            return None
+
+    def is_chinese(self) -> bool:
+        """判断当前应用语言是否为中文"""
+
+        return "zh" in self.get_app_locale()
+
+    def open_f1_domain_page(self):
+        self.openF1panel()
+
+        box = self.box_of_screen(0.785, 0.022, 0.814, 0.076, name="stamina_icon")
+        self.wait_until(
+            lambda: self.find_one(Labels.stamina_icon, box=box),
+            pre_action=lambda: self.operate_click(0.0563, 0.4924, interval=0.5),
+            settle_time=0.5,
+            time_out=10,
+        )
+
+    def _get_health_box(self, frame):
+        box = self.is_in_team(frame=frame)
+        if box is None:
+            return
+        return box.copy(x_offset=box.width, width_offset=box.width * 3)
+
+    def _get_health_snapshot(self, frame):
+        """截取当前出场角色血条颜色快照，用于快速判断切人是否已经发生。"""
+
+        health_box = self._get_health_box(frame)
+        if health_box is None:
+            return None
+        cropped = health_box.crop_frame(frame)
+        snapshot = iu.create_color_mask(cropped, char_health_color, to_bgr=False)
+        return snapshot
+
+    def is_health_changed(self, frame):
+        """判断当前出场血条是否已经不同于切人前快照。"""
+
+        def frame_processor(cv):
+            return iu.create_color_mask(cv, char_health_color, to_bgr=False)
+
+        snapshot = self.scene.health_snapshot()
+        if snapshot is None:
+            snapshot = self.scene.health_snapshot(image=self._get_health_snapshot(frame))
+            return False if snapshot is not None else None
+
+        health_box = self._get_health_box(frame)
+        if health_box is None:
+            return None
+        health_box = health_box.scale(1.1)
+        if self.find_one(
+            "health_snapshot",
+            template=snapshot,
+            box=health_box,
+            frame=frame,
+            frame_processor=frame_processor,
+            threshold=0.9,
+        ):
+            return False
+        return True
 
 
 def interac_mask(image):
@@ -1090,4 +905,11 @@ interac_pink_color = {
     "r": (197, 221),
     "g": (71, 78),
     "b": (119, 133),
+}
+
+
+char_health_color = {
+    "r": (160, 210),
+    "g": (160, 210),
+    "b": (160, 210),
 }

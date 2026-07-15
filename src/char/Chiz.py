@@ -1,20 +1,32 @@
-
 import re
 import time
 
 from src.char.BaseChar import BaseChar
+from src.combat.planner import FieldPreference, Role, RoleProfile
 
 
 class Chiz(BaseChar):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def do_perform(self):
-        self.wait_intro()
-        if self.click_ultimate():
-            self.perform_in_ult()
-        self.click_skill()
-    
+    def describe_role(self):
+        return RoleProfile(
+            role=Role.MAIN_DPS,
+            field_preference=FieldPreference.MAIN_DPS,
+        )
+
+    def combat_plan(self, context):
+        ultimate = self.click_ultimate_action()
+        skill = self.click_skill_action()
+
+        def entry():
+            ultimate_result = yield ultimate
+            if ultimate_result:
+                self.perform_in_ult()
+            yield skill
+
+        return self.plan(ultimate, skill, entry=entry)
+
     def perform_in_ult(self):
         box = self.task.box_of_screen(0.487, 0.775, 0.514, 0.798, name="percentage")
         self.task.wait_ocr(box=box, match=re.compile(r"-?\d+%", re.IGNORECASE))
@@ -25,13 +37,6 @@ class Chiz(BaseChar):
             if yellow_pct > red_pct:
                 self.send_skill_key()
             self.click_with_interval()
-            self.sleep(0.1)
-
-    def do_fast_perform(self):
-        self.wait_intro()
-        start = time.time()
-        while time.time() - start < 1:
-            self.send_skill_key()
             self.sleep(0.1)
 
 
