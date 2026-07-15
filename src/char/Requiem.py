@@ -111,7 +111,7 @@ class Requiem(MainDps):
     # 配置读不到时用; 0=关(永不为技能中断)。
     COMBO_BREAK_FOR_SKILL_RATIO = 0.5
     # 闪避反击: 触发闪避后强制平A的默认秒数(配置读不到时用)与点击间隔。
-    # 实际秒数在 4A 测试任务(RequiemJumpAttackTestTask)里可配, 便于实时调。
+    # 实际秒数在安魂曲战斗配置任务(RequiemCombatConfigTask)里可配, 便于实时调。
     DODGE_COUNTER_ATTACK = 0.3
     DODGE_COUNTER_INTERVAL = 0.1
     DODGE_KEY = "lshift"  # 游戏闪避键
@@ -226,7 +226,7 @@ class Requiem(MainDps):
         return self.classify_skill_visual() != "free"
 
     def engage_attack_duration(self):
-        """真技能前的起手平A时长, 读"安魂曲配置"任务(RequiemJumpAttackTestTask)的配置, 便于实时调。"""
+        """真技能前的起手平A时长, 读"安魂曲配置"任务(RequiemCombatConfigTask)的配置, 便于实时调。"""
         return self._read_jump_task_conf(self.CONF_ENGAGE_ATTACK, self.SKILL_ENGAGE_ATTACK)
 
     def engage_before_skill(self, duration):
@@ -247,11 +247,11 @@ class Requiem(MainDps):
         self.logger.info(f"requiem pre-skill engage: {n} normal attack(s) over {duration:.2f}s")
 
     def _jump_task(self):
-        """取"安魂曲配置"任务(RequiemJumpAttackTestTask)实例, 拿不到返回 None。
+        """取"安魂曲配置"任务(RequiemCombatConfigTask)实例, 拿不到返回 None。
         实战直接复用该任务的方案选择/参数构建方法, 保证与测试同一套逻辑同一份配置。"""
         try:
-            from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
-            return self.task.get_task_by_class(RequiemJumpAttackTestTask)
+            from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
+            return self.task.get_task_by_class(RequiemCombatConfigTask)
         except Exception as e:
             self.logger.debug(f"get jump task failed: {e}")
             return None
@@ -308,12 +308,12 @@ class Requiem(MainDps):
         self.task.sleep_check()
 
     def _read_jump_task_conf(self, key, default, task=None):
-        """读 4A 测试任务(RequiemJumpAttackTestTask)的某个数值配置(可实时调), 读不到用默认。
+        """读安魂曲战斗配置任务(RequiemCombatConfigTask)的某个数值配置(可实时调), 读不到用默认。
         传入 task 则复用它(本轮已抓好), 不再 get_task_by_class 重复扫任务表。"""
         try:
             if task is None:
-                from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
-                task = self.task.get_task_by_class(RequiemJumpAttackTestTask)
+                from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
+                task = self.task.get_task_by_class(RequiemCombatConfigTask)
             if task is not None:
                 return max(0.0, float(task.config.get(key, default)))
         except Exception as e:
@@ -322,18 +322,18 @@ class Requiem(MainDps):
 
     def _combo_combat_check_interval(self, task=None):
         """combo 中途脱战复查间隔(秒), 从"安魂曲配置"读, 可实时调; 0=关。默认 COMBO_COMBAT_CHECK_INTERVAL。"""
-        from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
+        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
         return self._read_jump_task_conf(
-            RequiemJumpAttackTestTask.CONF_COMBO_COMBAT_CHECK, self.COMBO_COMBAT_CHECK_INTERVAL, task=task)
+            RequiemCombatConfigTask.CONF_COMBO_COMBAT_CHECK, self.COMBO_COMBAT_CHECK_INTERVAL, task=task)
 
     def _combo_break_for_skill_ratio(self, task=None):
         """combo 为技能/大招让路的进度阈值(0~1): 进度<此值且技能/大招就绪就中断本轮 combo 去开。
         "禁用技能大招(测试)"开着时只站场, 直接返回 0 不让路。0=关(永不为技能中断)。"""
         if self._skills_disabled_for_test(task):
             return 0.0
-        from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
+        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
         return self._read_jump_task_conf(
-            RequiemJumpAttackTestTask.CONF_COMBO_BREAK_FOR_SKILL,
+            RequiemCombatConfigTask.CONF_COMBO_BREAK_FOR_SKILL,
             self.COMBO_BREAK_FOR_SKILL_RATIO, task=task)
 
     def _skill_or_ult_ready(self):
@@ -353,14 +353,14 @@ class Requiem(MainDps):
         self.task.check_combat()
 
     def _dodge_counter_duration(self):
-        from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
+        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
         return self._read_jump_task_conf(
-            RequiemJumpAttackTestTask.CONF_DODGE_COUNTER, self.DODGE_COUNTER_ATTACK)
+            RequiemCombatConfigTask.CONF_DODGE_COUNTER, self.DODGE_COUNTER_ATTACK)
 
     def _dodge_counter_combo_wait(self):
-        from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
+        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
         return self._read_jump_task_conf(
-            RequiemJumpAttackTestTask.CONF_DODGE_COMBO_WAIT, self.DODGE_COUNTER_COMBO_WAIT)
+            RequiemCombatConfigTask.CONF_DODGE_COMBO_WAIT, self.DODGE_COUNTER_COMBO_WAIT)
 
     def _active_dodge(self):
         """主动按一下游戏闪避键(lshift): 取消上一段(反击)后摇, 干净衔接后续 combo
@@ -538,14 +538,14 @@ class Requiem(MainDps):
         实测只有闪避能打断 a5, 跳A(空格+左键)打不断, 故这里按一下游戏闪避键(lshift)。
         delay: 免费技能→闪避 的等待(核心); hold: 闪避键按住; wait: 闪避后到后续的间隔。全读"安魂曲配置"可实时调。
         hold<=0 视为关闭(不打断)。与测试脚手架(_run_free_skill_combo_test)同一份配置。"""
-        from src.tasks.trigger.RequiemJumpAttackTestTask import RequiemJumpAttackTestTask
+        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
         task = self._jump_task()
         delay = self._read_jump_task_conf(
-            RequiemJumpAttackTestTask.CONF_FREE_BREAK_DELAY, self.FREE_BREAK_DELAY_MS, task=task)
+            RequiemCombatConfigTask.CONF_FREE_BREAK_DELAY, self.FREE_BREAK_DELAY_MS, task=task)
         hold = self._read_jump_task_conf(
-            RequiemJumpAttackTestTask.CONF_FREE_BREAK_JUMP_HOLD, self.FREE_BREAK_JUMP_HOLD_MS, task=task)
+            RequiemCombatConfigTask.CONF_FREE_BREAK_JUMP_HOLD, self.FREE_BREAK_JUMP_HOLD_MS, task=task)
         wait = self._read_jump_task_conf(
-            RequiemJumpAttackTestTask.CONF_FREE_BREAK_WAIT, self.FREE_BREAK_WAIT_MS, task=task)
+            RequiemCombatConfigTask.CONF_FREE_BREAK_WAIT, self.FREE_BREAK_WAIT_MS, task=task)
         if hold <= 0:
             return  # 关: 不打断, 沿用免费技能后的默认后续(会顺出 a5)
         io = _RequiemCombatIO(self)  # 普通 io: 就一下闪避, 不需中途复查

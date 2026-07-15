@@ -1,7 +1,7 @@
 """安魂曲 4A跳A combo 的唯一数据源与执行器。
 
-时序移植自 YiHuan-Macro 参考实现(方案一/方案二), 单位毫秒。宏测试任务
-(RequiemJumpAttackTestTask)和实战主C(Requiem)共用这里的时序与执行器, 改一处两边同步。
+时序移植自 YiHuan-Macro 参考实现(方案一/方案二), 单位毫秒。安魂曲战斗配置任务
+(RequiemCombatConfigTask)和实战主C(Requiem)共用这里的时序与执行器, 改一处两边同步。
 
 执行器 run_scheme_* 只依赖一个 io 适配器(鸭子类型), 由调用方提供不同的底层收发:
   - mouse_down()/mouse_up(): 左键按下/抬起

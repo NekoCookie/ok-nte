@@ -1,9 +1,13 @@
 import ctypes
+import os
+import shutil
 import time
 
 import win32api
 import win32con
 from ok import TriggerTask
+from ok.util.config import Config
+from ok.util.file import get_relative_path
 
 from src.combat import requiem_combo
 from src.tasks.BaseNTETask import BaseNTETask
@@ -34,7 +38,8 @@ class _MacroIO:
         time.sleep(ms / 1000.0)
 
 
-class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
+class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
+    LEGACY_CONFIG_NAME = "RequiemJumpAttackTestTask"
     CONF_TRIGGER_KEY = "触发按键"
     CHECK_INTERVAL = 0.03
     END_RECOVERY = 0.15
@@ -400,6 +405,21 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
         self._fk_was_down = False     # 闪避后首平A测试键的前态(边沿检测)
         self._dtk_was_down = False    # 闪避反击模拟测试键(7)的前态(边沿检测)
         self._fbk_was_down = False    # 免费技能后接combo测试键的前态(边沿检测)
+
+    def load_config(self):
+        """首次改名时沿用旧类名对应的用户配置，已有新配置时不覆盖。"""
+        folder = Config.config_folder
+        legacy_file = get_relative_path(folder, f"{self.LEGACY_CONFIG_NAME}.json")
+        current_file = get_relative_path(folder, f"{self.__class__.__name__}.json")
+        if not os.path.exists(current_file) and os.path.isfile(legacy_file):
+            try:
+                shutil.copyfile(legacy_file, current_file)
+                self.logger.info("migrated legacy Requiem config to the renamed task")
+            except OSError as e:
+                self.logger.warning(
+                    f"failed to migrate legacy Requiem config ({type(e).__name__})"
+                )
+        super().load_config()
 
     def run(self):
         if self._submitted:

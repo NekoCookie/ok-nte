@@ -284,7 +284,7 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
         """执行操作完成每日活跃度"""
         self.log_info("正在执行每日活跃度任务")
         if self.check_activity():
-            self.log_info("当前体力消耗或每日活跃度已达标，跳过每日活跃度任务")
+            self.log_info("当前体力消耗已达目标，跳过每日活跃度任务")
             return True
 
         used_stamina = self.info_get("used stamina")
@@ -395,7 +395,8 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
         self.info_set("used stamina", used_stamina)
         self.info_set("daily activity", daily_activity)
 
-        return used_stamina >= 180 or daily_activity >= 100
+        target_stamina = self.config.get(self.DAILY_STAMINA_TARGET, 180)
+        return used_stamina >= target_stamina
 
     def claim_activity_rewards(self, in_panel=False):
         """领取活跃度奖励"""

@@ -203,7 +203,7 @@ config = {
         ["src.tasks.trigger.SkipDialogTask", "SkipDialogTask"],
         ["src.tasks.trigger.FastTravelTask", "FastTravelTask"],
         ["src.tasks.trigger.HeistTask", "HeistTask"],
-        ["src.tasks.trigger.RequiemJumpAttackTestTask", "RequiemJumpAttackTestTask"],  # [lw]
+        ["src.tasks.trigger.RequiemCombatConfigTask", "RequiemCombatConfigTask"],  # [lw]
         ["src.tasks.trigger.NanallySuperJumpTask", "NanallySuperJumpTask"],  # [lw]
         ["src.tasks.trigger.AutoLoginTask", "AutoLoginTask"],
     ],
