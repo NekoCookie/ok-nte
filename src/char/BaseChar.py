@@ -118,6 +118,8 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
 
     def perform(self):
         """执行当前角色的主要战斗行动序列。"""
+        if self.LW_DO_PERFORM and hasattr(self, "do_perform"):  # [lw] 用户角色(定义了do_perform)走旧手感路径(src/lw/char_ext.py)
+            return self.lw_perform()  # [lw]
         self.last_perform = time.time()
         if self.has_intro:
             self.add_intro_motion_freeze(self.last_perform)

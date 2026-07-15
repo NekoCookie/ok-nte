@@ -99,7 +99,7 @@ class MainDps(BaseChar):
             return
 
         used_ultimate = self.click_ultimate()
-        used_skill = self.click_skill()[0]
+        used_skill = self.click_skill()  # 上游click_skill改返回bool(原三元组)
         if not used_ultimate and not used_skill:
             self.idle_normal_attack()
 
@@ -230,7 +230,7 @@ class BuffSupport(BaseChar):
         `ultimate_available` 检查很便宜(读一次图标),就绪就直接开、不就绪秒过。
         共享给 BuffSupport / 治疗 / 早雾,改一处全生效。"""
         used_ultimate = self.click_ultimate()
-        used_skill = self.click_skill(down_time=skill_down_time)[0]
+        used_skill = self.click_skill(down_time=skill_down_time)  # 上游click_skill改返回bool(原三元组)
         if used_skill:
             # 放技能即记日志(支援技能本来没日志) + 当场把技能CD锚上开始倒计时,
             # 不等后续OCR——否则放完即走、OCR没读到新CD时锚点会残留"就绪"撒谎。
@@ -259,7 +259,7 @@ class BuffSupport(BaseChar):
         deadline = enter_at + cd + 0.4
         while time.time() < deadline:
             if self.skill_available():
-                if self.click_skill(down_time=self.SKILL_DOWN_TIME)[0]:
+                if self.click_skill(down_time=self.SKILL_DOWN_TIME):  # 上游click_skill改返回bool
                     self.logger.info(
                         f"{type(self).__name__} 技能差{cd:.1f}s就绪, 等放完再走"
                     )

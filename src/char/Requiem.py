@@ -531,7 +531,7 @@ class Requiem(MainDps):
     def _try_land_real_skill(self):
         """放一次真技能并确认是否真进了**长CD**(= 放成功)。是→安排 overlap, 返回 True。
         还就绪(没按出去)/进短CD(被闪避打断的假成功)→ 返回 False, 交给 settle 补放/校准。"""
-        if not self.click_skill()[0]:
+        if not self.click_skill():  # 上游click_skill改返回bool(原三元组)
             return False
         if self._skill_still_available_after_input_mode_delay():
             return False  # 还就绪 = 没按出去
@@ -602,7 +602,7 @@ class Requiem(MainDps):
                 self.cast_real_skill()
                 return
             else:
-                if self.click_skill(time_out=1.0)[0]:
+                if self.click_skill(time_out=1.0):  # 上游click_skill改返回bool(原三元组)
                     # 免费技能:留场接平A,不触发下场。
                     self.logger.info("requiem FREE skill cast, staying on field")
                     self._free_skill_break_a5()  # 跳A打断拖沓低伤的第五下平A(a5), 不打那下
