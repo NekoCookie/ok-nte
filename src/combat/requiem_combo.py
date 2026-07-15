@@ -8,7 +8,12 @@
   - space_down()/space_up(): 空格按下/抬起
   - sleep_ms(ms): 精确等待(务必用 raw sleep, 别插帧截图, 否则打乱 combo 节奏)
   - should_continue() -> bool: 每一下之前查, False 则立即中止(松手/闪避/切人)
+
+诊断: _fill_attacks 返回 (实际点击数, 是否中止); run_scheme_double_4a 返回各阶段执行
+报告 dict(实际耗时/点击数/中止点), 供调用方打"程序到底打了什么"的排查日志。统计只在
+阶段边界计, 不进毫秒级点击循环, 不影响节奏。
 """
+import time
 
 # 方案一(安魂曲): 14 次逐点 (按住ms, 抬起ms), 然后左键+空格同时按住起跳、一起松、停一拍, 收尾补一下。
 SCHEME_A_CLICKS = [
@@ -59,19 +64,23 @@ def run_scheme_a(io):
 
 def _fill_attacks(io, dur_ms, down_ms, up_ms):
     """用连点节拍(按住down_ms/抬起up_ms)的左键普攻填满 dur_ms, 不空等。
-    余量用 raw sleep 补齐, 保证这段总时长精确=dur_ms。should_continue 变 False 立即返回。"""
+    余量用 raw sleep 补齐, 保证这段总时长精确=dur_ms。should_continue 变 False 立即返回。
+    返回 (实际点击数, 是否被中止)。"""
     cycle = max(1, down_ms + up_ms)
     t = 0
+    clicks = 0
     while t + cycle <= dur_ms:
         if not io.should_continue():
-            return
+            return clicks, True
         io.mouse_down()
         io.sleep_ms(down_ms)
         io.mouse_up()
         io.sleep_ms(up_ms)
         t += cycle
+        clicks += 1
     if t < dur_ms:
         io.sleep_ms(dur_ms - t)
+    return clicks, False
 
 
 # 双4a(声音闪避版): 声音触发闪避后 → 前段平A(打出第一个4a) → 跳A(空格+左键同按)代替第二次闪避、
@@ -86,20 +95,34 @@ SCHEME_D4_CLICK = (40, 8)    # 前后两段平A共用的左键(按住ms, 抬起m
 def run_scheme_double_4a(io, front_ms=None, jump_hold_ms=None, back_ms=None, click=None):
     """跑一次双4a(声音闪避版)。声音触发的那次闪避由调用方在前面完成, 这里只跑:
     前段平A(front_ms, 打第一个4a) → 跳A(空格+左键同按 jump_hold_ms, 代替闪避续段) → 后段平A(back_ms,
-    接第二个4a)。前后平A共用 click=(按住ms,抬起ms) 节拍。不传用模块默认, 便于做成配置项。"""
+    接第二个4a)。前后平A共用 click=(按住ms,抬起ms) 节拍。不传用模块默认, 便于做成配置项。
+    返回执行报告 dict: 前后段=(标称ms, 实际ms, 点击数, 是否中止),
+    jump=(标称ms, 实际ms, 是否执行)。"""
     down_ms, up_ms = SCHEME_D4_CLICK if click is None else click
     front_ms = SCHEME_D4_FRONT_MS if front_ms is None else front_ms
     jump_hold_ms = SCHEME_D4_JUMP_HOLD_MS if jump_hold_ms is None else jump_hold_ms
     back_ms = SCHEME_D4_BACK_MS if back_ms is None else back_ms
-    _fill_attacks(io, front_ms, down_ms, up_ms)   # 前段平A: 打出第一个4a
-    if not io.should_continue():
-        return
+    t0 = time.perf_counter()
+    front_clicks, front_aborted = _fill_attacks(io, front_ms, down_ms, up_ms)  # 前段: 打出第一个4a
+    front_actual = (time.perf_counter() - t0) * 1000
+    rep = {
+        "front": (front_ms, front_actual, front_clicks, front_aborted),
+        "jump": (jump_hold_ms, 0.0, False),
+        "back": (back_ms, 0.0, 0, False),
+    }
+    if front_aborted or not io.should_continue():
+        return rep
+    t0 = time.perf_counter()
     io.mouse_down()          # 跳A: 空格+左键同时按住, 代替第二次闪避
     io.space_down()
     io.sleep_ms(jump_hold_ms)
     io.mouse_up()
     io.space_up()
-    _fill_attacks(io, back_ms, down_ms, up_ms)    # 后段平A: 接第二个4a
+    rep["jump"] = (jump_hold_ms, (time.perf_counter() - t0) * 1000, True)
+    t0 = time.perf_counter()
+    back_clicks, back_aborted = _fill_attacks(io, back_ms, down_ms, up_ms)    # 后段: 接第二个4a
+    rep["back"] = (back_ms, (time.perf_counter() - t0) * 1000, back_clicks, back_aborted)
+    return rep
 
 
 # 方案四(光速4a, 时间驱动): 评论区实战版, 方案一的进化。左键以固定节拍连点到"跳A时机(ms)",
@@ -149,5 +172,3 @@ def run_scheme_lightspeed(io, click=None, jump_at_ms=None, jump_hold_ms=None, ju
     # 收尾: 不死等, 照方案二末尾那样继续左键普攻填满 jump_tail_ms(方案二跳后也照样点普攻,
     # 证明跳完继续点不会把跳A打没)。用连点节拍填, 顺势接落地/下一轮。
     _fill_attacks(io, jump_tail_ms, down_ms, up_ms)
-
-

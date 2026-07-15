@@ -216,7 +216,7 @@ class RequiemJumpAttackTestTask(BaseNTETask, TriggerTask):
                 self.CONF_INPUT_MODE: self.INPUT_BG,
                 # 闪避反击方式 + 双4a专属时序(选"闪双4a"才展开, 见 CONF_DODGE_STYLE 的 sub_configs)
                 self.CONF_DODGE_STYLE: self.STYLE_SCHEME_B,
-                self.CONF_D4_FRONT: 1950,
+                self.CONF_D4_FRONT: 1800,
                 self.CONF_D4_JUMP_HOLD: 20,
                 self.CONF_D4_BACK: 700,
                 self.CONF_D4_CLICK_HOLD: 20,

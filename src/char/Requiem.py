@@ -18,6 +18,7 @@ class _RequiemCombatIO:
 
     def __init__(self, char, dodge_react=False, watch_combat=False, task=None, round_seconds=0.0):
         self._char = char
+        self.abort_reason = None  # should_continue 判 False 时记录原因, 供执行报告排查
         # dodge_react=True(闪避反击/双4a专用): 反击在处理"当前这次"闪避, combat_interrupt 仍为它
         # 而 set, 不能拿它判断; 只在"来了新的闪避在排队"(has_pending_action)时中止, 让位保命。
         self._dodge_react = dodge_react
@@ -47,10 +48,15 @@ class _RequiemCombatIO:
 
     def should_continue(self):
         if not self._char.is_current_char:
+            self.abort_reason = "已不是当前角色"
             return False
         if self._dodge_react:
-            return not SoundCombatContext().has_pending_action()
+            if SoundCombatContext().has_pending_action():
+                self.abort_reason = "新声音闪避排队"
+                return False
+            return True
         if SoundCombatContext.should_interrupt_combat():
+            self.abort_reason = "声音打断信号"
             return False
         # 主站场 combo: 每隔 _combat_check_interval 复查一次脱战(刷新一帧 + 带去抖的 in_combat)。
         # 目标已死/打空则抛 NotInCombat 收手, 不再把这一整轮 raw-sleep combo 打完(对着尸体空打)。
@@ -69,6 +75,7 @@ class _RequiemCombatIO:
                         self._char.logger.info(
                             f"combo 进度 {progress:.0%}<{self._break_for_skill_ratio:.0%} 且技能/大招就绪, "
                             f"中断本轮 combo 去开")
+                        self.abort_reason = "让位技能/大招"
                         return False
         return True
 
@@ -160,6 +167,8 @@ class Requiem(MainDps):
         self._dodge_counter_at = 0.0  # 上次闪避反击出手时刻(供 combo 起手前等后摇)
         self._pending_double_4a = None   # 非None=双4a窗口外部分待续打(do_perform顶上处理)
         self._d4_front_left_ms = 0.0     # 双4a前段平A在窗口内打掉后剩余的时长(ms)
+        self._d4_seam_t = 0.0            # 窗口内结束时刻(单调时钟), 供诊断续打接缝
+        self._d4_last_end = 0.0           # 上轮双4a结束时刻(单调时钟), 供诊断 combo 交接
 
     def should_force_off_field(self):
         return time.time() < self.skill_off_field_until
@@ -274,6 +283,12 @@ class Requiem(MainDps):
         每一下之前查 should_continue, 闪避待执行/已切走即中止, 交回战斗循环让闪避随后落地。"""
         self.check_combat()  # 战斗已结束/切队则抛出, 不空打一轮
         self._wait_dodge_counter_recovery()  # 若紧接闪避反击, 先等其后摇再起 combo(顺序不乱)
+        # 诊断: 双4a刚结束就接站场combo时记录交接间隔(排查"双4a错位带歪后续连招"用)
+        d4_last_end = getattr(self, "_d4_last_end", 0.0)
+        if d4_last_end > 0:
+            d4_gap = time.perf_counter() - d4_last_end
+            if d4_gap < 3:
+                self.logger.info(f"双4a结束后 {d4_gap:.2f}s 起手站场combo")
         # 本轮抓一次"安魂曲配置"任务引用: 脱战复查间隔 / 让路阈值 / 一轮预计时长都复用它,
         # 不再各自 get_task_by_class(线性扫任务表)。拿不到就用方案一固定时长兜底。
         task = self._jump_task()
@@ -375,15 +390,21 @@ class Requiem(MainDps):
         front_ms = task._conf_num(task.CONF_D4_FRONT, 950)
         inside_ms = min(front_ms, self.DODGE_WINDOW_FILL_MS)
         io = _RequiemCombatIO(self, dodge_react=True)  # 窗口内新攻击排不进队, dodge_react 不会误停
+        t0 = time.perf_counter()
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
-            requiem_combo._fill_attacks(io, inside_ms,
+            clicks, aborted = requiem_combo._fill_attacks(io, inside_ms,
                                         task._conf_num(task.CONF_D4_CLICK_HOLD, 40),
                                         task._conf_num(task.CONF_D4_CLICK_GAP, 8))
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
+        self.logger.info(
+            f"双4a窗口内报告: 标称{inside_ms:.0f}ms 实际{(time.perf_counter() - t0) * 1000:.0f}ms "
+            f"{clicks}点"
+            f"{f' 中止({io.abort_reason})' if aborted else ''}"
+        )
         self._d4_front_left_ms = max(0.0, front_ms - inside_ms)
-        self._d4_seam_t = time.time()      # 记窗口内结束时刻, 供 do_perform 续打时测接缝延迟
+        self._d4_seam_t = time.perf_counter()  # 记窗口内结束时刻, 供续打测接缝延迟
         self._pending_double_4a = task     # 交给 do_perform 顶上续打
         self._dodge_counter_at = 0.0
 
@@ -395,14 +416,16 @@ class Requiem(MainDps):
         self._pending_double_4a = None
         if task is None:
             return
-        seam_ms = (time.time() - getattr(self, "_d4_seam_t", time.time())) * 1000
+        seam_ms = (time.perf_counter() - self._d4_seam_t) * 1000
         self.logger.info(f"安魂曲双4a: 窗口内→续打 接缝延迟 {seam_ms:.0f}ms")
         p = dict(task._scheme_d4_params())
         p["front_ms"] = getattr(self, "_d4_front_left_ms", 0.0)  # 前段只打剩余(前~1秒已在窗口内打过)
         io = _RequiemCombatIO(self)  # 普通io: 新声音即中止(和 combo 一致)
+        rep = None
+        tail_dodge = tail_clicks = tail_aborted = None
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
-            requiem_combo.run_scheme_double_4a(io, **p)  # 前段剩余 → 跳A → 后段
+            rep = requiem_combo.run_scheme_double_4a(io, **p)  # 前段剩余 → 跳A → 后段
             if io.should_continue():
                 if task.config.get(task.CONF_D4_TAIL_DODGE, task.D4_DODGE_W) == task.D4_DODGE_JUMP:
                     io.space_down()
@@ -410,16 +433,44 @@ class Requiem(MainDps):
                     io.sleep_ms(task._conf_num(task.CONF_LS_JUMP_HOLD, 18))
                     io.mouse_up()
                     io.space_up()
+                    tail_dodge = "跳+左键"
                 else:
                     self._directional_dodge()
-                requiem_combo._fill_attacks(
+                    tail_dodge = "W+闪避"
+                tail_clicks, tail_aborted = requiem_combo._fill_attacks(
                     io, task._conf_num(task.CONF_D4_TAIL_FILL, 350),
                     task._conf_num(task.CONF_LS_CLICK_HOLD, 40),
                     task._conf_num(task.CONF_LS_CLICK_GAP, 8))
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
+        self._log_d4_outside_report(rep, io, tail_dodge, tail_clicks, tail_aborted)
+        self._d4_last_end = time.perf_counter()  # 供正常combo起手时记录交接间隔
         self.task.sleep_check()  # 被新声音打断时让排队的新闪避即时落地(和 combo_attack 同理)
-        self.logger.info("安魂曲闪避反击(双4a): 窗口内前段 + 主循环续打")
+
+    def _log_d4_outside_report(self, rep, io, tail_dodge, tail_clicks, tail_aborted):
+        """续打执行报告: 各阶段标称/实际耗时/点击数/中止点。用于区分"程序没打完(有中止原因)"、
+        "时序被拖长(实际耗时远超标称=系统调度/卡顿, 游戏内连段窗口错过)"、
+        "程序完整但游戏没吃(报告全正常, 画面却没出第二个4a → 游戏侧丢输入/延迟)"。"""
+        def seg(name, r):
+            nominal, actual, clicks, aborted = r
+            s = f"{name}{nominal:.0f}/{actual:.0f}ms {clicks}点"
+            return s + ("(中止)" if aborted else "")
+
+        def jump_seg(r):
+            nominal, actual, executed = r
+            return f"跳A{nominal:.0f}/{actual:.0f}ms" if executed else "跳A×"
+
+        if rep is None:
+            self.logger.info("双4a续打报告: 执行器未返回(异常提前退出)")
+            return
+        parts = [seg("前段", rep["front"]), jump_seg(rep["jump"]), seg("后段", rep["back"])]
+        if tail_dodge is not None:
+            parts.append(f"尾闪{tail_dodge}")
+            parts.append(f"尾段{tail_clicks}点" + ("(中止)" if tail_aborted else ""))
+        else:
+            parts.append("尾闪×")
+        reason = io.abort_reason or "无"
+        self.logger.info(f"双4a续打报告: {' | '.join(parts)} | 中止原因={reason}")
 
     def on_dodge_counter(self):
         """触发闪避后按"安魂曲配置"的闪避反击方式走对应流程(与测试同一份配置):
@@ -631,3 +682,6 @@ class Requiem(MainDps):
         self.skill_off_field_until = 0.0
         self._dodge_counter_at = 0.0
         self._pending_double_4a = None
+        self._d4_front_left_ms = 0.0
+        self._d4_seam_t = 0.0
+        self._d4_last_end = 0.0
