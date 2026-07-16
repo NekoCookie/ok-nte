@@ -193,6 +193,7 @@ config = {
         ["src.tasks.WhirlwindTask", "WhirlwindTask"],
         ["src.tasks.DSDFarmTask", "DSDFarmTask"],
         ["src.tasks.GiftTask", "GiftTask"],
+        ["src.tasks.SwitchAccountTask", "SwitchAccountTask"],  # [lw]
         ["ok", "DiagnosisTask"],
         # ["src.tasks.custom.TeamScannerTask", "TeamScannerTask"],
         # ["src.tasks.DebugCharTask", "DebugCharTask"],
