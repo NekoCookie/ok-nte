@@ -1,5 +1,8 @@
-# [lw] BaseNTETask 的用户扩展: find_confirm 用 OCR 认字挑真确认键,
-# 防游戏更新调换确认/取消位置或配色。接线: BaseNTETask.find_confirm 一行委托到这里。
+# [lw] BaseNTETask 的用户扩展:
+# - find_confirm 用 OCR 认字挑真确认键, 防游戏更新调换确认/取消位置或配色
+#   (接线: BaseNTETask.find_confirm 一行委托到这里)
+# - lw_daily_account_cycle: DailyTask 跑完自动换号再跑一轮的钩子
+#   (接线: DailyTask.run 一行调用)
 import re
 from typing import TYPE_CHECKING
 
@@ -74,6 +77,23 @@ class NTETaskExtMixin(_TaskProxy):
             logger.warning("find_confirm all candidates look like cancel")
             return None
         return unknown[0]
+
+    def lw_daily_account_cycle(self):
+        """DailyTask 收尾钩子: "切换账号"任务开了随日常轮换开关时, 自动换号再跑一轮日常。
+
+        只在 DailyTask.run 的 do_run 正常结束后调用一次; 第二轮直接调 do_run,
+        不再经过钩子, 天然不会无限循环。换号目标固定"另一个账号"(不读目标UID配置),
+        两个账号隔天轮流先跑也能对上。
+        """
+        # 局部 import: SwitchAccountTask → BaseNTETask → 本模块, 顶部引会循环
+        from src.tasks.SwitchAccountTask import SwitchAccountTask, switch_account
+
+        switch = self.get_task_by_class(SwitchAccountTask)
+        if not switch or not switch.config.get(SwitchAccountTask.CONF_CYCLE_WITH_DAILY):
+            return
+        self.log_info("日常任务完成, 自动切换账号再跑一轮", notify=True)
+        switch_account(self)
+        self.do_run()
 
     def _read_confirm_btn_text(self, btn):
         # 模板只是按钮端头, 文字在旁边, 向左右各扩2倍宽; 越界box会被crop_image

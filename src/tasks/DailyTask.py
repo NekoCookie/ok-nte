@@ -96,6 +96,7 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
         super().run()
         try:
             self.do_run()
+            self.lw_daily_account_cycle()  # [lw] 切换账号任务开了轮换开关时: 换号再跑一轮
         except TaskDisabledException:
             pass
         except Exception as e:

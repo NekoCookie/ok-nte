@@ -182,6 +182,8 @@ config = {
     "onetime_tasks": [  # 用户点击触发的任务
         ["src.tasks.LauncherTask", "LauncherTask"],
         ["src.tasks.DailyTask", "DailyTask"],
+        ["src.tasks.SwitchAccountTask", "SwitchAccountTask"],  # [lw] 显示在日常任务下方
+
         ["src.tasks.CoffeeTask", "CoffeeTask"],
         ["src.tasks.FishingTask", "FishingTask"],
         ["src.tasks.AnomalyTask", "AnomalyTask"],
@@ -193,7 +195,6 @@ config = {
         ["src.tasks.WhirlwindTask", "WhirlwindTask"],
         ["src.tasks.DSDFarmTask", "DSDFarmTask"],
         ["src.tasks.GiftTask", "GiftTask"],
-        ["src.tasks.SwitchAccountTask", "SwitchAccountTask"],  # [lw]
         ["ok", "DiagnosisTask"],
         # ["src.tasks.custom.TeamScannerTask", "TeamScannerTask"],
         # ["src.tasks.DebugCharTask", "DebugCharTask"],
