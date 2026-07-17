@@ -108,6 +108,8 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
         self.ensure_main()
         self.log_info("开始执行日常任务")
 
+        # [lw] 顺序调整: 做任务类(约会/家具/送礼)提到领奖类(活跃度/环期)之前,
+        # 防止送礼等触发的环期周任务在领奖之后才完成导致当天漏领
         tasks: List[Tuple[str, bool, Callable]] = [
             (
                 self.CONF_CLAIM_MAIL,
@@ -119,16 +121,6 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
                 self.CONF_COMPLETE_DAILY,
                 self._task_enabled(self.CONF_COMPLETE_DAILY, True),
                 self.complete_daily_activities,
-            ),
-            (
-                self.CONF_CLAIM_ACTIVITY,
-                self._task_enabled(self.CONF_CLAIM_ACTIVITY, True),
-                self.claim_activity_rewards,
-            ),
-            (
-                self.CONF_CLAIM_BP,
-                self._task_enabled(self.CONF_CLAIM_BP, True),
-                self.claim_battle_pass_rewards,
             ),
             (
                 self.CONF_CINEMA_DATE,
@@ -144,6 +136,16 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
                 self.CONF_GIFT,
                 self._task_enabled(self.CONF_GIFT, False),
                 self.run_gift_task,
+            ),
+            (
+                self.CONF_CLAIM_ACTIVITY,
+                self._task_enabled(self.CONF_CLAIM_ACTIVITY, True),
+                self.claim_activity_rewards,
+            ),
+            (
+                self.CONF_CLAIM_BP,
+                self._task_enabled(self.CONF_CLAIM_BP, True),
+                self.claim_battle_pass_rewards,
             ),
         ]
 
