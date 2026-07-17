@@ -45,24 +45,31 @@ class TestSwitchAccountLogic(unittest.TestCase):
         self.assertIsNone(pick_target(rows, "999999999", "167365281"))
 
 
-class FakeTask:
-    """只带 select_account 用到的能力: OCR按帧序列出结果, 记录点击。"""
+class FakePanel:
+    """read_uids 按帧序列出结果, 记录点击。"""
 
-    def __init__(self, ocr_frames):
+    def __init__(self, uid_frames):
         self.clicks = []
-        self.info_messages = []
-        self._frames = list(ocr_frames)
+        self._frames = list(uid_frames)
 
-    def ocr(self, box=None, match=None):
+    def read_uids(self):
         if len(self._frames) > 1:
             return self._frames.pop(0)
         return self._frames[0]
 
-    def box_of_screen(self, *args, **kwargs):
-        return None
+    def click(self, rx, ry):
+        self.clicks.append((rx, ry))
 
-    def operate_click(self, x, y=None, **kwargs):
-        self.clicks.append(x if y is None else (x, y))
+    def click_box(self, box):
+        self.clicks.append(box)
+
+
+class FakeTask:
+    def __init__(self):
+        self.info_messages = []
+
+    def sleep(self, seconds):
+        pass
 
     def wait_until(self, predicate, **kwargs):
         for _ in range(5):
@@ -78,31 +85,31 @@ class FakeTask:
 class TestSelectAccountFlow(unittest.TestCase):
     def test_select_expands_clicks_row_and_verifies(self):
         row_a, row_b = FakeBox("167365281"), FakeBox("167250072")
-        task = FakeTask(
+        panel = FakePanel(
             [
                 [row_a],  # 折叠态: 当前账号A
                 [row_a, row_b],  # 点箭头后展开
                 [row_b],  # 点B后收起显示B
             ]
         )
-        chosen = select_account(task, "")
+        chosen = select_account(FakeTask(), panel, "")
         self.assertEqual(chosen, "167250072")
         # 第一次点下拉箭头(坐标), 第二次点账号B(box)
-        self.assertEqual(task.clicks[0], DROPDOWN_ARROW)
-        self.assertIs(task.clicks[1], row_b)
+        self.assertEqual(panel.clicks[0], DROPDOWN_ARROW)
+        self.assertIs(panel.clicks[1], row_b)
 
     def test_select_skips_when_target_already_current(self):
         row_b = FakeBox("167250072")
-        task = FakeTask([[row_b]])
-        chosen = select_account(task, "167250072")
+        panel = FakePanel([[row_b]])
+        chosen = select_account(FakeTask(), panel, "167250072")
         self.assertEqual(chosen, "167250072")
-        self.assertEqual(task.clicks, [])
+        self.assertEqual(panel.clicks, [])
 
     def test_select_raises_when_target_not_in_list(self):
         row_a, row_b = FakeBox("167365281"), FakeBox("167250072")
-        task = FakeTask([[row_a], [row_a, row_b]])
+        panel = FakePanel([[row_a], [row_a, row_b]])
         with self.assertRaises(RuntimeError):
-            select_account(task, "999999999")
+            select_account(FakeTask(), panel, "999999999")
 
 
 class TestDailyAccountCycle(unittest.TestCase):
