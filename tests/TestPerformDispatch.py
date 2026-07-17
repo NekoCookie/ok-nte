@@ -4,7 +4,10 @@
 combat_planner.perform_current_char, 不再调 do_perform——安魂曲免费技/闪避接combo/
 站场combo/"禁用技能大招"开关全部被静默绕过, 且测试全绿(当时没有测试断言这条调用链)。
 本文件锁住修复后的分发语义, 上游再动 perform 结构时这里会先红:
-- 定义了 do_perform 的用户角色(Requiem/MainDps系) → 走 lw_perform → do_perform;
+- 模板体系成立(主C模板+辅助模板同队)时, 用户角色 → 走 lw_perform → do_perform;
+- 模板体系不成立(主C没辅助配合/辅助没主C)时 → 整体退回上游 planner:
+  安魂曲主C用 RU 安魂曲(Lacrimosa)的角色画像与出招计划, 早雾辅助用 RU 早雾(Sakiri);
+  (旧回退 super().do_perform()/Sakiri.do_perform 已随上游 planner 化删除, 是 AttributeError)
 - 未定义 do_perform 的上游内置角色 → 走 planner(perform_current_char);
 - LW_DO_PERFORM=False 对照开关 → 用户角色也回落 planner。
 """
@@ -16,11 +19,14 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.char.BaseChar import BaseChar
-from src.char.MainDps import MainDps
+from src.char.Lacrimosa import Lacrimosa
+from src.char.MainDps import BuffSupport, MainDps, SakiriBuffSupport
 from src.char.Requiem import Requiem
+from src.char.Sakiri import Sakiri
+from src.combat.planner import Role
 
 
-def make_char(cls):
+def make_char(cls, teammates=()):
     c = cls.__new__(cls)
     c.index = 0
     c.has_intro = False
@@ -28,27 +34,59 @@ def make_char(cls):
     c.planner_handles_arc = False
     c.logger = mock.MagicMock()
     c.task = mock.MagicMock()
+    c.task.chars = [c, *teammates]
     # 两条路径的公共出口都在实例上 mock 掉, 只验证分发走向
     c.switch_next_char = mock.MagicMock()
     c.click_arc = mock.MagicMock()
     return c
 
 
+def support_template():
+    return BuffSupport.__new__(BuffSupport)
+
+
+def main_dps_template():
+    return MainDps.__new__(MainDps)
+
+
 class TestPerformDispatch(unittest.TestCase):
-    def test_requiem_perform_reaches_do_perform(self):
-        c = make_char(Requiem)
+    def test_requiem_in_system_perform_reaches_do_perform(self):
+        c = make_char(Requiem, teammates=[support_template()])
         c.do_perform = mock.MagicMock()
         c.perform()
         c.do_perform.assert_called_once()
         c.task.combat_planner.perform_current_char.assert_not_called()
         c.switch_next_char.assert_called_once()
 
-    def test_main_dps_perform_reaches_do_perform(self):
-        c = make_char(MainDps)
+    def test_requiem_without_support_template_falls_back_to_planner(self):
+        # 体系外(如安魂曲+娜娜莉): 走上游 planner, 不进 do_perform
+        c = make_char(Requiem)
+        c.do_perform = mock.MagicMock()
+        c.perform()
+        c.do_perform.assert_not_called()
+        c.task.combat_planner.perform_current_char.assert_called_once_with(c)
+
+    def test_main_dps_in_system_perform_reaches_do_perform(self):
+        c = make_char(MainDps, teammates=[support_template()])
         c.do_perform = mock.MagicMock()
         c.perform()
         c.do_perform.assert_called_once()
         c.task.combat_planner.perform_current_char.assert_not_called()
+
+    def test_support_with_main_dps_perform_reaches_do_perform(self):
+        c = make_char(BuffSupport, teammates=[main_dps_template()])
+        c.do_perform = mock.MagicMock()
+        c.perform()
+        c.do_perform.assert_called_once()
+        c.task.combat_planner.perform_current_char.assert_not_called()
+
+    def test_support_without_main_dps_falls_back_to_planner(self):
+        # 旧回退 super().do_perform() 已断(BaseChar.do_perform 被上游删除),
+        # 新机制在 perform 分发层就退回 planner, 不再经过 do_perform。
+        c = make_char(BuffSupport)
+        self.assertFalse(c.lw_use_do_perform())
+        c.perform()
+        c.task.combat_planner.perform_current_char.assert_called_once_with(c)
 
     def test_builtin_char_without_do_perform_uses_planner(self):
         self.assertFalse(
@@ -62,12 +100,52 @@ class TestPerformDispatch(unittest.TestCase):
         c.switch_next_char.assert_called_once()
 
     def test_lw_do_perform_off_falls_back_to_planner(self):
-        c = make_char(Requiem)
+        c = make_char(Requiem, teammates=[support_template()])
         c.do_perform = mock.MagicMock()
         with mock.patch.object(Requiem, "LW_DO_PERFORM", False):
             c.perform()
         c.do_perform.assert_not_called()
         c.task.combat_planner.perform_current_char.assert_called_once_with(c)
+
+
+class TestTemplateSystemFallback(unittest.TestCase):
+    """体系外委托 RU 模板的具体走向。"""
+
+    def test_requiem_out_of_system_role_is_main_dps(self):
+        c = make_char(Requiem)
+        self.assertEqual(c.describe_role().role, Role.MAIN_DPS)
+
+    def test_requiem_in_system_role_keeps_default(self):
+        c = make_char(Requiem, teammates=[support_template()])
+        self.assertEqual(c.describe_role().role, Role.SUB_DPS)
+
+    def test_requiem_out_of_system_plan_delegates_to_lacrimosa(self):
+        c = make_char(Requiem)
+        with mock.patch.object(Lacrimosa, "combat_plan", return_value="ru-plan") as m:
+            self.assertEqual(c.combat_plan("ctx"), "ru-plan")
+        m.assert_called_once_with(c, "ctx")
+
+    def test_requiem_in_system_plan_keeps_default(self):
+        c = make_char(Requiem, teammates=[support_template()])
+        with mock.patch.object(Lacrimosa, "combat_plan") as ru, mock.patch.object(
+            BaseChar, "combat_plan", return_value="default-plan"
+        ):
+            self.assertEqual(c.combat_plan("ctx"), "default-plan")
+        ru.assert_not_called()
+
+    def test_sakiri_support_without_main_dps_delegates_to_ru_sakiri(self):
+        c = make_char(SakiriBuffSupport)
+        with mock.patch.object(Sakiri, "combat_plan", return_value="ru-sakiri") as m:
+            self.assertEqual(c.combat_plan("ctx"), "ru-sakiri")
+        m.assert_called_once_with(c, "ctx")
+
+    def test_sakiri_support_with_main_dps_keeps_default_plan(self):
+        c = make_char(SakiriBuffSupport, teammates=[main_dps_template()])
+        with mock.patch.object(Sakiri, "combat_plan") as ru, mock.patch.object(
+            BaseChar, "combat_plan", return_value="default-plan"
+        ):
+            self.assertEqual(c.combat_plan("ctx"), "default-plan")
+        ru.assert_not_called()
 
 
 if __name__ == "__main__":

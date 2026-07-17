@@ -18,6 +18,20 @@ class MainDps(BaseChar):
     def _is_support(self, char):
         return char is not None and getattr(char, "role", Role.DEFAULT) != Role.MAIN_DPS
 
+    def team_has_support_template(self):
+        """主C模板体系是否成立: 队里有辅助模板(BuffSupport系, 含治疗/早雾)。
+        体系外(队友是娜娜莉等上游原生角色)时, 主C模板的让位/资源判定全部失去对象,
+        planner 还会把本角色当 sub_dps 评分, 导致乒乓空切——此时应整体退回上游打法。"""
+        return any(
+            isinstance(char, BuffSupport)
+            for char in self.task.chars
+            if char is not None and char is not self
+        )
+
+    def lw_use_do_perform(self):
+        # 体系外整体退回上游 planner(BaseChar.combat_plan 默认打法)
+        return self.team_has_support_template()
+
     def _has_resource(self, char):
         if char is None:
             return False
@@ -272,9 +286,16 @@ class BuffSupport(BaseChar):
         self.task.diag_cast(self.index, enter_at, "辅助技能等待→超时仍没就绪, 放弃")
         return False
 
+    def lw_use_do_perform(self):
+        # 无主C体系时整体退回上游 planner。旧版此场景回退 super().do_perform(),
+        # 上游 planner 化删除了 BaseChar.do_perform, 那条路已是 AttributeError。
+        return self.team_has_main_dps()
+
     def do_perform(self):
         if not self.team_has_main_dps():
-            super().do_perform()
+            # 正常到不了这里(lw_use_do_perform=False 时 perform 直接走 planner);
+            # 战斗中途队伍识别变化的极端时序兜底: 平A填场, 别调已被上游删除的 BaseChar.do_perform。
+            self.continues_normal_attack(0.2)
             return
 
         self.wait_intro()
@@ -374,12 +395,18 @@ class SakiriBuffSupport(BuffSupport):
     SKILL_DOWN_TIME = 0.25
     SKILL_COOLDOWN = 16.0  # 早雾技能CD 16s
 
-    def do_perform(self):
+    def combat_plan(self, context):
         if not self.team_has_main_dps():
-            # 无主C体系:用 RU 的早雾(Sakiri)逻辑(辅助模板此处是退化成通用 BaseChar)。
+            # 无主C体系(经 lw_use_do_perform 退回 planner)时: 用 RU 早雾(Sakiri)的
+            # 出招计划, 而不是 BaseChar 通用版。旧版是 Sakiri.do_perform(self),
+            # 该方法已随上游 planner 化删除, 对应物即 combat_plan。
             from src.char.Sakiri import Sakiri
 
-            Sakiri.do_perform(self)
-            return
+            return Sakiri.combat_plan(self, context)
+        # 有主C体系: 保持 BaseChar 默认(planner 仅用它做切换评分, perform 走 do_perform)
+        return super().combat_plan(context)
+
+    def do_perform(self):
         # 有主C体系:走辅助模板逻辑;长按由 SKILL_DOWN_TIME=0.25 自动生效,无需重写出招。
+        # (无主C体系由 lw_use_do_perform=False 退回 planner, 不经过这里, 见 BuffSupport)
         super().do_perform()

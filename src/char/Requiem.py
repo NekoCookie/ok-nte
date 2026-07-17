@@ -170,6 +170,24 @@ class Requiem(MainDps):
         self._d4_seam_t = 0.0            # 窗口内结束时刻(单调时钟), 供诊断续打接缝
         self._d4_last_end = 0.0           # 上轮双4a结束时刻(单调时钟), 供诊断 combo 交接
 
+    def describe_role(self):
+        # 无辅助体系(队友是娜娜莉等上游原生角色)时: 用 RU 安魂曲(Lacrimosa)的角色画像
+        # (MAIN_DPS), 否则 planner 按 BaseChar 默认把本角色当 sub_dps, 主从关系全反
+        # (实测: 与娜娜莉双排时 planner 乒乓空切, 双方都放不出招)。体系内维持现状。
+        if not self.team_has_support_template():
+            from src.char.Lacrimosa import Lacrimosa
+
+            return Lacrimosa.describe_role(self)
+        return super().describe_role()
+
+    def combat_plan(self, context):
+        # 无辅助体系(经 lw_use_do_perform 退回 planner)时: 整体用 RU 安魂曲的出招计划。
+        if not self.team_has_support_template():
+            from src.char.Lacrimosa import Lacrimosa
+
+            return Lacrimosa.combat_plan(self, context)
+        return super().combat_plan(context)
+
     def should_force_off_field(self):
         return time.time() < self.skill_off_field_until
 

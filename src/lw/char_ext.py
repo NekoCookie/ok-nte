@@ -39,6 +39,13 @@ class CharExtMixin(_CharProxy):
     # 超时,导致角色卡住十几秒不切人。这第二段只用来算 freeze 时长,缩短它纯止血、不影响放招。
     ULTIMATE_UNFREEZE_TIMEOUT = 4
 
+    def lw_use_do_perform(self):
+        """perform 分发判定: True 走 lw_perform→do_perform(用户旧手感路径),
+        False 走上游 planner(combat_planner.perform_current_char)。
+        默认=定义了 do_perform 就走用户路径; 模板角色覆写此方法实现
+        "模板体系不成立时整体退回上游打法"(主C模板没辅助配合/辅助模板没主C)。"""
+        return hasattr(self, "do_perform")
+
     def lw_perform(self):
         """perform 的旧版(merge-base 46e9225)流程, 保住用户角色的 do_perform 手感路径
         (免费技留场/闪避接combo/站场combo/禁用技能大招测试开关等)。上游 planner 化后
