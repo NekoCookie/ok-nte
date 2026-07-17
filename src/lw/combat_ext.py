@@ -894,6 +894,20 @@ class CombatExtMixin(_TaskProxy):
             )
             return True
 
+        # [lw] 减员诊断: dump 各槽头像匹配分, 事后区分"擦边压低=抖动误判"还是"真减员"。
+        # 目前减员无二次确认(对比扩员有 is_reliable_team_expansion), 抖动会直接 reload;
+        # 先靠日志实证抖动频率与成因, 再决定是否加减员防抖。
+        if count < self.team_size:
+            try:
+                scores = self.lw_dump_char_slot_scores()
+                fmt = ", ".join(f"槽{i + 1}={s:.2f}" for i, s in enumerate(scores))
+                self.log_info(
+                    f"team shrink diag {self.team_size} -> {count} @current{current_index}, "
+                    f"各槽头像匹配分[{fmt}] (>=0.70命中算有人; 0.00=低于0.30)"
+                )
+            except Exception as e:
+                self.log_info(f"team shrink diag failed: {e}")
+
         self.log_info(f"team size changed during combat {self.team_size} -> {count}, reload chars")
         return self._reload_combat_team()
 

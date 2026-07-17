@@ -33,6 +33,38 @@ class CharUIExtMixin(_TaskProxy):
     ULT_DIAMOND_LAP_PRESENT = 17000
     ULT_DIAMOND_LAP_ABSENT = 8000
 
+    def lw_dump_char_slot_scores(self, threshold_floor=0.3):
+        """诊断: 逐个头像槽位跑模板匹配, 返回每槽位跨对比度的最佳匹配分数(含未命中的)。
+
+        正式识别 _multi_stage_char_match 阈值 0.7、命中即算该槽有人; 队伍人数抖动(少
+        识别一人)时用它看缺失槽位的实际分数, 区分两种情况:
+          - 擦边(0.6x): 头像还在但被大招演出/遮挡/画面变化瞬时压到阈值下 → 抖动误判, 不该 reload
+          - 彻底没有(返回 0.0 = <threshold_floor): 头像真消失(倒地/离场) → 真减员
+        参数与 _multi_stage_char_match 完全一致(mask/对比度档/horizontal_variance), 保证分数可比。
+        只在检测到人数变化那一刻调一次(罕见), 4 槽×最多4档模板匹配的开销可接受。
+        """
+        from src.utils import image_utils as iu
+
+        scores = []
+        for i in range(4):
+            best = 0.0
+            for c_val in (0, 30, 60, 90):
+
+                def process(image, current_c=c_val):
+                    return iu.adjust_lightness_contrast_lab(image, brightness=0, contrast=current_c)
+
+                res = self.find_one(
+                    f"char_{i + 1}_text",
+                    threshold=threshold_floor,
+                    frame_processor=process,
+                    mask_function=iu.mask_outside_white_rect,
+                    horizontal_variance=0.005,
+                )
+                if res and res.confidence > best:
+                    best = res.confidence
+            scores.append(best)
+        return scores
+
     def get_ultimate_diamond_box(self, index: int) -> "Box":
         """第 index 个角色头像右侧"大招就绪菱形"格的区域框(随分辨率缩放、跟 UI 偏移)。"""
         box = self.box_of_screen_scaled(
