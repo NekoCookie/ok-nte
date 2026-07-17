@@ -82,8 +82,9 @@ class NTETaskExtMixin(_TaskProxy):
         """DailyTask 收尾钩子: "切换账号"任务开了随日常轮换开关时, 自动换号再跑一轮日常。
 
         只在 DailyTask.run 的 do_run 正常结束后调用一次; 第二轮直接调 do_run,
-        不再经过钩子, 天然不会无限循环。换号目标固定"另一个账号"(不读目标UID配置),
-        两个账号隔天轮流先跑也能对上。
+        不再经过钩子, 天然不会无限循环。换号目标固定"另一个账号"(不读目标UID配置)。
+        开了"切回原账号"开关时, 第二轮正常跑完后按第一次切号记下的原UID切回;
+        第二轮异常则不切回(异常态下盲切可能更糟, 交给用户处理)。
         """
         # 局部 import: SwitchAccountTask → BaseNTETask → 本模块, 顶部引会循环
         from src.tasks.SwitchAccountTask import SwitchAccountTask, switch_account
@@ -92,8 +93,12 @@ class NTETaskExtMixin(_TaskProxy):
         if not switch or not switch.config.get(SwitchAccountTask.CONF_CYCLE_WITH_DAILY):
             return
         self.log_info("日常任务完成, 自动切换账号再跑一轮", notify=True)
-        switch_account(self)
+        _, original = switch_account(self)
         self.do_run()
+        if switch.config.get(SwitchAccountTask.CONF_SWITCH_BACK):
+            # original 为 None(面板打开时已展开, 没读到折叠态原UID)时退化为"切到另一个"
+            self.log_info(f"第二轮日常完成, 切回原账号 {original or '<另一个账号>'}", notify=True)
+            switch_account(self, original or "")
 
     def _read_confirm_btn_text(self, btn):
         # 模板只是按钮端头, 文字在旁边, 向左右各扩2倍宽; 越界box会被crop_image

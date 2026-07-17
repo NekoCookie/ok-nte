@@ -45,6 +45,7 @@ SDK_CLASS_HINT = "QWindowToolSaveBitsOwnDC"
 class SwitchAccountTask(NTEOneTimeTask, BaseNTETask):
     CONF_TARGET_UID = "目标账号UID"
     CONF_CYCLE_WITH_DAILY = "日常跑完自动换号再跑一轮"
+    CONF_SWITCH_BACK = "第二轮跑完切回原账号"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -58,12 +59,22 @@ class SwitchAccountTask(NTEOneTimeTask, BaseNTETask):
             {
                 self.CONF_TARGET_UID: "",
                 self.CONF_CYCLE_WITH_DAILY: False,
+                self.CONF_SWITCH_BACK: False,
             }
         )
         self.config_description.update(
             {
                 self.CONF_TARGET_UID: "登录面板账号条目下方的数字ID; 留空=自动切到列表中另一个账号",
                 self.CONF_CYCLE_WITH_DAILY: "运行日常任务时, 跑完自动切到另一个账号再跑一轮日常(无需手动运行本任务)",
+                self.CONF_SWITCH_BACK: "第二轮日常跑完后, 自动切回第一轮所在的账号",
+            }
+        )
+        # 切回开关仅在轮换开关打开时展示
+        self.config_type.update(
+            {
+                self.CONF_CYCLE_WITH_DAILY: {
+                    "sub_configs": {True: [self.CONF_SWITCH_BACK]},
+                },
             }
         )
 
@@ -224,13 +235,16 @@ def _find_sdk_hwnd():
 
 
 def switch_account(task, target=""):
-    """在任意 BaseNTETask 实例上执行完整切号流程, 返回切到的UID。"""
+    """在任意 BaseNTETask 实例上执行完整切号流程。
+
+    返回 (切到的UID, 切换前的UID或None); 切换前UID供"切回原账号"用。
+    """
     panel = HottaPanel(task)
     ensure_at_login_screen(task)
     open_account_panel(task, panel)
-    chosen = select_account(task, panel, target)
+    chosen, previous = select_account(task, panel, target)
     login_and_enter(task, panel, chosen)
-    return chosen
+    return chosen, previous
 
 
 # ---- 步骤 ----
@@ -263,11 +277,12 @@ def open_account_panel(task, panel):
 
 
 def select_account(task, panel, target):
+    """返回 (选中的UID, 面板打开时折叠态显示的原UID或None)。"""
     uids = panel.read_uids()
     current = uids[0].name if len(uids) == 1 else None
     if target and current == target:
         task.log_info(f"面板当前已选中目标账号 {target}")
-        return target
+        return target, current
     if current is not None:
         # 折叠态: 点箭头展开账号列表
         panel.click(*DROPDOWN_ARROW)
@@ -285,7 +300,7 @@ def select_account(task, panel, target):
         lambda: collapsed_current(panel) == chosen, time_out=8, raise_if_not_found=False
     ):
         raise RuntimeError(f"点选账号 {chosen} 后面板未收起到该账号")
-    return chosen
+    return chosen, current
 
 
 def login_and_enter(task, panel, chosen):

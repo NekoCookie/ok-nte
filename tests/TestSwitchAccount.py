@@ -92,8 +92,9 @@ class TestSelectAccountFlow(unittest.TestCase):
                 [row_b],  # 点B后收起显示B
             ]
         )
-        chosen = select_account(FakeTask(), panel, "")
+        chosen, previous = select_account(FakeTask(), panel, "")
         self.assertEqual(chosen, "167250072")
+        self.assertEqual(previous, "167365281")
         # 第一次点下拉箭头(坐标), 第二次点账号B(box)
         self.assertEqual(panel.clicks[0], DROPDOWN_ARROW)
         self.assertIs(panel.clicks[1], row_b)
@@ -101,8 +102,9 @@ class TestSelectAccountFlow(unittest.TestCase):
     def test_select_skips_when_target_already_current(self):
         row_b = FakeBox("167250072")
         panel = FakePanel([[row_b]])
-        chosen = select_account(FakeTask(), panel, "167250072")
+        chosen, previous = select_account(FakeTask(), panel, "167250072")
         self.assertEqual(chosen, "167250072")
+        self.assertEqual(previous, "167250072")
         self.assertEqual(panel.clicks, [])
 
     def test_select_raises_when_target_not_in_list(self):
@@ -142,12 +144,48 @@ class TestDailyAccountCycle(unittest.TestCase):
 
     def test_cycle_switches_then_reruns_daily(self):
         switch = MagicMock()
-        switch.config = {SwitchAccountTask.CONF_CYCLE_WITH_DAILY: True}
+        switch.config = {
+            SwitchAccountTask.CONF_CYCLE_WITH_DAILY: True,
+            SwitchAccountTask.CONF_SWITCH_BACK: False,
+        }
         daily = self._daily(switch)
-        with patch("src.tasks.SwitchAccountTask.switch_account") as sw:
+        with patch(
+            "src.tasks.SwitchAccountTask.switch_account", return_value=("167250072", "167365281")
+        ) as sw:
             daily.lw_daily_account_cycle()
         sw.assert_called_once_with(daily)
         daily.do_run.assert_called_once()
+
+    def test_cycle_switches_back_to_original_when_enabled(self):
+        switch = MagicMock()
+        switch.config = {
+            SwitchAccountTask.CONF_CYCLE_WITH_DAILY: True,
+            SwitchAccountTask.CONF_SWITCH_BACK: True,
+        }
+        daily = self._daily(switch)
+        with patch(
+            "src.tasks.SwitchAccountTask.switch_account", return_value=("167250072", "167365281")
+        ) as sw:
+            daily.lw_daily_account_cycle()
+        self.assertEqual(sw.call_count, 2)
+        # 第二次按原UID精确切回
+        self.assertEqual(sw.call_args_list[1].args, (daily, "167365281"))
+        daily.do_run.assert_called_once()
+
+    def test_no_switch_back_when_second_round_fails(self):
+        switch = MagicMock()
+        switch.config = {
+            SwitchAccountTask.CONF_CYCLE_WITH_DAILY: True,
+            SwitchAccountTask.CONF_SWITCH_BACK: True,
+        }
+        daily = self._daily(switch)
+        daily.do_run.side_effect = RuntimeError("second round failed")
+        with patch(
+            "src.tasks.SwitchAccountTask.switch_account", return_value=("167250072", "167365281")
+        ) as sw:
+            with self.assertRaises(RuntimeError):
+                daily.lw_daily_account_cycle()
+        sw.assert_called_once()  # 只切了去程, 没切回
 
 
 if __name__ == "__main__":
