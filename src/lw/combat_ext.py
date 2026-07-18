@@ -824,6 +824,9 @@ class CombatExtMixin(_TaskProxy):
             try:
                 if not ret:
                     ret = True
+                    # [lw] 吸收上游 run 新增: 开战读"使用终结技"开关。lw 主循环原先漏了这行,
+                    # self.use_ultimate 恒为 __init__ 默认 True → UI 关掉"使用终结技"对 lw 无效。
+                    self.use_ultimate = self.config.get(self.CONF_USE_ULT, True)
                     self.switch_to_combat_start_char()
                 if not self._reload_if_team_size_changed():
                     time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
