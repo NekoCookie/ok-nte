@@ -104,7 +104,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     # 双4a(声音闪避版)的可调时序(选"闪双4a"才显示): 声音闪避后 → 前段平A(打第一个4a) → 跳A(空格+
     # 左键同按)代替第二次闪避、续段 → 后段平A(接第二个4a)。三段时长各自可配, 前后平A共用连点按下/抬起
     # (逻辑同光速4a方案四)。精确时序在 requiem_combo.run_scheme_double_4a。
-    CONF_D4_EXPAND = "▸ 双4a时序(展开)"  # 分组折叠开关: 选"闪双4a"后再套一层, 展开才显示7个时序
     CONF_D4_FRONT = "双4a-前段平A(ms)"       # 第一个4a: 跳A之前的平A时长
     CONF_D4_JUMP_HOLD = "双4a-跳A按住(ms)"    # 空格+左键同时按住(代替闪避)
     CONF_D4_BACK = "双4a-后段平A(ms)"        # 第二个4a: 跳A之后的平A时长
@@ -151,6 +150,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     #   实战调优参数 = 反击/后摇/主动闪避/轮数/技能前平A/脱战复查/让路 那几个秒数与比例旋钮;
     #   测试开关与测试键 = 各测试开关(闪避反击测试/禁用技能大招)与测试键(首平A/模拟闪避)。
     CONF_GROUP_TRIGGER = "▸ 基础触发设置(展开)"   # 分组折叠开关: 触发键/宏模式/触发方式/输入方式
+    CONF_GROUP_DODGE = "▸ 闪避反击设置(展开)"     # 分组折叠开关: 展开=闪避方式(下拉)+选闪双4a时的时序
     CONF_GROUP_TUNING = "▸ 实战调优参数(展开)"    # 分组折叠开关
     CONF_GROUP_TEST = "▸ 测试开关与测试键(展开)"   # 分组折叠开关
 
@@ -226,9 +226,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_MACRO_MODE: self.MODE_SCHEME_LS,
                 self.CONF_TRIGGER_MODE: self.TRIGGER_HOLD,
                 self.CONF_INPUT_MODE: self.INPUT_BG,
-                # 闪避反击方式 + 双4a专属时序(选"闪双4a"→展开"双4a时序"折叠→才看7个, 见 sub_configs)
+                # 闪避反击设置组(折叠)→ 闪避方式(下拉)→ 选"闪双4a"才显示7个时序
+                self.CONF_GROUP_DODGE: False,
                 self.CONF_DODGE_STYLE: self.STYLE_SCHEME_B,
-                self.CONF_D4_EXPAND: False,
                 self.CONF_D4_FRONT: 1800,
                 self.CONF_D4_JUMP_HOLD: 20,
                 self.CONF_D4_BACK: 700,
@@ -345,21 +345,19 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "type": "drop_down",
                     "options": [self.TRIGGER_HOLD, self.TRIGGER_TOGGLE],
                 },
+                # 闪避反击设置组(折叠): 展开后才显示"闪避反击方式"下拉。
+                self.CONF_GROUP_DODGE: {
+                    "sub_configs": {True: [self.CONF_DODGE_STYLE]},
+                },
                 self.CONF_DODGE_STYLE: {
                     "type": "drop_down",
                     "options": [self.STYLE_CURRENT, self.STYLE_SCHEME_B],
-                    # 选"闪双4a"才显示"双4a时序"折叠开关(嵌套: 再展开才看7个时序, 不平铺散落)。
-                    "sub_configs": {self.STYLE_SCHEME_B: [self.CONF_D4_EXPAND]},
-                },
-                # 双4a时序折叠(嵌套在 DODGE_STYLE=闪双4a 之下): 展开才显示7个时序。
-                self.CONF_D4_EXPAND: {
-                    "sub_configs": {
-                        True: [
-                            self.CONF_D4_FRONT, self.CONF_D4_JUMP_HOLD, self.CONF_D4_BACK,
-                            self.CONF_D4_CLICK_HOLD, self.CONF_D4_CLICK_GAP,
-                            self.CONF_D4_TAIL_DODGE, self.CONF_D4_TAIL_FILL,
-                        ],
-                    },
+                    # 嵌套第三层: 在"闪避反击设置"组内, 选"闪双4a"才显示它那7个专属时序。
+                    "sub_configs": {self.STYLE_SCHEME_B: [
+                        self.CONF_D4_FRONT, self.CONF_D4_JUMP_HOLD, self.CONF_D4_BACK,
+                        self.CONF_D4_CLICK_HOLD, self.CONF_D4_CLICK_GAP,
+                        self.CONF_D4_TAIL_DODGE, self.CONF_D4_TAIL_FILL,
+                    ]},
                 },
                 self.CONF_D4_TAIL_DODGE: {
                     "type": "drop_down",
@@ -387,8 +385,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COMBO_BREAK_FOR_SKILL: "combo进度<此比例(0~1)且技能/大招就绪就中断去开(伤害大头在combo尾, 过半就打完); 0=关",
                 self.CONF_DODGE_TEST: "开=每次声音闪避走一整轮(关自动战斗后调时间用)",
                 self.CONF_DISABLE_SKILLS: "开=安魂曲只站场打combo、不放技能/大招(测手感/闪避用); 刷本记得关",
+                self.CONF_GROUP_DODGE: "▸ 分组折叠: 展开闪避反击设置(闪避方式 + 选闪双4a后的7个时序)",
                 self.CONF_DODGE_STYLE: "闪避反击方式: 方案一 / 闪双4a",
-                self.CONF_D4_EXPAND: "▸ 分组折叠: 展开双4a的7个时序配置(默认收起, 不平铺散落)",
                 self.CONF_D4_FRONT: "双4a 前段平A毫秒(打第一个4a); 太短会接不出第二个4a",
                 self.CONF_D4_JUMP_HOLD: "双4a 跳A空格+左键同按毫秒(代替闪避)",
                 self.CONF_D4_BACK: "双4a 后段平A毫秒(接第二个4a)",
