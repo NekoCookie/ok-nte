@@ -637,6 +637,8 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
             post_action (callable, optional): 切换后执行的动作 (回调函数)。默认为 None。
             free_intro (bool, optional): 是否强制认为拥有入场技 (通常在协奏值满时)。默认为 False。
         """
+        if self.LW_SWITCH_NEXT:  # [lw] 开=龙威切换决策接管主切人(src/lw/combat_ext.py), 关=下面上游planner原版(仅排查对照)
+            return self.lw_switch_next_char(current_char, post_action=post_action, free_intro=free_intro)  # [lw]
         if self.team_size <= 1:
             self.click(action_name="switch_char_click", interval=0.1)
             return

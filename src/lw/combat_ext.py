@@ -38,6 +38,7 @@ class CombatExtMixin(_TaskProxy):
     LW_CD_ANCHORING = True
     LW_LOAD_CHARS = True
     LW_SWITCH_DECIDE = True
+    LW_SWITCH_NEXT = True
     LW_COMBAT_RUN = True
 
     # 锚定技能/大招 CD 时, 若 OCR 读不到数字且图标不亮(无旧锚点)的保守占位:
@@ -582,6 +583,45 @@ class CombatExtMixin(_TaskProxy):
                     return reaction_target, has_intro
 
         return switch_to, has_intro
+
+    def lw_switch_next_char(self, current_char: "BaseChar", post_action=None, free_intro=False):
+        """switch_next_char 的龙威实现(LW_SWITCH_NEXT 分发): 主切人决策走 lw_decide_switch_to
+        (legacy Priority 选人/跳过不可用/辅助大招压环合/诊断日志), 而非上游 planner.decide_switch。
+
+        上游 planner 化后 switch_next_char 直连 planner.decide_switch, 使 lw 切换手感只在
+        _switch_to_char 的 retry_intro 重规划(0.12s 窗口)生效、主决策被旁路。此方法把主决策
+        夺回 lw。执行机制沿用上游: 切换守卫 + wait_switch_cd + _switch_to_char(内部 record_switch
+        照常记账、retry_intro 已走 lw _decide_switch_to)。不调 planner.expect_entry_action——
+        expected_entry 仅被 planner.perform_current_char 消费(用户角色走 do_perform 不经过),
+        且正常切换本就为 None(仅 strict route 才有), 对齐旧版无此概念的行为。"""
+        if self.team_size <= 1:
+            self.click(action_name="switch_char_click", interval=0.1)
+            return
+
+        switch_to, has_intro = self.lw_decide_switch_to(current_char, free_intro=free_intro)
+        if switch_to is None or switch_to == current_char:
+            current_char.click_with_interval()
+            self.run_with_interval(
+                lambda: logger.debug(f"lw keeps current char {current_char}"),
+                0.5,
+                action_name=("lw_keep_current", current_char.index),
+            )
+            return
+
+        # 切换守卫沿用上游(strict route 时跳过, 否则等 guard + 切换CD)
+        if not self.combat_planner.has_strict_route(current_char):
+            self._wait_switch_in_guard(current_char, switch_to, has_intro)
+            current_char.wait_switch_cd()
+
+        self._switch_to_char(
+            switch_to,
+            current_char=current_char,
+            has_intro=has_intro,
+            post_action=post_action,
+            free_intro=free_intro,
+            retry_intro=True,
+            log_prefix="lw switch_next_char",
+        )
 
     def _switch_diag_str(self, char, priority):
         """诊断(SKILL_CD_DIAG):某角色本次切人决策拿到的优先级 + (支援)资源判定明细,
