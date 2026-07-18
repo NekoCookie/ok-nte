@@ -150,6 +150,19 @@ class Requiem(MainDps):
     SKILL_FREE_TEMPLATE_PATH = "assets/images/requiem_skill_free.png"
     SKILL_VISUAL_MIN_CONF = 0.45   # 两个模板都低于此 → 没识别到
     SKILL_VISUAL_MARGIN = 0.06     # 两者差距小于此 → 分不清
+    # G技能(屏幕右下"按G"的那个圆圈图标): 用"双模板对比"判就绪(和技能框 real/free 同法, 比单阈值稳)。
+    #   未就绪=平底锅图标, 就绪=红番茄图标。裁同一个框分别和两模板匹配, 番茄明显更高=就绪→按G。
+    #   图标半透明叠在战斗画面上, 整框灰度相关会被背景一起拉低; 但"番茄vs平底锅"的相对高低仍在,
+    #   故取相对(谁高算谁)而非绝对阈值——单阈值时平底锅态在乱背景下也掉到0.4~0.5, 会误判成"变了"乱按。
+    # 开关: RequiemCombatConfigTask.CONF_G_SKILL_ENABLE。判就绪就第一优先级按G, 再等可配的后摇延迟。
+    G_SKILL_PAN_TEMPLATE_PATH = "assets/images/requiem_g_icon.png"          # 未就绪(平底锅)
+    G_SKILL_READY_TEMPLATE_PATH = "assets/images/requiem_g_icon_ready.png"  # 就绪(红番茄)
+    G_SKILL_BOX = (0.803, 0.892, 0.834, 0.948)  # G圆圈图标的相对屏幕坐标(x1,y1,x2,y2)
+    G_SKILL_KEY = "g"              # 触发键(与游戏里那个图标绑的按键一致)
+    G_SKILL_MIN_CONF = 0.35        # 两模板都低于此 = 没识别到(遮挡/切场/背景太乱), 不按
+    G_SKILL_MARGIN = 0.08          # 番茄要比平底锅高出此值才算就绪, 否则分不清 → 不按(宁漏勿乱)
+    G_SKILL_DELAY_MS = 300         # 按G后摇默认延迟(配置读不到时用)
+    G_SKILL_DEBUG_DUMP = True      # [诊断] 每轮打印两模板匹配值+存裁剪图到 box_debug; 调好后置 False
     FREE_SKILL_ATTACK_INTERVAL = 0.1
     FREE_SKILL_FOLLOWUP_ATTACK_DURATION = 0.85
     # 免费技能后普攻会顺出又慢又低伤的第五下平A(a5); 放完免费技能用闪避打断它(实测只有闪避能打断,
@@ -161,6 +174,9 @@ class Requiem(MainDps):
     _skill_real_template = None
     _skill_free_template = None
     _skill_templates_loaded = False
+    _g_pan_template = None
+    _g_ready_template = None
+    _g_templates_loaded = False
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -172,22 +188,11 @@ class Requiem(MainDps):
         self._d4_last_end = 0.0           # 上轮双4a结束时刻(单调时钟), 供诊断 combo 交接
 
     def describe_role(self):
-        # 无辅助体系(队友是娜娜莉等上游原生角色)时: 用 RU 安魂曲(Lacrimosa)的角色画像
-        # (MAIN_DPS), 否则 planner 按 BaseChar 默认把本角色当 sub_dps, 主从关系全反
-        # (实测: 与娜娜莉双排时 planner 乒乓空切, 双方都放不出招)。体系内维持现状。
-        if not self.team_has_support_template():
-            from src.char.Lacrimosa import Lacrimosa
-
-            return Lacrimosa.describe_role(self)
+        # 安魂曲一律用主C(MainDps)的 MAIN_DPS 画像, 不再降级到 RU 安魂曲(Lacrimosa)。
         return super().describe_role()
 
     def combat_plan(self, context):
-        # 无辅助体系(经 lw_use_do_perform 退回 planner)时: 整体用 RU 安魂曲的出招计划。
-        if not self.team_has_support_template():
-            from src.char.Lacrimosa import Lacrimosa
-
-            return Lacrimosa.combat_plan(self, context)
-        # 有辅助体系: 安魂曲双4a 的 planner 计划(不走 super()=MainDps 的通用 idle 平A)。
+        # 安魂曲一律走 lw 双4a 的 planner 计划(含G检测), 不再降级到 RU 安魂曲(Lacrimosa)。
         return self._lw_combat_plan(context)
 
     def _lw_combat_plan(self, context):
@@ -245,6 +250,9 @@ class Requiem(MainDps):
             # 跳过技能OCR(免在双4a中间插延迟打乱节奏)。对应 do_perform 顶部的 _pending 分支。
             if self._pending_double_4a is not None:
                 yield combo_continue
+                return
+            # G技能: 图标变了=就绪, 第一优先级按G(在大招/技能之前); 按了就结束本轮决策。
+            if self._maybe_trigger_g_skill():
                 return
             # 测试开关: 禁用技能大招, 只站场打 combo(单独测手感/闪避)
             if self._skills_disabled_for_test():
@@ -330,6 +338,86 @@ class Requiem(MainDps):
         """这一发是不是真技能:只看技能图标。识别不到(None)就按真技能处理——
         宁可把免费误当真(只是少留一会场,代价小),也不能把真当免费漏切(那才是 bug)。"""
         return self.classify_skill_visual() != "free"
+
+    @classmethod
+    def _load_g_templates(cls):
+        if not cls._g_templates_loaded:
+            cls._g_templates_loaded = True
+            cls._g_pan_template = cv2.imread(cls.G_SKILL_PAN_TEMPLATE_PATH)
+            cls._g_ready_template = cv2.imread(cls.G_SKILL_READY_TEMPLATE_PATH)
+        return cls._g_pan_template, cls._g_ready_template
+
+    def _g_icon_confs(self):
+        """当前 G 图标分别与"平底锅(未就绪)/番茄(就绪)"两模板的匹配, 返回 (conf_pan, conf_ready);
+        拿不到帧/模板/裁剪失败返回 None。"""
+        try:
+            pan, ready = self._load_g_templates()
+            if pan is None or ready is None:
+                return None
+            frame = self.task.frame
+            if frame is None:
+                return None
+            crop = self.task.box_of_screen(*self.G_SKILL_BOX).crop_frame(frame)
+            if crop is None or crop.size == 0:
+                return None
+            return self._template_conf(crop, pan), self._template_conf(crop, ready)
+        except Exception as e:
+            self.logger.debug(f"G icon match failed: {e}")
+            return None
+
+    def _g_icon_ready(self, conf_pan, conf_ready):
+        """双模板判当前 G 是否"就绪(番茄)": True/False/None。
+        两者都低于 MIN_CONF=没识别到(遮挡/切场); 差距小于 MARGIN=分不清 → 都返回 None(不按, 宁漏勿乱)。"""
+        if max(conf_pan, conf_ready) < self.G_SKILL_MIN_CONF:
+            return None
+        if abs(conf_ready - conf_pan) < self.G_SKILL_MARGIN:
+            return None
+        return conf_ready > conf_pan
+
+    def _dump_g_crop(self, conf_pan, conf_ready):
+        """[诊断] 把当前 G 图标裁剪区域存到 logs/box_debug, 文件名带两模板匹配值, 便于肉眼核对。"""
+        try:
+            import os
+            crop = self.task.box_of_screen(*self.G_SKILL_BOX).crop_frame(self.task.frame)
+            if crop is None or crop.size == 0:
+                return
+            d = "logs/box_debug"
+            os.makedirs(d, exist_ok=True)
+            cv2.imwrite(
+                f"{d}/g_icon_{time.strftime('%H-%M-%S')}_pan{conf_pan:.2f}_rdy{conf_ready:.2f}.png", crop)
+        except Exception as e:
+            self.logger.debug(f"dump g crop failed: {e}")
+
+    def _maybe_trigger_g_skill(self):
+        """G技能(图标就绪触发): 开关开启时, 双模板判右下 G 图标是否已从平底锅(未就绪)变成番茄(就绪)——
+        就绪=第一优先级按 G 触发, 再等配置的后摇延迟(供测量后摇/后接大招)。
+        返回 True = 本轮按了 G(调用方应 return, 不再走后续决策)。"""
+        task = self._jump_task()
+        if task is None or not task.config.get(task.CONF_G_SKILL_ENABLE, False):
+            return False
+        confs = self._g_icon_confs()
+        if confs is None:
+            return False
+        conf_pan, conf_ready = confs
+        ready = self._g_icon_ready(conf_pan, conf_ready)
+        # [诊断] 每轮打印两模板匹配值 + 存裁剪图, 确认坐标对没对准、平底锅态/番茄态各是多少值。
+        # 排查完把 G_SKILL_DEBUG_DUMP 关掉即可(默认 True, 临时诊断用)。
+        if self.G_SKILL_DEBUG_DUMP:
+            self.logger.info(
+                f"G技能检测: 平底锅={conf_pan:.2f} 番茄={conf_ready:.2f} "
+                f"-> {'就绪(按G)' if ready else '未就绪/不确定(不按)'}")
+            self._dump_g_crop(conf_pan, conf_ready)
+        if not ready:
+            return False  # 还是平底锅 / 识别不可靠(技能没就绪)
+        delay = int(self._read_jump_task_conf(
+            task.CONF_G_SKILL_DELAY, self.G_SKILL_DELAY_MS, task=task))
+        self.logger.info(
+            f"G技能: 图标就绪(番茄{conf_ready:.2f}>平底锅{conf_pan:.2f}), 按G触发, 后摇等{delay}ms")
+        self.task.send_key(self.G_SKILL_KEY, down_time=0.02)
+        if delay > 0:
+            # 测量用: 按G后固定等这段后摇再交回决策(下一轮才放大招/技能), 便于调"接得上的最短延迟"。
+            self.sleep(delay / 1000.0)
+        return True
 
     def engage_attack_duration(self):
         """真技能前的起手平A时长, 读"安魂曲配置"任务(RequiemCombatConfigTask)的配置, 便于实时调。"""
@@ -741,6 +829,10 @@ class Requiem(MainDps):
         # (前段剩余→跳A→后段→尾段闪避→补平A)。放在最顶上、跳过技能OCR, 免得在双4a中间插延迟打乱节奏。
         if getattr(self, "_pending_double_4a", None) is not None:
             self._run_double_4a_outside()
+            return
+
+        # G技能: 图标变了(不是基线平底锅)=就绪, 第一优先级按G触发(在大招/技能之前)。
+        if self._maybe_trigger_g_skill():
             return
 
         self.wait_intro()

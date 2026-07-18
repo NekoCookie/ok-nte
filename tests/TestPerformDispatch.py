@@ -120,11 +120,14 @@ class TestTemplateSystemFallback(unittest.TestCase):
         c = make_char(Requiem, teammates=[support_template()])
         self.assertEqual(c.describe_role().role, Role.MAIN_DPS)
 
-    def test_requiem_out_of_system_plan_delegates_to_lacrimosa(self):
+    def test_requiem_out_of_system_uses_own_double_4a(self):
+        # 安魂曲停止降级 RU: 无辅助体系(如单人)也走自己的双4a(_lw_combat_plan), 不调 Lacrimosa
         c = make_char(Requiem)
-        with mock.patch.object(Lacrimosa, "combat_plan", return_value="ru-plan") as m:
-            self.assertEqual(c.combat_plan("ctx"), "ru-plan")
-        m.assert_called_once_with(c, "ctx")
+        c._pending_double_4a = None
+        with mock.patch.object(Lacrimosa, "combat_plan") as m:
+            plan = c.combat_plan(None)
+        m.assert_not_called()
+        self.assertTrue(any(a.slot == ActionSlot.LEGACY_COMBO for a in plan.actions))
 
     def test_requiem_in_system_uses_own_double_4a(self):
         # 有辅助体系: combat_plan 走 Requiem 自己的双4a(_lw_combat_plan), 不调 RU Lacrimosa
@@ -202,13 +205,14 @@ class TestRequiemDouble4aPlan(unittest.TestCase):
         free2 = self._named(self._requiem(real=True).combat_plan(None), "_free_skill")
         self.assertFalse(free2.can_execute(None), "真技能时免费技不可执行")
 
-    def test_out_of_system_still_delegates_lacrimosa(self):
-        # 无辅助体系: 仍走 RU 安魂曲(Lacrimosa), 不受双4a 迁移影响
+    def test_out_of_system_uses_own_double_4a(self):
+        # 安魂曲停止降级 RU: 无辅助体系也走自己的双4a, 不调 Lacrimosa
         c = make_char(Requiem)  # 无 teammates
         c._pending_double_4a = None
-        with mock.patch.object(Lacrimosa, "combat_plan", return_value="ru-plan") as m:
-            self.assertEqual(c.combat_plan("ctx"), "ru-plan")
-        m.assert_called_once_with(c, "ctx")
+        with mock.patch.object(Lacrimosa, "combat_plan") as m:
+            plan = c.combat_plan(None)
+        m.assert_not_called()
+        self.assertTrue(any(a.slot == ActionSlot.LEGACY_COMBO for a in plan.actions))
 
     def test_free_skill_execute_breaks_a5_and_followups(self):
         c = self._requiem(real=False)

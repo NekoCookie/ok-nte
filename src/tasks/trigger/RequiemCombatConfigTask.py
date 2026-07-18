@@ -92,6 +92,11 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     # 伤害大头在 combo 尾(跳A), 故只在前半让路; 进度过半(>=此值)一律打完不打断(不丢尾伤)。
     # 复用脱战复查那一下(每约0.5s)顺带查一次, 不额外插帧。实战侧(Requiem)读它; 0=关(永不为技能中断)。
     CONF_COMBO_BREAK_FOR_SKILL = "combo为技能大招让路(进度<)"
+    # G技能(按G触发的那个图标): 开关开启后, 安魂曲每轮决策最优先检测屏幕右下G圆圈图标——
+    # 图标从基线(平底锅)变成别的图标=技能就绪, 立即按G触发, 再等一段可配的后摇延迟(ms),
+    # 便于测量"按下G到能接下一招(如大招)"的后摇。基线模板/匹配阈值在实战侧(Requiem)。
+    CONF_G_SKILL_ENABLE = "G技能图标变化自动触发"   # 布尔开关
+    CONF_G_SKILL_DELAY = "G技能按下后摇延迟(ms)"     # 按G后等这么久再交回决策(测后摇/接大招)
     DODGE_TEST_COMBO_ROUNDS = 2  # 测试里反击后接几轮 combo 的默认值(配置读不到时用)
     CONF_COMBO_ROUNDS = "combo轮数"  # 测试里反击+闪避之后接几轮 combo, 可配
     # 闪避反击测试用哪套流程(供对比):
@@ -258,6 +263,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_ENGAGE_ATTACK: 0.15,
                 self.CONF_COMBO_COMBAT_CHECK: 0.5,
                 self.CONF_COMBO_BREAK_FOR_SKILL: 0.5,
+                self.CONF_G_SKILL_ENABLE: False,
+                self.CONF_G_SKILL_DELAY: 300,
                 # 测试开关与测试键(折叠, 默认收起)
                 self.CONF_GROUP_TEST: False,
                 self.CONF_DODGE_TEST: False,
@@ -328,6 +335,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                         True: [
                             self.CONF_COMBO_ROUNDS, self.CONF_ENGAGE_ATTACK,
                             self.CONF_COMBO_COMBAT_CHECK, self.CONF_COMBO_BREAK_FOR_SKILL,
+                            self.CONF_G_SKILL_ENABLE, self.CONF_G_SKILL_DELAY,
                         ],
                     },
                 },
@@ -391,6 +399,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_ENGAGE_ATTACK: "放真技能前先平A进交战这么久, 防打空; 0=不补",
                 self.CONF_COMBO_COMBAT_CHECK: "实战combo中途每隔这么久复查脱战(目标死/打空即收手); 0=关",
                 self.CONF_COMBO_BREAK_FOR_SKILL: "combo进度<此比例(0~1)且技能/大招就绪就中断去开(伤害大头在combo尾, 过半就打完); 0=关",
+                self.CONF_G_SKILL_ENABLE: "开=右下G图标从基线(平底锅)变成别的图标时, 最优先按G触发",
+                self.CONF_G_SKILL_DELAY: "按G后等这么久(ms)再交回决策; 用来测按下G的后摇(后面好接大招)",
                 self.CONF_DODGE_TEST: "开=每次声音闪避走一整轮(关自动战斗后调时间用)",
                 self.CONF_DISABLE_SKILLS: "开=安魂曲只站场打combo、不放技能/大招(测手感/闪避用); 刷本记得关",
                 self.CONF_GROUP_DODGE: "▸ 分组折叠: 展开闪避反击设置(闪避方式 + 选闪双4a后的7个时序)",
