@@ -37,8 +37,42 @@ class MainDps(BaseChar):
         )
 
     def lw_use_do_perform(self):
-        # 体系外整体退回上游 planner(BaseChar.combat_plan 默认打法)
-        return self.team_has_support_template()
+        # 体系外整体退回上游 planner。全面升级总开关 USE_PLANNER 开启后, 体系内也走 combat_plan。
+        from src.lw.planner_migration import USE_PLANNER
+
+        return self.team_has_support_template() and not USE_PLANNER
+
+    def describe_role(self):
+        # planner 定位: 主C(靠 field_time 站场输出)。Requiem 有辅助体系时 super() 到这。
+        return RoleProfile(
+            role=PlannerRole.MAIN_DPS,
+            field_preference=FieldPreference.MAIN_DPS,
+            max_field_time=self.IDLE_ATTACK_DURATION,
+        )
+
+    def combat_plan(self, context):
+        """主C模板迁 planner(对照 do_perform): 大招/技能独立 action, idle 平A 作为一个
+        LEGACY_COMBO 动作(planner 为 combo 迁移预留的槽)。entry 编排 放大招→技能→没招则 idle。
+        让位辅助不在此显式处理——planner 切人评分时辅助大招就绪(200分)自动压过主C的 field_time
+        (40分)切走, 等价 do_perform 的 should_yield_to_support; idle 执行体内部也保留让位检查兜底。"""
+        ultimate = self.click_ultimate_action(reason="main dps ultimate ready")
+        skill = self.click_skill_action(reason="main dps skill ready")
+        idle = self.planner_action(
+            tags={ActionTag.LEGACY_COMBO, ActionTag.DAMAGE, ActionTag.FIELD_TIME},
+            slot=ActionSlot.LEGACY_COMBO,
+            execute=lambda _: self.idle_normal_attack(),
+            name=f"{self}_idle_combo",
+            reason="main dps idle field time",
+            priority_ready=lambda _: False,  # idle 不主动抢切人, 靠 describe_role 的 field_time 站场
+        )
+
+        def entry():
+            used_ultimate = bool((yield ultimate))
+            used_skill = bool((yield skill))
+            if not used_ultimate and not used_skill:
+                yield idle
+
+        return self.plan(ultimate, skill, idle, entry=entry)
 
     def _has_resource(self, char):
         if char is None:

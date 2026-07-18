@@ -14,7 +14,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.char.BaseChar import BaseChar
-from src.char.MainDps import BuffSupport, HealSupport, SakiriBuffSupport
+from src.char.MainDps import BuffSupport, HealSupport, MainDps, SakiriBuffSupport
 from src.combat.planner import ActionSlot, ActionTag, FieldClaimLevel, FieldPreference
 from src.combat.planner import Role as PlannerRole
 
@@ -183,6 +183,44 @@ class TestSakiriSupportInheritsBuffPlan(unittest.TestCase):
         with mock.patch.object(Sakiri, "combat_plan", return_value="ru-sakiri") as m:
             self.assertEqual(c.combat_plan("ctx"), "ru-sakiri")
         m.assert_called_once_with(c, "ctx")
+
+
+class TestMainDpsPlannerMigration(unittest.TestCase):
+    """主C模板迁 planner: 大招/技能独立 action + idle 平A 用 LEGACY_COMBO 槽, entry 编排。"""
+
+    def _main(self, ult=True, skill=True):
+        c = MainDps.__new__(MainDps)
+        c.ultimate_available = lambda: ult
+        c.skill_available = lambda: skill
+        c.idle_normal_attack = lambda: None
+        return c
+
+    def test_describe_role_main_dps(self):
+        role = self._main().describe_role()
+        self.assertEqual(role.role, PlannerRole.MAIN_DPS)
+        self.assertEqual(role.field_preference, FieldPreference.MAIN_DPS)
+
+    def test_combat_plan_ultimate_skill_idle_actions(self):
+        by_slot = actions_by_slot(self._main().combat_plan(None))
+        self.assertIn(ActionSlot.ULTIMATE, by_slot)
+        self.assertIn(ActionSlot.SKILL, by_slot)
+        self.assertIn(ActionSlot.LEGACY_COMBO, by_slot)
+        self.assertIn(ActionTag.LEGACY_COMBO, by_slot[ActionSlot.LEGACY_COMBO].tags)
+
+    def test_idle_combo_not_priority_ready(self):
+        # idle 不主动抢切人(靠 field_time 站场), priority_ready=False
+        idle = actions_by_slot(self._main().combat_plan(None))[ActionSlot.LEGACY_COMBO]
+        self.assertFalse(idle.priority_ready(None))
+
+    def test_lw_use_do_perform_honors_master_switch(self):
+        from src.lw import planner_migration
+
+        c = MainDps.__new__(MainDps)
+        c.team_has_support_template = lambda: True
+        with mock.patch.object(planner_migration, "USE_PLANNER", False):
+            self.assertTrue(c.lw_use_do_perform(), "开关关+体系内: 走 do_perform")
+        with mock.patch.object(planner_migration, "USE_PLANNER", True):
+            self.assertFalse(c.lw_use_do_perform(), "开关开: 走 planner combat_plan")
 
 
 if __name__ == "__main__":

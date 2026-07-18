@@ -115,9 +115,10 @@ class TestTemplateSystemFallback(unittest.TestCase):
         c = make_char(Requiem)
         self.assertEqual(c.describe_role().role, Role.MAIN_DPS)
 
-    def test_requiem_in_system_role_keeps_default(self):
+    def test_requiem_in_system_role_is_main_dps_via_super(self):
+        # 有辅助体系: describe_role 走 super()=MainDps → MAIN_DPS(安魂曲是主C, MainDps 迁移后)
         c = make_char(Requiem, teammates=[support_template()])
-        self.assertEqual(c.describe_role().role, Role.SUB_DPS)
+        self.assertEqual(c.describe_role().role, Role.MAIN_DPS)
 
     def test_requiem_out_of_system_plan_delegates_to_lacrimosa(self):
         c = make_char(Requiem)
@@ -125,12 +126,14 @@ class TestTemplateSystemFallback(unittest.TestCase):
             self.assertEqual(c.combat_plan("ctx"), "ru-plan")
         m.assert_called_once_with(c, "ctx")
 
-    def test_requiem_in_system_plan_keeps_default(self):
+    def test_requiem_in_system_plan_uses_main_dps_super(self):
+        # 有辅助体系: combat_plan 走 super()=MainDps(不调 RU Lacrimosa)。
+        # 注: task#4 会让 Requiem override combat_plan 成双4a, 届时更新此断言。
         c = make_char(Requiem, teammates=[support_template()])
         with mock.patch.object(Lacrimosa, "combat_plan") as ru, mock.patch.object(
-            BaseChar, "combat_plan", return_value="default-plan"
+            MainDps, "combat_plan", return_value="maindps-plan"
         ):
-            self.assertEqual(c.combat_plan("ctx"), "default-plan")
+            self.assertEqual(c.combat_plan("ctx"), "maindps-plan")
         ru.assert_not_called()
 
     def test_sakiri_support_without_main_dps_delegates_to_ru_sakiri(self):
