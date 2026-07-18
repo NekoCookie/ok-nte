@@ -321,11 +321,11 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     },
                 },
                 # 实战调优参数折叠: 开(True)才显示那几个秒数/比例旋钮(收起不影响其值生效)。
+                # 实战调优只留"两方案通用"的; 方案一专属的(反击强制平A/主动闪避次数/间隔/后摇等待)
+                # 已移到 CONF_DODGE_STYLE=方案一 的 sub_configs, 选方案一才显示。
                 self.CONF_GROUP_TUNING: {
                     "sub_configs": {
                         True: [
-                            self.CONF_DODGE_COUNTER, self.CONF_DODGE_COMBO_WAIT,
-                            self.CONF_DODGE_COUNT, self.CONF_DODGE_GAP,
                             self.CONF_COMBO_ROUNDS, self.CONF_ENGAGE_ATTACK,
                             self.CONF_COMBO_COMBAT_CHECK, self.CONF_COMBO_BREAK_FOR_SKILL,
                         ],
@@ -352,12 +352,20 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_DODGE_STYLE: {
                     "type": "drop_down",
                     "options": [self.STYLE_CURRENT, self.STYLE_SCHEME_B],
-                    # 嵌套第三层: 在"闪避反击设置"组内, 选"闪双4a"才显示它那7个专属时序。
-                    "sub_configs": {self.STYLE_SCHEME_B: [
-                        self.CONF_D4_FRONT, self.CONF_D4_JUMP_HOLD, self.CONF_D4_BACK,
-                        self.CONF_D4_CLICK_HOLD, self.CONF_D4_CLICK_GAP,
-                        self.CONF_D4_TAIL_DODGE, self.CONF_D4_TAIL_FILL,
-                    ]},
+                    # 嵌套第三层(按所选方案显示各自专属参数, 不属于本方案的不显示):
+                    #   方案一 → 反击强制平A/主动闪避次数/间隔/combo后摇等待(这套只方案一走);
+                    #   闪双4a → 它那7个专属时序。
+                    "sub_configs": {
+                        self.STYLE_CURRENT: [
+                            self.CONF_DODGE_COUNTER, self.CONF_DODGE_COUNT,
+                            self.CONF_DODGE_GAP, self.CONF_DODGE_COMBO_WAIT,
+                        ],
+                        self.STYLE_SCHEME_B: [
+                            self.CONF_D4_FRONT, self.CONF_D4_JUMP_HOLD, self.CONF_D4_BACK,
+                            self.CONF_D4_CLICK_HOLD, self.CONF_D4_CLICK_GAP,
+                            self.CONF_D4_TAIL_DODGE, self.CONF_D4_TAIL_FILL,
+                        ],
+                    },
                 },
                 self.CONF_D4_TAIL_DODGE: {
                     "type": "drop_down",
