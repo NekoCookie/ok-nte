@@ -11,6 +11,7 @@ logger = Logger.get_logger(__name__)
 class AutoCombatTask(BaseCombatTask, TriggerTask):
     CONF_USE_ULT = "使用终结技"
     CONF_AUTO_TARGET = "自动目标"
+    CONF_USE_PLANNER = "实验·planner战斗系统(全队)"  # [lw] 全面升级A/B总开关
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -23,11 +24,14 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         self.default_config.update(
             {
                 self.CONF_AUTO_TARGET: True,
-                self.CONF_USE_ULT: True
+                self.CONF_USE_ULT: True,
+                self.CONF_USE_PLANNER: False,  # [lw] 默认关=现状(lw出招+lw切换); 开=全队走ru planner
             }
         )
         self.config_description = {
             self.CONF_AUTO_TARGET: "关闭时仅在中键选中敌人且画面识别到 'Lv' 文字时开启战斗",
+            self.CONF_USE_PLANNER: "实验开关(全队生效, 非仅安魂曲): 开=出招走combat_plan+切换走planner"
+            "决策; 关=现状(do_perform出招+lw优先级切换)。用于整体A/B对比planner升级手感, 战斗开始时读取。",
         }
         self.op_index = 0
         self.origin_func = {}

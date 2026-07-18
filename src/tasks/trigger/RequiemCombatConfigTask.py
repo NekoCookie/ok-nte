@@ -126,7 +126,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     # 方案四(光速4a·时间驱动)的可调时序, 单位毫秒(默认见 requiem_combo.SCHEME_LS_*)。
     # 核心是"跳A时机": 连点累计到这个时刻才左键+空格同跳, 改它时跳A那下左键自动跟着移动。
     # 同样用开关折叠, 默认收起。
-    CONF_LS_EXPAND = "方案四-展开时序配置"  # 布尔开关(SwitchButton), 开=展开5个配置
+    CONF_LS_EXPAND = "▸ 方案四·光速4a时序(展开)"  # 分组折叠开关(命名带▸与功能开关区分), 开=展开5个配置
     CONF_LS_JUMP_AT = "方案四-跳A时机(ms)"
     CONF_LS_JUMP_HOLD = "方案四-跳A按住(ms)"
     CONF_LS_CLICK_HOLD = "方案四-连点按住(ms)"
@@ -136,18 +136,22 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     # 免费技能后普攻会顺出又慢又低伤的第五下平A(a5)。放完免费技能用闪避打断它(实测只有闪避能打断,
     # 跳A打不断)、不打那第五下, 直接接 combo。以下时序可调(ms), 实战侧(Requiem)读。
     # 测试键: 按一下=发技能键放(免费)技能 → delay → 闪避打断 → combo; 需在游戏里把技能设成免费技能(可反复放)。
-    CONF_FREE_BREAK_TEST_KEY = "免费技能后接combo测试键"
-    CONF_FREE_SKILL_KEY = "技能键(测试放免费技能用)"
-    CONF_FREE_BREAK_EXPAND = "免费技能后-展开打断时序"  # 布尔开关(SwitchButton), 开=展开3个时序
+    # 免费技能分组: 打断时序 + 测试键 全放一起(原测试键散在"测试开关组", 与时序分家)。
+    CONF_FREE_BREAK_EXPAND = "▸ 免费技能设置(展开)"  # 分组折叠开关(带▸), 开=展开时序+测试键
     CONF_FREE_BREAK_DELAY = "免费技能后打断延迟(ms)"      # 免费技能→闪避 的等待(核心旋钮)
     CONF_FREE_BREAK_JUMP_HOLD = "免费技能后闪避按住(ms)"  # 闪避键按住时长
     CONF_FREE_BREAK_WAIT = "免费技能后打断后等待(ms)"     # 闪避打断→combo第一下 的间隔
+    CONF_FREE_BREAK_TEST_KEY = "免费技能后接combo测试键"
+    CONF_FREE_SKILL_KEY = "技能键(测试放免费技能用)"
 
-    # 顶层配置太多, 按用途再折叠两组(默认收起, 用到再展开; 机制同方案四/免费技能的展开开关):
+    # 顶层配置太多, 全部按用途折叠成组(默认收起, 用到再展开)。分组开关一律用"▸ …(展开)"命名,
+    # 与普通功能开关(如"禁用技能大招(测试)")在视觉上区分。
+    #   基础触发 = 触发键/宏模式/触发方式/输入方式;
     #   实战调优参数 = 反击/后摇/主动闪避/轮数/技能前平A/脱战复查/让路 那几个秒数与比例旋钮;
-    #   测试开关与测试键 = 各测试开关(闪避反击测试/禁用技能大招)与测试键(首平A/模拟闪避/免费技能)。
-    CONF_GROUP_TUNING = "▸ 实战调优参数(展开)"    # 布尔开关(SwitchButton)
-    CONF_GROUP_TEST = "▸ 测试开关与测试键(展开)"   # 布尔开关(SwitchButton)
+    #   测试开关与测试键 = 各测试开关(闪避反击测试/禁用技能大招)与测试键(首平A/模拟闪避)。
+    CONF_GROUP_TRIGGER = "▸ 基础触发设置(展开)"   # 分组折叠开关: 触发键/宏模式/触发方式/输入方式
+    CONF_GROUP_TUNING = "▸ 实战调优参数(展开)"    # 分组折叠开关
+    CONF_GROUP_TEST = "▸ 测试开关与测试键(展开)"   # 分组折叠开关
 
     # 配置档位: 界面内保存/载入 1~4 套配置(存在 PRESET_FILE), 外加导出/从文件导入。
     CONF_PRESET_SLOT = "配置档位"       # drop_down 1/2/3/4
@@ -215,6 +219,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             {
                 # 默认值 = longwei 实测调优后的最优解(2026-07-05)。别的机器哪怕微调, 也从这套起,
                 # 而不是最初那套(如光速4a跳A时机1470根本触发不了)。
+                # 基础触发组(折叠): 触发键/宏模式/触发方式/输入方式
+                self.CONF_GROUP_TRIGGER: False,
                 self.CONF_TRIGGER_KEY: "mouse5",
                 self.CONF_MACRO_MODE: self.MODE_SCHEME_LS,
                 self.CONF_TRIGGER_MODE: self.TRIGGER_HOLD,
@@ -293,12 +299,22 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                         ],
                     },
                 },
-                # 免费技能后打断的3个时序配置用开关折叠, 打开(True)才显示。
+                # 基础触发组(折叠): 触发键/宏模式/触发方式/输入方式全收进来, 不再裸露顶层。
+                self.CONF_GROUP_TRIGGER: {
+                    "sub_configs": {
+                        True: [
+                            self.CONF_TRIGGER_KEY, self.CONF_MACRO_MODE,
+                            self.CONF_TRIGGER_MODE, self.CONF_INPUT_MODE,
+                        ],
+                    },
+                },
+                # 免费技能组(折叠): 打断时序 + 测试键 全放一起(测试键原散在"测试开关组")。
                 self.CONF_FREE_BREAK_EXPAND: {
                     "sub_configs": {
                         True: [
                             self.CONF_FREE_BREAK_DELAY, self.CONF_FREE_BREAK_JUMP_HOLD,
                             self.CONF_FREE_BREAK_WAIT,
+                            self.CONF_FREE_BREAK_TEST_KEY, self.CONF_FREE_SKILL_KEY,
                         ],
                     },
                 },
@@ -314,12 +330,12 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     },
                 },
                 # 测试开关与测试键折叠: 开(True)才显示(收起不影响其值生效; 禁用技能大招默认关)。
+                # 免费技能测试键已移到"免费技能组", 这里不再重复。
                 self.CONF_GROUP_TEST: {
                     "sub_configs": {
                         True: [
                             self.CONF_DODGE_TEST, self.CONF_DISABLE_SKILLS,
                             self.CONF_FIRST_ATTACK_TEST_KEY, self.CONF_DODGE_TEST_KEY,
-                            self.CONF_FREE_BREAK_TEST_KEY, self.CONF_FREE_SKILL_KEY,
                         ],
                     },
                 },
@@ -373,7 +389,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_D4_TAIL_FILL: "双4a 闪避后补平A毫秒(替换延迟; 平A节拍复用光速4a连点按住/抬起)",
                 self.CONF_FIRST_ATTACK_TEST_KEY: "按此键→闪避→等后摇→打一个平A(调后摇用); 留空=关",
                 self.CONF_DODGE_TEST_KEY: "按此键=模拟一次声音闪避走整轮; 留空=关",
-                self.CONF_LS_EXPAND: "开=展开方案四(光速4a)5个时序配置(默认收起)",
+                self.CONF_LS_EXPAND: "▸ 分组折叠: 展开方案四(光速4a)5个时序配置(默认收起)",
                 self.CONF_LS_JUMP_AT: "方案四 跳A时机毫秒(核心); 大世界约1390其他约1470; 跳早出1a",
                 self.CONF_LS_JUMP_HOLD: "方案四 跳A左键+空格同按毫秒(参考18)",
                 self.CONF_LS_CLICK_HOLD: "方案四 连点每下左键按住毫秒",
@@ -381,12 +397,13 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_LS_TAIL: "方案四 跳A后收尾毫秒(连点节拍继续平A填满; 参考218)",
                 self.CONF_FREE_BREAK_TEST_KEY: "按此键=发技能键放(免费)技能→闪避打断a5→combo; 需游戏里把技能设成免费技能; 留空=关",
                 self.CONF_FREE_SKILL_KEY: "测试放免费技能用的技能键(填游戏里的技能键, 如e)",
-                self.CONF_FREE_BREAK_EXPAND: "开=展开免费技能后打断的3个时序配置",
+                self.CONF_FREE_BREAK_EXPAND: "▸ 分组折叠: 展开免费技能设置(打断3个时序 + 免费技测试键/技能键)",
                 self.CONF_FREE_BREAK_DELAY: "免费技能放出→按闪避打断 之间等这么久(核心; 早了打断免费技能/晚了a5已出)",
                 self.CONF_FREE_BREAK_JUMP_HOLD: "打断用的闪避键按住毫秒(实测只有闪避能打断a5, 跳A打不断)",
                 self.CONF_FREE_BREAK_WAIT: "闪避打断→combo第一下 的间隔毫秒(可填0)",
-                self.CONF_GROUP_TUNING: "开=展开实战调优参数(反击平A/后摇/主动闪避/轮数/技能前平A/脱战复查/让路)",
-                self.CONF_GROUP_TEST: "开=展开测试开关与测试键(闪避反击测试/禁用技能大招/首平A/模拟闪避/免费技能)",
+                self.CONF_GROUP_TRIGGER: "▸ 分组折叠: 展开基础触发设置(触发键/宏模式/触发方式/输入方式)",
+                self.CONF_GROUP_TUNING: "▸ 分组折叠: 展开实战调优参数(反击平A/后摇/主动闪避/轮数/技能前平A/脱战复查/让路)",
+                self.CONF_GROUP_TEST: "▸ 分组折叠: 展开测试开关与测试键(闪避反击测试/禁用技能大招/首平A/模拟闪避)",
                 self.CONF_PRESET_SLOT: "选择配置档位(1~4), 存取/导入导出都对该档位",
                 self.CONF_PRESET_OPS: "保存=当前配置存到该档位; 载入=把该档位配置读回界面",
                 self.CONF_PRESET_FILE: "导出=当前配置存成json; 从文件导入=读json回界面",

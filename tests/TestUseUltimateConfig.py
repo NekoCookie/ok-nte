@@ -19,6 +19,7 @@ from src.combat.BaseCombatTask import BaseCombatTask
 def make_run_task(use_ult_config):
     t = BaseCombatTask.__new__(BaseCombatTask)
     t.CONF_USE_ULT = "使用终结技"
+    t.CONF_USE_PLANNER = "实验·planner战斗系统(全队)"  # lw_combat_run 开战也读它
     t.config = {"使用终结技": use_ult_config}
     t.use_ultimate = True  # __init__ 默认值
     t.scene = mock.MagicMock()

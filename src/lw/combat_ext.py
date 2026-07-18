@@ -867,6 +867,10 @@ class CombatExtMixin(_TaskProxy):
                     # [lw] 吸收上游 run 新增: 开战读"使用终结技"开关。lw 主循环原先漏了这行,
                     # self.use_ultimate 恒为 __init__ 默认 True → UI 关掉"使用终结技"对 lw 无效。
                     self.use_ultimate = self.config.get(self.CONF_USE_ULT, True)
+                    # [lw] 全面升级A/B总开关: 开战读配置设 USE_PLANNER, 整场生效(各角色 lw_use_do_perform
+                    # 与 switch_next_char 分发都读它)。默认关=现状。
+                    import src.lw.planner_migration as _pm
+                    _pm.USE_PLANNER = self.config.get(self.CONF_USE_PLANNER, False)
                     self.switch_to_combat_start_char()
                 if not self._reload_if_team_size_changed():
                     time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
