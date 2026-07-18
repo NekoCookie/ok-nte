@@ -7,6 +7,7 @@ import win32con
 
 from src.char.MainDps import MainDps
 from src.combat import requiem_combo
+from src.combat.planner import ActionSlot, ActionTag
 from src.Labels import Labels
 from src.sound_trigger.SoundCombatContext import SoundCombatContext
 
@@ -186,7 +187,94 @@ class Requiem(MainDps):
             from src.char.Lacrimosa import Lacrimosa
 
             return Lacrimosa.combat_plan(self, context)
-        return super().combat_plan(context)
+        # 有辅助体系: 安魂曲双4a 的 planner 计划(不走 super()=MainDps 的通用 idle 平A)。
+        return self._lw_combat_plan(context)
+
+    def _lw_combat_plan(self, context):
+        """安魂曲双4a 迁 planner(对照 do_perform, ru 风格): 大招/真技能/免费技/双4a combo/
+        窗口外续打 各是独立声明动作, execute 复用现有方法(combo 时序、cast_real_skill、续打状态机
+        一行不改), entry generator 编排 do_perform 的分支顺序。双4a 是原子动作、整段包进一个
+        LEGACY_COMBO action(planner 为 combo 迁移预留的槽), 不拆内部跳A时序。"""
+        ultimate = self.planner_action(
+            tags={ActionTag.ULTIMATE_ACTION},
+            slot=ActionSlot.ULTIMATE,
+            execute=lambda _: self.click_ultimate(wait_if_no_cd=self.PRE_SKILL_ULTIMATE_WAIT),
+            name=f"{self}_ultimate",
+            reason="requiem ultimate ready",
+            can_execute=lambda _: self.ultimate_available(),
+            priority_ready=lambda _: self.ultimate_available(),
+        )
+        real_skill = self.planner_action(
+            tags={ActionTag.SKILL_ACTION, ActionTag.DAMAGE},
+            slot=ActionSlot.SKILL,
+            execute=lambda _: self.cast_real_skill(),
+            name=f"{self}_real_skill",
+            reason="requiem real skill (damage)",
+            can_execute=lambda _: self.skill_available() and self.is_real_skill_now(),
+            priority_ready=lambda _: self.skill_available(),
+        )
+        free_skill = self.planner_action(
+            tags={ActionTag.SKILL_ACTION},
+            slot=ActionSlot.SKILL,
+            execute=self._execute_free_skill,
+            name=f"{self}_free_skill",
+            reason="requiem free skill",
+            can_execute=lambda _: self.skill_available() and not self.is_real_skill_now(),
+            priority_ready=lambda _: False,  # 免费技中途放, 不主动抢切人
+        )
+        combo = self.planner_action(
+            tags={ActionTag.LEGACY_COMBO, ActionTag.DAMAGE, ActionTag.FIELD_TIME},
+            slot=ActionSlot.LEGACY_COMBO,
+            execute=lambda _: self.idle_normal_attack(),
+            name=f"{self}_double_4a",
+            reason="requiem double-4a combo",
+            priority_ready=lambda _: False,  # combo 靠 field_time 站场, 不主动抢切人
+        )
+        combo_continue = self.planner_action(
+            tags={ActionTag.LEGACY_COMBO},
+            slot=ActionSlot.LEGACY_COMBO,
+            execute=lambda _: self._run_double_4a_outside(),
+            name=f"{self}_double_4a_continue",
+            reason="requiem double-4a outside-window continuation",
+            can_execute=lambda _: self._pending_double_4a is not None,
+            priority_ready=lambda _: False,
+        )
+
+        def entry():
+            # 续打窗口外部分优先: 闪避那1秒窗口已在 execute_dodge 打了前段前半, 这里无缝接剩余,
+            # 跳过技能OCR(免在双4a中间插延迟打乱节奏)。对应 do_perform 顶部的 _pending 分支。
+            if self._pending_double_4a is not None:
+                yield combo_continue
+                return
+            # 测试开关: 禁用技能大招, 只站场打 combo(单独测手感/闪避)
+            if self._skills_disabled_for_test():
+                yield combo
+                return
+            # 目标存活门: 别对尸体开大或放真技能(白扔长CD); 已脱战抛 NotInCombat 收手
+            self._check_combat_alive()
+            used_ultimate = bool((yield ultimate))
+            if self.skill_available():
+                if self.is_real_skill_now():
+                    yield real_skill  # 真技能是伤害大头: 放进CD才 overlap
+                    return
+                elif bool((yield free_skill)):
+                    return  # 免费技: 留场接平A
+            if used_ultimate:
+                return
+            yield combo  # 双4a
+
+        return self.plan(
+            ultimate, real_skill, free_skill, combo, combo_continue, entry=entry
+        )
+
+    def _execute_free_skill(self, context=None):
+        """免费技动作(对应 do_perform 的免费技分支): 放招→闪避打断拖沓的a5→后续输出。"""
+        if self.click_skill(time_out=1.0):
+            self.logger.info("requiem FREE skill cast, staying on field")
+            self._free_skill_break_a5()
+            self.free_skill_followup_attack()
+            return True
+        return False
 
     def should_force_off_field(self):
         return time.time() < self.skill_off_field_until

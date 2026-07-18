@@ -23,7 +23,7 @@ from src.char.Lacrimosa import Lacrimosa
 from src.char.MainDps import BuffSupport, MainDps, SakiriBuffSupport
 from src.char.Requiem import Requiem
 from src.char.Sakiri import Sakiri
-from src.combat.planner import Role
+from src.combat.planner import ActionSlot, ActionTag, Role
 
 
 def make_char(cls, teammates=()):
@@ -126,15 +126,18 @@ class TestTemplateSystemFallback(unittest.TestCase):
             self.assertEqual(c.combat_plan("ctx"), "ru-plan")
         m.assert_called_once_with(c, "ctx")
 
-    def test_requiem_in_system_plan_uses_main_dps_super(self):
-        # 有辅助体系: combat_plan 走 super()=MainDps(不调 RU Lacrimosa)。
-        # 注: task#4 会让 Requiem override combat_plan 成双4a, 届时更新此断言。
+    def test_requiem_in_system_uses_own_double_4a(self):
+        # 有辅助体系: combat_plan 走 Requiem 自己的双4a(_lw_combat_plan), 不调 RU Lacrimosa
+        # 也不走 MainDps super(task#4 后)。
         c = make_char(Requiem, teammates=[support_template()])
+        c._pending_double_4a = None
         with mock.patch.object(Lacrimosa, "combat_plan") as ru, mock.patch.object(
-            MainDps, "combat_plan", return_value="maindps-plan"
-        ):
-            self.assertEqual(c.combat_plan("ctx"), "maindps-plan")
+            MainDps, "combat_plan"
+        ) as maindps:
+            plan = c.combat_plan("ctx")
         ru.assert_not_called()
+        maindps.assert_not_called()
+        self.assertTrue(any(a.slot == ActionSlot.LEGACY_COMBO for a in plan.actions))
 
     def test_sakiri_support_without_main_dps_delegates_to_ru_sakiri(self):
         c = make_char(SakiriBuffSupport)
@@ -151,6 +154,70 @@ class TestTemplateSystemFallback(unittest.TestCase):
         ):
             self.assertEqual(c.combat_plan("ctx"), "buff-plan")
         ru.assert_not_called()
+
+
+class TestRequiemDouble4aPlan(unittest.TestCase):
+    """安魂曲双4a 迁 planner: 大招/真技能/免费技/双4a combo/续打 各独立动作, combo 整段包进
+    LEGACY_COMBO 槽不拆内部时序。有辅助体系走此计划, 无辅助走 RU Lacrimosa。"""
+
+    def _requiem(self, pending=None, real=True, skill_ready=True, ult_ready=True):
+        c = make_char(Requiem, teammates=[support_template()])
+        c._pending_double_4a = pending
+        c.skill_available = lambda: skill_ready
+        c.is_real_skill_now = lambda: real
+        c.ultimate_available = lambda: ult_ready
+        c.PRE_SKILL_ULTIMATE_WAIT = 0.3
+        return c
+
+    def _named(self, plan, suffix):
+        return next(a for a in plan.actions if a.name.endswith(suffix))
+
+    def test_in_system_splits_all_actions(self):
+        plan = self._requiem().combat_plan(None)
+        slots = {}
+        for a in plan.actions:
+            slots.setdefault(a.slot, 0)
+            slots[a.slot] += 1
+        self.assertEqual(slots[ActionSlot.ULTIMATE], 1)
+        self.assertEqual(slots[ActionSlot.SKILL], 2)  # 真技能 + 免费技
+        self.assertEqual(slots[ActionSlot.LEGACY_COMBO], 2)  # combo + 续打
+        combo = self._named(plan, "_double_4a")
+        self.assertIn(ActionTag.LEGACY_COMBO, combo.tags)
+
+    def test_combo_continue_gated_on_pending(self):
+        cont = self._named(self._requiem(pending=None).combat_plan(None), "_double_4a_continue")
+        self.assertFalse(cont.can_execute(None), "无 _pending 不能续打")
+        cont2 = self._named(self._requiem(pending="x").combat_plan(None), "_double_4a_continue")
+        self.assertTrue(cont2.can_execute(None), "有 _pending 可续打")
+
+    def test_real_skill_gated_on_is_real(self):
+        real = self._named(self._requiem(real=True).combat_plan(None), "_real_skill")
+        self.assertTrue(real.can_execute(None))
+        real2 = self._named(self._requiem(real=False).combat_plan(None), "_real_skill")
+        self.assertFalse(real2.can_execute(None), "免费技时真技能不可执行")
+
+    def test_free_skill_gated_on_not_real(self):
+        free = self._named(self._requiem(real=False).combat_plan(None), "_free_skill")
+        self.assertTrue(free.can_execute(None))
+        free2 = self._named(self._requiem(real=True).combat_plan(None), "_free_skill")
+        self.assertFalse(free2.can_execute(None), "真技能时免费技不可执行")
+
+    def test_out_of_system_still_delegates_lacrimosa(self):
+        # 无辅助体系: 仍走 RU 安魂曲(Lacrimosa), 不受双4a 迁移影响
+        c = make_char(Requiem)  # 无 teammates
+        c._pending_double_4a = None
+        with mock.patch.object(Lacrimosa, "combat_plan", return_value="ru-plan") as m:
+            self.assertEqual(c.combat_plan("ctx"), "ru-plan")
+        m.assert_called_once_with(c, "ctx")
+
+    def test_free_skill_execute_breaks_a5_and_followups(self):
+        c = self._requiem(real=False)
+        c.click_skill = mock.MagicMock(return_value=True)
+        c._free_skill_break_a5 = mock.MagicMock()
+        c.free_skill_followup_attack = mock.MagicMock()
+        self.assertTrue(c._execute_free_skill(None))
+        c._free_skill_break_a5.assert_called_once()
+        c.free_skill_followup_attack.assert_called_once()
 
 
 if __name__ == "__main__":
