@@ -139,12 +139,14 @@ class TestTemplateSystemFallback(unittest.TestCase):
             self.assertEqual(c.combat_plan("ctx"), "ru-sakiri")
         m.assert_called_once_with(c, "ctx")
 
-    def test_sakiri_support_with_main_dps_keeps_default_plan(self):
+    def test_sakiri_support_with_main_dps_delegates_to_buff_support(self):
+        # 有主C体系: SakiriBuffSupport.combat_plan 走 super()=BuffSupport(planner出招),
+        # 不再是 BaseChar 默认(BuffSupport 迁移后), 且不调 RU Sakiri。
         c = make_char(SakiriBuffSupport, teammates=[main_dps_template()])
         with mock.patch.object(Sakiri, "combat_plan") as ru, mock.patch.object(
-            BaseChar, "combat_plan", return_value="default-plan"
+            BuffSupport, "combat_plan", return_value="buff-plan"
         ):
-            self.assertEqual(c.combat_plan("ctx"), "default-plan")
+            self.assertEqual(c.combat_plan("ctx"), "buff-plan")
         ru.assert_not_called()
 
 

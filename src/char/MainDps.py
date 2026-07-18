@@ -1,6 +1,14 @@
 import time
 
 from src.char.BaseChar import BaseChar
+from src.combat.planner import (
+    ActionSlot,
+    ActionTag,
+    FieldClaim,
+    FieldPreference,
+    RoleProfile,
+)
+from src.combat.planner import Role as PlannerRole  # planner 定位, 与下面 legacy Role 区分
 from src.lw.legacy_priority import Priority, Role  # 上游已从BaseChar移除, 迁移到src/lw/
 
 
@@ -286,10 +294,57 @@ class BuffSupport(BaseChar):
         self.task.diag_cast(self.index, enter_at, "辅助技能等待→超时仍没就绪, 放弃")
         return False
 
+    # [lw] planner 迁移 A/B 开关: False=出招走 do_perform(现状, 默认); True=出招走 combat_plan
+    # (planner 调度)。逐角色迁移期用于实机对比手感, 验证等价后全队统一切 planner。
+    LW_USE_PLANNER_PLAN = False
+
     def lw_use_do_perform(self):
-        # 无主C体系时整体退回上游 planner。旧版此场景回退 super().do_perform(),
-        # 上游 planner 化删除了 BaseChar.do_perform, 那条路已是 AttributeError。
-        return self.team_has_main_dps()
+        # 无主C体系时整体退回上游 planner(旧版回退 super().do_perform() 已随 planner 化成
+        # AttributeError)。另: LW_USE_PLANNER_PLAN 开启后, 有主C也走 combat_plan(planner 出招)。
+        return self.team_has_main_dps() and not self.LW_USE_PLANNER_PLAN
+
+    def describe_role(self):
+        # planner 定位: 辅助。走 lw 切换决策(LW_SWITCH_NEXT)时不生效, 仅 planner 决策时用。
+        return RoleProfile(
+            role=PlannerRole.SUPPORT,
+            field_preference=FieldPreference.SUPPORT,
+            max_field_time=1.5,
+        )
+
+    def combat_plan(self, context):
+        """辅助整段出招(放大招+技能+补放)包进一个 planner 动作: 时序/settle/probe 逻辑
+        复用 do_perform 那套(_planner_perform_support 直接调 _cast_ult_and_skill), 只把
+        "何时切上场"交给 planner——priority_ready 用资源判定(等价 legacy has_confirmed/
+        skill_resource), tags 按当前资源动态给分(大招就绪=ULTIMATE_ACTION 200, 仅技能=
+        SKILL_ACTION 75, 对应旧的大招让位/技能中等优先级)。大招 buff 待铺时发 high claim
+        压过环合反应(对应 lw_decide_switch_to 的 _any_support_ultimate_pending)。"""
+        if not self.team_has_main_dps():
+            return super().combat_plan(context)  # 无主C: BaseChar 默认(放大招放技能)
+
+        if self.ultimate_ready_now() and not self.recently_used_resource():
+            tags = {ActionTag.SUPPORT, ActionTag.ULTIMATE_ACTION}
+        else:
+            tags = {ActionTag.SUPPORT, ActionTag.SKILL_ACTION}
+        perform = self.planner_action(
+            tags=tags,
+            slot=ActionSlot.CUSTOM,  # 整段动作, 不参与 ultimate/skill 槽 reservation
+            execute=self._planner_perform_support,
+            name=f"{self}_support_perform",
+            reason="support resource ready",
+            can_execute=lambda _: self.skill_available() or self.ultimate_available(),
+            priority_ready=lambda _: self.has_confirmed_resource() or self.has_skill_resource(),
+        )
+        claims = []
+        if self.ultimate_buff_pending():
+            claims.append(FieldClaim.high(source=self, reason="support ultimate buff pending"))
+        return self.plan(perform, claims=claims)
+
+    def _planner_perform_support(self, context=None):
+        """combat_plan 的执行体: 复用 do_perform 的核心(放大招+技能+补放+资源缓存更新)。
+        手感与 do_perform 完全一致, 只是由 planner 调度而非 lw 主循环直接调。"""
+        used_ultimate, used_skill = self._cast_ult_and_skill(skill_down_time=self.SKILL_DOWN_TIME)
+        self.update_resource_after_perform(used_ultimate, used_skill)
+        return used_ultimate or used_skill
 
     def do_perform(self):
         if not self.team_has_main_dps():
