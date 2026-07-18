@@ -728,33 +728,46 @@ class Requiem(MainDps):
         self.combo_attack()
 
     def _free_skill_break_a5(self):
-        """免费技能放出后, 用闪避打断那又慢又低伤的第五下平A(a5), 省掉它直接接后续输出。
-        实测只有闪避能打断 a5, 跳A(空格+左键)打不断, 故这里按一下游戏闪避键(lshift)。
-        delay: 免费技能→闪避 的等待(核心); hold: 闪避键按住; wait: 闪避后到后续的间隔。全读"安魂曲配置"可实时调。
-        hold<=0 视为关闭(不打断)。与测试脚手架(_run_free_skill_combo_test)同一份配置。"""
+        """免费技能放出后打断那又慢又低伤的第五下平A(a5), 省掉它直接接后续输出。打断方式两套(选哪套
+        读哪套参数): 方案一(闪避, 默认)按游戏闪避键(lshift); 方案二(跳A)用光速4a/双4a那个跳A(空格+
+        左键同按)代替闪避。delay=技能→打断的等待; hold=闪避键/跳A按住; wait=打断后到后续的间隔。全读
+        "安魂曲配置"可实时调。hold<=0 视为关闭(不打断)。与测试脚手架(_run_free_skill_combo_test)同一份配置。"""
         from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
         task = self._jump_task()
-        delay = self._read_jump_task_conf(
-            RequiemCombatConfigTask.CONF_FREE_BREAK_DELAY, self.FREE_BREAK_DELAY_MS, task=task)
-        hold = self._read_jump_task_conf(
-            RequiemCombatConfigTask.CONF_FREE_BREAK_JUMP_HOLD, self.FREE_BREAK_JUMP_HOLD_MS, task=task)
-        wait = self._read_jump_task_conf(
-            RequiemCombatConfigTask.CONF_FREE_BREAK_WAIT, self.FREE_BREAK_WAIT_MS, task=task)
+        jump_mode = (task is not None and task.config.get(
+            RequiemCombatConfigTask.CONF_FREE_BREAK_MODE,
+            RequiemCombatConfigTask.FREE_BREAK_MODE_DODGE) == RequiemCombatConfigTask.FREE_BREAK_MODE_JUMP)
+        if jump_mode:
+            delay = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK2_DELAY, self.FREE_BREAK_DELAY_MS, task=task)
+            hold = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK2_JUMP_HOLD, self.FREE_BREAK_JUMP_HOLD_MS, task=task)
+            wait = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK2_WAIT, self.FREE_BREAK_WAIT_MS, task=task)
+        else:
+            delay = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_DELAY, self.FREE_BREAK_DELAY_MS, task=task)
+            hold = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_JUMP_HOLD, self.FREE_BREAK_JUMP_HOLD_MS, task=task)
+            wait = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_WAIT, self.FREE_BREAK_WAIT_MS, task=task)
         if hold <= 0:
             return  # 关: 不打断, 沿用免费技能后的默认后续(会顺出 a5)
-        io = _RequiemCombatIO(self)  # 普通 io: 就一下闪避, 不需中途复查
+        io = _RequiemCombatIO(self)  # 普通 io: 就一下打断, 不需中途复查
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
             if delay > 0:
                 io.sleep_ms(delay)
-            self.task.send_key_down(self.DODGE_KEY)   # 闪避打断 a5(实测只有闪避能打断, 跳A打不断)
-            io.sleep_ms(hold)
-            self.task.send_key_up(self.DODGE_KEY)
+            if jump_mode:
+                io.space_down()   # 跳A打断 a5: 空格+左键同按(光速4a/双4a那个跳A)
+                io.mouse_down()
+                io.sleep_ms(hold)
+                io.mouse_up()
+                io.space_up()
+            else:
+                self.task.send_key_down(self.DODGE_KEY)   # 闪避打断 a5
+                io.sleep_ms(hold)
+                self.task.send_key_up(self.DODGE_KEY)
             if wait > 0:
                 io.sleep_ms(wait)
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
-        self.logger.info(f"免费技能后闪避打断a5: 等{delay:.0f}→闪避{hold:.0f}→等{wait:.0f}ms")
+        action = "跳A" if jump_mode else "闪避"
+        self.logger.info(f"免费技能后{action}打断a5: 等{delay:.0f}→{action}{hold:.0f}→等{wait:.0f}ms")
 
     def _mark_real_skill_overlap(self, reason):
         """真技能确认进CD后: 安排 overlap 下场 + 当场锚16s CD。

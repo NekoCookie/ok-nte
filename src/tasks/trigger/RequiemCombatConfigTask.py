@@ -148,6 +148,14 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_FREE_BREAK_WAIT = "免费技能后打断后等待(ms)"     # 闪避打断→combo第一下 的间隔
     CONF_FREE_BREAK_TEST_KEY = "免费技能后接combo测试键"
     CONF_FREE_SKILL_KEY = "技能键(测试放免费技能用)"
+    # 打断a5两套方案(选哪套下面只出哪套参数): 方案一=闪避(lshift, 原实现); 方案二=跳A(空格+左键
+    # 同按, 即光速4a/双4a里那个跳A)代替闪避打断。两套 delay/hold/wait 各自独立配置。
+    CONF_FREE_BREAK_MODE = "免费技能打断方式"
+    FREE_BREAK_MODE_DODGE = "方案一(闪避)"
+    FREE_BREAK_MODE_JUMP = "方案二(跳A)"
+    CONF_FREE_BREAK2_DELAY = "方案二-打断延迟(ms)"      # 免费技能→跳A 的等待
+    CONF_FREE_BREAK2_JUMP_HOLD = "方案二-跳A按住(ms)"   # 跳A(空格+左键同按)按住时长
+    CONF_FREE_BREAK2_WAIT = "方案二-打断后等待(ms)"     # 跳A打断→combo第一下 的间隔
 
     # 顶层配置太多, 全部按用途折叠成组(默认收起, 用到再展开)。分组开关一律用"▸ …(展开)"命名,
     # 与普通功能开关(如"禁用技能大招(测试)")在视觉上区分。
@@ -250,9 +258,13 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_LS_TAIL: 200,
                 # 免费技能后打断时序, 展开开关
                 self.CONF_FREE_BREAK_EXPAND: False,
+                self.CONF_FREE_BREAK_MODE: self.FREE_BREAK_MODE_DODGE,  # 默认方案一(闪避), 保持现有行为
                 self.CONF_FREE_BREAK_DELAY: 250,
                 self.CONF_FREE_BREAK_JUMP_HOLD: 20,
                 self.CONF_FREE_BREAK_WAIT: 450,
+                self.CONF_FREE_BREAK2_DELAY: 250,
+                self.CONF_FREE_BREAK2_JUMP_HOLD: 20,
+                self.CONF_FREE_BREAK2_WAIT: 450,
                 # 实战调优参数(折叠, 默认收起)
                 self.CONF_GROUP_TUNING: False,
                 self.CONF_DODGE_COUNTER: 0.95,
@@ -321,9 +333,23 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_FREE_BREAK_EXPAND: {
                     "sub_configs": {
                         True: [
+                            self.CONF_FREE_BREAK_MODE,
+                            self.CONF_FREE_BREAK_TEST_KEY, self.CONF_FREE_SKILL_KEY,
+                        ],
+                    },
+                },
+                # 打断方式(下拉)→ 选方案一显示闪避那3个时序, 选方案二显示跳A那3个时序(各自独立)。
+                self.CONF_FREE_BREAK_MODE: {
+                    "type": "drop_down",
+                    "options": [self.FREE_BREAK_MODE_DODGE, self.FREE_BREAK_MODE_JUMP],
+                    "sub_configs": {
+                        self.FREE_BREAK_MODE_DODGE: [
                             self.CONF_FREE_BREAK_DELAY, self.CONF_FREE_BREAK_JUMP_HOLD,
                             self.CONF_FREE_BREAK_WAIT,
-                            self.CONF_FREE_BREAK_TEST_KEY, self.CONF_FREE_SKILL_KEY,
+                        ],
+                        self.FREE_BREAK_MODE_JUMP: [
+                            self.CONF_FREE_BREAK2_DELAY, self.CONF_FREE_BREAK2_JUMP_HOLD,
+                            self.CONF_FREE_BREAK2_WAIT,
                         ],
                     },
                 },
@@ -422,10 +448,14 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_LS_TAIL: "方案四 跳A后收尾毫秒(连点节拍继续平A填满; 参考218)",
                 self.CONF_FREE_BREAK_TEST_KEY: "按此键=发技能键放(免费)技能→闪避打断a5→combo; 需游戏里把技能设成免费技能; 留空=关",
                 self.CONF_FREE_SKILL_KEY: "测试放免费技能用的技能键(填游戏里的技能键, 如e)",
-                self.CONF_FREE_BREAK_EXPAND: "▸ 分组折叠: 展开免费技能设置(打断3个时序 + 免费技测试键/技能键)",
-                self.CONF_FREE_BREAK_DELAY: "免费技能放出→按闪避打断 之间等这么久(核心; 早了打断免费技能/晚了a5已出)",
-                self.CONF_FREE_BREAK_JUMP_HOLD: "打断用的闪避键按住毫秒(实测只有闪避能打断a5, 跳A打不断)",
-                self.CONF_FREE_BREAK_WAIT: "闪避打断→combo第一下 的间隔毫秒(可填0)",
+                self.CONF_FREE_BREAK_EXPAND: "▸ 分组折叠: 展开免费技能设置(打断方式+对应方案时序 + 免费技测试键/技能键)",
+                self.CONF_FREE_BREAK_MODE: "免费技能打断a5的方式: 方案一(闪避lshift) / 方案二(跳A=空格+左键同按)",
+                self.CONF_FREE_BREAK_DELAY: "方案一 免费技能放出→按闪避打断 之间等这么久(核心; 早了打断免费技能/晚了a5已出)",
+                self.CONF_FREE_BREAK_JUMP_HOLD: "方案一 打断用的闪避键按住毫秒",
+                self.CONF_FREE_BREAK_WAIT: "方案一 闪避打断→combo第一下 的间隔毫秒(可填0)",
+                self.CONF_FREE_BREAK2_DELAY: "方案二 免费技能放出→跳A打断 之间等这么久(ms)",
+                self.CONF_FREE_BREAK2_JUMP_HOLD: "方案二 跳A(空格+左键同按)按住毫秒",
+                self.CONF_FREE_BREAK2_WAIT: "方案二 跳A打断→combo第一下 的间隔毫秒(可填0)",
                 self.CONF_GROUP_TRIGGER: "▸ 分组折叠: 展开基础触发设置(触发键/宏模式/触发方式/输入方式)",
                 self.CONF_GROUP_TUNING: "▸ 分组折叠: 展开实战调优参数(反击平A/后摇/主动闪避/轮数/技能前平A/脱战复查/让路)",
                 self.CONF_GROUP_TEST: "▸ 分组折叠: 展开测试开关与测试键(闪避反击测试/禁用技能大招/首平A/模拟闪避)",
@@ -844,19 +874,27 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             self.log_info("闪避反击测试: 一次序列完成")
 
     def _run_free_skill_combo_test(self):
-        """免费技能后接combo测试: 发技能键放(免费)技能 → delay → 闪避打断拖沓低伤的a5(实测只有闪避能打断,
-        跳A打不断) → wait → combo(按4A宏模式当前选择)。需在游戏里把技能设成免费技能(可反复放, 不受16s真技能CD限制)。
-        期间暂停声音自动闪避, 便于反复调 delay/hold。时序与实战侧(Requiem._free_skill_break_a5)同一份配置。"""
+        """免费技能后接combo测试: 发技能键放(免费)技能 → delay → 打断拖沓低伤的a5 → wait → combo(按4A宏模式)。
+        打断方式两套(选哪套读哪套参数): 方案一=闪避(lshift), 方案二=跳A(空格+左键同按)。需在游戏里把技能
+        设成免费技能(可反复放, 不受16s真技能CD限制)。期间暂停声音自动闪避, 便于反复调 delay/hold。
+        时序与实战侧(Requiem._free_skill_break_a5)同一份配置。"""
         from src.sound_trigger.SoundCombatContext import SoundCombatContext
 
         self._macro_running = True
         self._in_dodge_test = True
         SoundCombatContext.set_dodge_paused(True)
-        delay = self._conf_num(self.CONF_FREE_BREAK_DELAY, 200)
-        hold = self._conf_num(self.CONF_FREE_BREAK_JUMP_HOLD, 20)
-        wait = self._conf_num(self.CONF_FREE_BREAK_WAIT, 0)
+        jump_mode = self.config.get(self.CONF_FREE_BREAK_MODE, self.FREE_BREAK_MODE_DODGE) == self.FREE_BREAK_MODE_JUMP
+        if jump_mode:
+            delay = self._conf_num(self.CONF_FREE_BREAK2_DELAY, 250)
+            hold = self._conf_num(self.CONF_FREE_BREAK2_JUMP_HOLD, 20)
+            wait = self._conf_num(self.CONF_FREE_BREAK2_WAIT, 0)
+        else:
+            delay = self._conf_num(self.CONF_FREE_BREAK_DELAY, 200)
+            hold = self._conf_num(self.CONF_FREE_BREAK_JUMP_HOLD, 20)
+            wait = self._conf_num(self.CONF_FREE_BREAK_WAIT, 0)
         skill_key = self.config.get(self.CONF_FREE_SKILL_KEY, "e")
-        self.log_info(f"免费技能后接combo测试: 触发 (技能键={skill_key})")
+        action = "跳A" if jump_mode else "闪避"
+        self.log_info(f"免费技能后接combo测试: 触发 (技能键={skill_key}, 打断={action})")
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
             self._prepare_input()
@@ -865,15 +903,22 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.send_key(str(skill_key), down_time=0.02)  # 放(免费)技能
             if delay > 0:
                 time.sleep(delay / 1000.0)
-            self.send_key_down(self.DODGE_KEY)   # 闪避打断a5(实测只有闪避能打断, 跳A打不断)
-            io.sleep_ms(hold)
-            self.send_key_up(self.DODGE_KEY)
+            if jump_mode:
+                io.space_down()   # 跳A打断a5: 空格+左键同按(光速4a/双4a那个跳A)
+                io.mouse_down()
+                io.sleep_ms(hold)
+                io.mouse_up()
+                io.space_up()
+            else:
+                self.send_key_down(self.DODGE_KEY)   # 闪避打断a5
+                io.sleep_ms(hold)
+                self.send_key_up(self.DODGE_KEY)
             if wait > 0:
                 io.sleep_ms(wait)
             rounds = max(1, int(self._conf_num(self.CONF_COMBO_ROUNDS, self.DODGE_TEST_COMBO_ROUNDS)))
             name = self._run_combo_rounds(io, rounds)   # 打断后接 combo(按4A宏模式), 轮数复用"combo轮数"
             self.log_info(
-                f"免费技能后接combo测试: 放技能→等{delay:.0f}→闪避{hold:.0f}→等{wait:.0f}ms → {rounds}轮{name}")
+                f"免费技能后接combo测试: 放技能→等{delay:.0f}→{action}{hold:.0f}→等{wait:.0f}ms → {rounds}轮{name}")
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
             SoundCombatContext.set_dodge_paused(False)
