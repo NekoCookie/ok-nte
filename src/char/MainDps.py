@@ -415,6 +415,16 @@ class HealSupport(BuffSupport):
         super().__init__(*args, **kwargs)
         self.role = Role.HEALER
 
+    def describe_role(self):
+        # planner 无 HEALER 定位, 用 SUPPORT + SETUP_ONLY 站场偏好: 治疗不主动站场(无请求时不
+        # 抢 field_time), 只在 priority_ready(资源就绪且 _higher_priority_busy 放行)时被切上。
+        # 治疗"最低优先级"在 planner 下靠 has_confirmed_resource/has_skill_resource 的门控实现。
+        return RoleProfile(
+            role=PlannerRole.SUPPORT,
+            field_preference=FieldPreference.SETUP_ONLY,
+            max_field_time=1.5,
+        )
+
     def _higher_priority_busy(self):
         """主C有爆发(技能/大招就绪),或别的非治疗辅助有资源/待探测 = 有更高优先级要上,治疗让位。"""
         for char in self.task.chars:
@@ -475,7 +485,8 @@ class SakiriBuffSupport(BuffSupport):
             from src.char.Sakiri import Sakiri
 
             return Sakiri.combat_plan(self, context)
-        # 有主C体系: 保持 BaseChar 默认(planner 仅用它做切换评分, perform 走 do_perform)
+        # 有主C体系: 走 super()=BuffSupport 的 ru 风格 combat_plan(大招/技能独立动作+entry编排)。
+        # 长按由 SKILL_DOWN_TIME=0.25 在 skill 的 execute(_execute_support_skill)自动生效, 无需重写。
         return super().combat_plan(context)
 
     def do_perform(self):

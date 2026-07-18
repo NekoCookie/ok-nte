@@ -14,8 +14,8 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.char.BaseChar import BaseChar
-from src.char.MainDps import BuffSupport
-from src.combat.planner import ActionSlot, ActionTag, FieldClaimLevel
+from src.char.MainDps import BuffSupport, HealSupport, SakiriBuffSupport
+from src.combat.planner import ActionSlot, ActionTag, FieldClaimLevel, FieldPreference
 from src.combat.planner import Role as PlannerRole
 
 
@@ -113,6 +113,76 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         c._cast_skill_if_about_ready = mock.MagicMock(return_value=True)
         self.assertTrue(c._execute_support_skill(None))
         c._cast_skill_if_about_ready.assert_called_once()
+
+
+class TestHealSupportInheritsBuffPlan(unittest.TestCase):
+    """治疗继承 BuffSupport 的 ru 风格 combat_plan, 低优先级靠 override 的资源判定门自动生效。"""
+
+    def _heal(self, higher_busy, ult_ready=True, skill_ready=True):
+        c = HealSupport.__new__(HealSupport)
+        c.index = 2
+        c.team_has_main_dps = lambda: True
+        c._higher_priority_busy = lambda: higher_busy
+        c.recently_used_resource = lambda: False
+        c.ultimate_ready_now = lambda: ult_ready
+        c.skill_available = lambda: skill_ready
+        c.ultimate_available = lambda: ult_ready
+        # BuffSupport 基类资源判定(治疗 override 加了 _higher_priority_busy 门)
+        c.has_cd_cache = lambda: True
+        c.is_current_char = False
+
+        def off_field_ult(idx):
+            return ult_ready
+
+        c.task = mock.MagicMock()
+        c.task.off_field_ultimate_ready = off_field_ult
+        return c
+
+    def test_describe_role_setup_only(self):
+        c = self._heal(higher_busy=False)
+        role = c.describe_role()
+        self.assertEqual(role.role, PlannerRole.SUPPORT)
+        self.assertEqual(role.field_preference, FieldPreference.SETUP_ONLY, "治疗不主动站场")
+
+    def test_priority_ready_false_when_higher_priority_busy(self):
+        # 主C/别的辅助有资源时, 治疗的技能 action priority_ready=False(不抢切人)
+        c = self._heal(higher_busy=True)
+        skill = actions_by_slot(c.combat_plan(None))[ActionSlot.SKILL]
+        self.assertFalse(skill.priority_ready(None), "有更高优先级时治疗不吸引切人")
+
+    def test_no_ultimate_buff_claim(self):
+        # 治疗 ultimate_buff_pending() 恒 False → 不发压环合 claim
+        c = self._heal(higher_busy=False)
+        self.assertEqual(list(c.combat_plan(None).claims), [])
+
+
+class TestSakiriSupportInheritsBuffPlan(unittest.TestCase):
+    def test_with_main_dps_uses_buff_plan_with_long_press(self):
+        # 有主C: super()=BuffSupport ru 风格; 技能 execute 用 SakiriBuffSupport 的长按 SKILL_DOWN_TIME
+        c = SakiriBuffSupport.__new__(SakiriBuffSupport)
+        c.index = 1
+        c.team_has_main_dps = lambda: True
+        c.ultimate_ready_now = lambda: True
+        c.recently_used_resource = lambda: False
+        c.has_skill_resource = lambda: True
+        c.ultimate_buff_pending = lambda: False
+        c.skill_available = lambda: True
+        c.ultimate_available = lambda: True
+        plan = c.combat_plan(None)
+        by_slot = actions_by_slot(plan)
+        self.assertIn(ActionSlot.SKILL, by_slot)
+        self.assertIn(ActionSlot.ULTIMATE, by_slot)
+        # 长按常量: 早雾 0.25s(vs 普通辅助 0.01)
+        self.assertEqual(SakiriBuffSupport.SKILL_DOWN_TIME, 0.25)
+
+    def test_without_main_dps_delegates_ru_sakiri(self):
+        from src.char.Sakiri import Sakiri
+
+        c = SakiriBuffSupport.__new__(SakiriBuffSupport)
+        c.team_has_main_dps = lambda: False
+        with mock.patch.object(Sakiri, "combat_plan", return_value="ru-sakiri") as m:
+            self.assertEqual(c.combat_plan("ctx"), "ru-sakiri")
+        m.assert_called_once_with(c, "ctx")
 
 
 if __name__ == "__main__":
