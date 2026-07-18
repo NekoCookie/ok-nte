@@ -637,7 +637,10 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
             post_action (callable, optional): 切换后执行的动作 (回调函数)。默认为 None。
             free_intro (bool, optional): 是否强制认为拥有入场技 (通常在协奏值满时)。默认为 False。
         """
-        if self.LW_SWITCH_NEXT:  # [lw] 开=龙威切换决策接管主切人(src/lw/combat_ext.py), 关=下面上游planner原版(仅排查对照)
+        from src.lw.planner_migration import USE_PLANNER  # [lw]
+        # [lw] 开=龙威切换决策(legacy Priority); USE_PLANNER 总开关开启时改走下面上游 planner
+        # 原版 decide_switch(全面升级: 全队 planner 出招 + planner 切换, 整体 A/B)。
+        if self.LW_SWITCH_NEXT and not USE_PLANNER:
             return self.lw_switch_next_char(current_char, post_action=post_action, free_intro=free_intro)  # [lw]
         if self.team_size <= 1:
             self.click(action_name="switch_char_click", interval=0.1)

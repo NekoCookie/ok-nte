@@ -42,6 +42,23 @@ class TestSwitchNextDispatch(unittest.TestCase):
         t.lw_switch_next_char.assert_not_called()
         t.combat_planner.decide_switch.assert_called_once()
 
+    def test_master_switch_routes_to_planner(self):
+        # 全面升级总开关 USE_PLANNER=True: 主切换改走上游 planner(即便 LW_SWITCH_NEXT=True)
+        from src.lw import planner_migration
+
+        t = BaseCombatTask.__new__(BaseCombatTask)
+        t.chars = [mock.MagicMock(), mock.MagicMock()]
+        t.lw_switch_next_char = mock.MagicMock()
+        decision = mock.MagicMock()
+        decision.target = None
+        t.combat_planner = mock.MagicMock()
+        t.combat_planner.decide_switch.return_value = decision
+        t.run_with_interval = mock.MagicMock()
+        with mock.patch.object(planner_migration, "USE_PLANNER", True):
+            t.switch_next_char(mock.MagicMock())
+        t.lw_switch_next_char.assert_not_called()
+        t.combat_planner.decide_switch.assert_called_once()
+
     def test_lw_switch_uses_lw_decide_and_switch_to_char(self):
         # lw 版内部: 走 lw_decide_switch_to 选目标 + _switch_to_char 执行, 不碰 planner.decide_switch
         t = BaseCombatTask.__new__(BaseCombatTask)
