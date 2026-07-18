@@ -294,14 +294,12 @@ class BuffSupport(BaseChar):
         self.task.diag_cast(self.index, enter_at, "辅助技能等待→超时仍没就绪, 放弃")
         return False
 
-    # [lw] planner 迁移 A/B 开关: False=出招走 do_perform(现状, 默认); True=出招走 combat_plan
-    # (planner 调度)。逐角色迁移期用于实机对比手感, 验证等价后全队统一切 planner。
-    LW_USE_PLANNER_PLAN = False
-
     def lw_use_do_perform(self):
         # 无主C体系时整体退回上游 planner(旧版回退 super().do_perform() 已随 planner 化成
-        # AttributeError)。另: LW_USE_PLANNER_PLAN 开启后, 有主C也走 combat_plan(planner 出招)。
-        return self.team_has_main_dps() and not self.LW_USE_PLANNER_PLAN
+        # AttributeError)。另: 全面升级总开关 USE_PLANNER 开启后, 有主C也走 combat_plan。
+        from src.lw.planner_migration import USE_PLANNER
+
+        return self.team_has_main_dps() and not USE_PLANNER
 
     def describe_role(self):
         # planner 定位: 辅助。走 lw 切换决策(LW_SWITCH_NEXT)时不生效, 仅 planner 决策时用。
@@ -312,39 +310,58 @@ class BuffSupport(BaseChar):
         )
 
     def combat_plan(self, context):
-        """辅助整段出招(放大招+技能+补放)包进一个 planner 动作: 时序/settle/probe 逻辑
-        复用 do_perform 那套(_planner_perform_support 直接调 _cast_ult_and_skill), 只把
-        "何时切上场"交给 planner——priority_ready 用资源判定(等价 legacy has_confirmed/
-        skill_resource), tags 按当前资源动态给分(大招就绪=ULTIMATE_ACTION 200, 仅技能=
-        SKILL_ACTION 75, 对应旧的大招让位/技能中等优先级)。大招 buff 待铺时发 high claim
-        压过环合反应(对应 lw_decide_switch_to 的 _any_support_ultimate_pending)。"""
+        """按 ru 风格拆成独立声明动作 + entry 编排(对照 Nanally 的 planner 迁移):
+        - 大招/技能各是一个独立 action(planner 能分别评分、被 route/reservation 精确匹配);
+        - priority_ready 用辅助资源判定(大招看菱形 ultimate_ready_now、技能看 has_skill_resource,
+          等价 legacy has_confirmed/skill_resource, 决定"下场时值不值得为它切上场");
+        - entry generator 编排 do_perform 的顺序(放大招→放技能→大招若刚就绪补一次), 收尾更新资源缓存;
+        - 技能的完整实现(放招+当场锚CD+闪避打断结算+差一点就绪留场等)封装在 skill 的 execute。
+        大招 buff 待铺时发 high claim 压过环合反应(对应 lw 的 _any_support_ultimate_pending)。"""
         if not self.team_has_main_dps():
             return super().combat_plan(context)  # 无主C: BaseChar 默认(放大招放技能)
 
-        if self.ultimate_ready_now() and not self.recently_used_resource():
-            tags = {ActionTag.SUPPORT, ActionTag.ULTIMATE_ACTION}
-        else:
-            tags = {ActionTag.SUPPORT, ActionTag.SKILL_ACTION}
-        perform = self.planner_action(
-            tags=tags,
-            slot=ActionSlot.CUSTOM,  # 整段动作, 不参与 ultimate/skill 槽 reservation
-            execute=self._planner_perform_support,
-            name=f"{self}_support_perform",
-            reason="support resource ready",
-            can_execute=lambda _: self.skill_available() or self.ultimate_available(),
-            priority_ready=lambda _: self.has_confirmed_resource() or self.has_skill_resource(),
+        ultimate = self.planner_action(
+            tags={ActionTag.SUPPORT, ActionTag.ULTIMATE_ACTION},
+            slot=ActionSlot.ULTIMATE,
+            execute=lambda _: self.click_ultimate(),
+            name=f"{self}_ultimate",
+            reason="support ultimate ready",
+            can_execute=lambda _: self.ultimate_available(),
+            priority_ready=lambda _: self.ultimate_ready_now() and not self.recently_used_resource(),
+        )
+        skill = self.planner_action(
+            tags={ActionTag.SUPPORT, ActionTag.SKILL_ACTION},
+            slot=ActionSlot.SKILL,
+            execute=self._execute_support_skill,
+            name=f"{self}_skill",
+            reason="support skill ready",
+            can_execute=lambda _: self.skill_available(),
+            priority_ready=lambda _: self.has_skill_resource() and not self.recently_used_resource(),
         )
         claims = []
         if self.ultimate_buff_pending():
             claims.append(FieldClaim.high(source=self, reason="support ultimate buff pending"))
-        return self.plan(perform, claims=claims)
 
-    def _planner_perform_support(self, context=None):
-        """combat_plan 的执行体: 复用 do_perform 的核心(放大招+技能+补放+资源缓存更新)。
-        手感与 do_perform 完全一致, 只是由 planner 调度而非 lw 主循环直接调。"""
-        used_ultimate, used_skill = self._cast_ult_and_skill(skill_down_time=self.SKILL_DOWN_TIME)
-        self.update_resource_after_perform(used_ultimate, used_skill)
-        return used_ultimate or used_skill
+        def entry():
+            used_ultimate = bool((yield ultimate))
+            used_skill = bool((yield skill))
+            # 放技能后大招常刚好充满, 同一站场补放一次(对应 _cast_ult_and_skill 的补大招)
+            if not used_ultimate and self.ultimate_available():
+                used_ultimate = bool((yield ultimate))
+            self.update_resource_after_perform(used_ultimate, used_skill)
+
+        return self.plan(ultimate, skill, claims=claims, entry=entry)
+
+    def _execute_support_skill(self, context=None):
+        """技能动作的完整实现(从 _cast_ult_and_skill 的技能分支抽出, 手感不变):
+        放招→当场锚 CD→闪避打断结算; 没放成则看差一点就绪留场等。"""
+        if self.click_skill(down_time=self.SKILL_DOWN_TIME):
+            self.logger.info(f"{type(self).__name__} skill cast (anchor cd {self.SKILL_COOLDOWN}s)")
+            self.task.note_skill_on_cd(self.index, cd=self.SKILL_COOLDOWN)
+            cast_at = self.task.cds.get(self.index, {}).get("skill_cast_at", 0)
+            self.settle_skill_after_cast(cast_at, self.SKILL_COOLDOWN)
+            return True
+        return self._cast_skill_if_about_ready()
 
     def do_perform(self):
         if not self.team_has_main_dps():
