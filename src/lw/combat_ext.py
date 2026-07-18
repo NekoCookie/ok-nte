@@ -80,6 +80,7 @@ class CombatExtMixin(_TaskProxy):
         self.unavailable_char_until = {}
         self.unavailable_char_failures = {}
         self._last_team_recheck = 0.0  # AutoCombatTask 的队伍重载节流
+        self._pending_team_shrink = None  # 主循环减员二次确认的候选(count, 首次检测时刻)
 
     # ---------- 角色不可用标记 ----------
 
@@ -887,26 +888,37 @@ class CombatExtMixin(_TaskProxy):
             return True
         current_index, count = snapshot
         if self.team_size == 0 or count == self.team_size:
+            self._pending_team_shrink = None  # 人数恢复, 清减员候选(抖动被吸收)
             return True
         if count > self.team_size and not self.is_reliable_team_expansion(count):
+            self._pending_team_shrink = None
             self.log_info(
                 f"team size expansion ignored during combat {self.team_size} -> {count}"
             )
             return True
 
-        # [lw] 减员诊断: dump 各槽头像匹配分, 事后区分"擦边压低=抖动误判"还是"真减员"。
-        # 目前减员无二次确认(对比扩员有 is_reliable_team_expansion), 抖动会直接 reload;
-        # 先靠日志实证抖动频率与成因, 再决定是否加减员防抖。
+        # [lw] 减员二次确认: 某帧头像瞬时识别不到(大招演出/切人过渡/遮挡)会误判减员,
+        # 直接 reload 会打断战斗并触发连锁问题。要求同一 count 持续 TEAM_CHANGE_CONFIRM_INTERVAL
+        # 才真 reload; 抖动下一轮 count 恢复→上面 count==team_size 分支清候选, 不 reload。
+        # (对齐战斗动作中的 check_team_changed_during_combat, 补齐主循环这条历史遗漏的路径)
         if count < self.team_size:
-            try:
-                scores = self.lw_dump_char_slot_scores()
-                fmt = ", ".join(f"槽{i + 1}={s:.2f}" for i, s in enumerate(scores))
-                self.log_info(
-                    f"team shrink diag {self.team_size} -> {count} @current{current_index}, "
-                    f"各槽头像匹配分[{fmt}] (>=0.70命中算有人; 0.00=低于0.30)"
-                )
-            except Exception as e:
-                self.log_info(f"team shrink diag failed: {e}")
+            previous = self._pending_team_shrink
+            if previous is None or previous[0] != count:
+                self._pending_team_shrink = (count, now)
+                # 首次检测到该减员即 dump 各槽匹配分: 擦边(0.6x)=抖动误判, 归零(<0.3)=真减员
+                try:
+                    scores = self.lw_dump_char_slot_scores()
+                    fmt = ", ".join(f"槽{i + 1}={s:.2f}" for i, s in enumerate(scores))
+                    self.log_info(
+                        f"team shrink candidate {self.team_size} -> {count} @current{current_index}, "
+                        f"各槽头像匹配分[{fmt}] (>=0.70命中算有人; 0.00=低于0.30)"
+                    )
+                except Exception as e:
+                    self.log_info(f"team shrink diag failed: {e}")
+                return True  # 本轮不 reload, 继续用旧队伍
+            if now - previous[1] < self.TEAM_CHANGE_CONFIRM_INTERVAL:
+                return True  # 候选未满确认窗口, 继续等
+            self._pending_team_shrink = None  # 减员持续确认, 落地 reload
 
         self.log_info(f"team size changed during combat {self.team_size} -> {count}, reload chars")
         return self._reload_combat_team()
@@ -1053,6 +1065,7 @@ class CombatExtMixin(_TaskProxy):
     def _commit_loaded_chars(self, chars: list["BaseChar"], current_index: int):
         self._pending_team_change = None
         self._pending_team_signature_change = None
+        self._pending_team_shrink = None
         self._last_team_change_check = 0.0
         self._last_team_signature_check = 0.0
         self.clear_element_reactions()  # 上游改名(原clear_element_ring_reactions)
