@@ -30,8 +30,12 @@ class Nanally(BaseChar):
             if skill_result and self.ultimate_available():
                 self.sleep(0.6)
 
+            ult_was_available = self.ultimate_available()  # [lw] yield前记录, 供大招放出容错判定
             ultimate_result = yield ultimate
-            if ultimate_result:
+            # [lw] click_ultimate 的"进没进动画"检测会被大招时停/targeting/声音闪避干扰, 误报
+            #      "no effect"(返回False); 但只要大招CD已进(之前可用、现在不可用)就是真放出了,
+            #      仍要站满6s, 不被误判跳过——否则大招放完瞬间被切走(如零的元素反应), 站场白丢。
+            if ultimate_result or (ult_was_available and not self.ultimate_available()):
                 self.perform_in_ult(context)
 
         return self.plan(
