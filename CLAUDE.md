@@ -7,15 +7,17 @@
 
 - **`src/lw/` 是用户专属包**,所有整块新增的方法/常量/类一律放这里,通过 Mixin 接入上游类:
   - `combat_ext.py` → `CombatExtMixin`,接入 `BaseCombatTask`(CD锚定、角色不可用、队伍变更检测、trigger重载等)
-  - `char_ext.py` → `CharExtMixin`,接入 `BaseChar`(技能结算、大招settle、空闲平A、旧版切换优先级机制等)
+  - `char_ext.py` → `CharExtMixin`,接入 `BaseChar`(技能结算、大招 settle、空闲平A等)
   - `char_ui_ext.py` → `CharUIExtMixin`,接入 `CharUIMixin`(位于 `src/tasks/mixin/CharUIMixin.py`,大招菱形检测等)
-  - `legacy_priority.py` → 旧版 `Priority`/`Role` 枚举(上游 planner 化后从 `BaseChar` 移除,
-    lw 切换决策与 `MainDps.py` 仍依赖,整体迁移至此维护)
+  - `combat_templates.py` → LW 主C、公共资源辅助、增益辅助、治疗和早雾辅助模板
   - `nte_task_ext.py` → `NTETaskExtMixin`,接入 `BaseNTETask`(find_confirm OCR认字等)
   - `sound_ext.py` → `SoundContextExtMixin`,接入 `SoundCombatContext`
   - `chars.py` → 用户角色注册表(`CharFactory.char_dict.update(lw_char_dict)`)
-- 用户自有的完整文件(如 `src/char/Requiem.py`、`src/char/MainDps.py`、`src/combat/requiem_combo.py`、
+- 用户自有的完整文件(如 `src/char/Requiem.py`、`src/combat/requiem_combo.py`、
   `src/tasks/trigger/NanallySuperJumpTask.py`)不受此限,它们本身不与上游冲突。
+
+战斗出招和切换已经统一迁移到 RU planner；旧 `do_perform`、旧 `Priority/Role` 和
+planner A/B 总开关已经退役，不再新增兼容分支。
 
 ## `# [lw]` 标记
 
@@ -36,7 +38,6 @@
     上游原版方法体**原样保留**在分发之后,作对照/排查回退用。现有例子:
     `BaseCombatTask.refresh_cd`(`LW_CD_ANCHORING` → `lw_refresh_cd`)、
     `BaseCombatTask.load_chars`(`LW_LOAD_CHARS` → `lw_load_chars`)、
-    `BaseCombatTask._decide_switch_to`(`LW_SWITCH_DECIDE` → `lw_decide_switch_to`)、
     `AutoCombatTask.run`(`LW_COMBAT_RUN` → `lw_combat_run`)。
 - 用户实例字段不写在上游 `__init__` 里——`CombatExtMixin.__init__` 会经由上游
   `super().__init__()` 链被调用, 用户字段统一在那里初始化。
@@ -48,4 +49,6 @@
 ## 其他
 
 - 用户 git 身份有两个,是同一人:`龙威 <376504041@qq.com>`、`longwei <longwei@mgtv.com>`。
+- 每个独立功能/修复完成且相关测试通过后直接创建独立 Git 提交；只提交本功能范围，
+  不夹带用户已有改动、本地配置或无关未跟踪文件。
 - 运行测试:`.\run_tests.ps1`(或 `python -m pytest tests/ -x -q`)。
