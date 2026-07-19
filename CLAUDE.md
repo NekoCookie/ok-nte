@@ -7,8 +7,7 @@
 
 - **`src/lw/` 是用户专属包**,所有整块新增的方法/常量/类一律放这里,通过 Mixin 接入上游类:
   - `combat_ext.py` → `CombatExtMixin`,接入 `BaseCombatTask`(CD锚定、角色不可用、队伍变更检测、trigger重载等)
-  - `char_ext.py` → `CharExtMixin`,接入 `BaseChar`(输入重试、大招演出保护、空闲平A等)
-  - `skill_cast_settle.py` → 仅供资源辅助与安魂曲复用的技能打断结算 Mixin
+  - `char_ext.py` → `CharExtMixin`,接入 `BaseChar`(通用技能打断恢复、输入重试、大招演出保护、空闲平A等)
   - `char_ui_ext.py` → `CharUIExtMixin`,接入 `CharUIMixin`(位于 `src/tasks/mixin/CharUIMixin.py`,大招菱形检测等)
   - `combat_templates.py` → LW 主C、公共资源辅助、增益辅助、治疗和早雾辅助模板
   - `nte_task_ext.py` → `NTETaskExtMixin`,接入 `BaseNTETask`(find_confirm OCR认字等)

@@ -6,7 +6,6 @@ import numpy as np
 import win32con
 
 from src.lw.combat_templates import MainDps
-from src.lw.skill_cast_settle import SkillCastSettleMixin  # [lw]
 from src.combat import requiem_combo
 from src.combat.planner import ActionSlot, ActionTag
 from src.Labels import Labels
@@ -97,7 +96,7 @@ class _RequiemCombatIO:
         time.sleep(ms / 1000.0)
 
 
-class Requiem(SkillCastSettleMixin, MainDps):  # [lw] 仅安魂曲需要闪避打断后的技能结算
+class Requiem(MainDps):
     """Main DPS template with off-field skill overlap after skill cast."""
 
     # 主C站场输出改用一轮 4A跳A combo(时序见 requiem_combo, 与跳A宏方案一同源)。
@@ -797,7 +796,10 @@ class Requiem(SkillCastSettleMixin, MainDps):  # [lw] 仅安魂曲需要闪避�
     def _try_land_real_skill(self):
         """放一次真技能并确认是否真进了**长CD**(= 放成功)。是→安排 overlap, 返回 True。
         还就绪(没按出去)/进短CD(被闪避打断的假成功)→ 返回 False, 交给 settle 补放/校准。"""
-        if not self.click_skill():  # 上游click_skill改返回bool(原三元组)
+        if not self.click_skill(
+            settle_cooldown=self.REAL_SKILL_CD,  # [lw] 通用技能打断恢复使用真技能 CD
+            settle_max_duration=self.REAL_SKILL_RETRY_MAX_DURATION,  # [lw]
+        ):
             return False
         if self._skill_still_available_after_input_mode_delay():
             return False  # 还就绪 = 没按出去
@@ -807,21 +809,18 @@ class Requiem(SkillCastSettleMixin, MainDps):  # [lw] 仅安魂曲需要闪避�
         return True
 
     def cast_real_skill(self):
-        """真技能分支(伤害大头): 先起手平A进交战再放真技能。放招那一下若紧接着触发闪避,
-        可能被打断——和辅助走同一套统一结算 settle_skill_after_cast: 没按出去就补放(真技能
-        值得久等, 上限 REAL_SKILL_RETRY_MAX_DURATION)、进了CD就读真实CD校准长短。结算完只有
-        确认进了**长CD**(真放成功)才 overlap 下场; 短CD(被打断)/没放出则不切, 下轮重试。"""
+        """真技能分支(伤害大头): 先起手平A进交战再放真技能。
+
+        BaseChar.click_skill 统一处理放招后闪避导致的补发；这里只判断最终是否进入长 CD，
+        决定是否安排 overlap 下场。
+        """
         # 先平A出手进入交战, 再放真技能, 否则开战瞬间直接放会打空(技能消失)。
-        attempt_at = time.time()
         engage = self.engage_attack_duration()
         if engage > 0:
             self.engage_before_skill(engage)
         if self._try_land_real_skill():
             return  # 一次就放进长CD(常见路径)→ 已 overlap
-        # 没立即放成(被闪避打断/没按出去): 统一 settle 补放到放出 / 进CD校准真实长短。
-        self.settle_skill_after_cast(
-            attempt_at, self.REAL_SKILL_CD, max_duration=self.REAL_SKILL_RETRY_MAX_DURATION
-        )
+        # 通用 click_skill 已完成必要的打断恢复；复查最终长短 CD 决定是否下场。
         if self._real_skill_in_long_cd():
             self._mark_real_skill_overlap("settled")
         else:

@@ -63,8 +63,6 @@ def make_requiem(clock, skill_kind="real", skill_available=True,
     r._skill_still_available_after_input_mode_delay = mock.MagicMock(return_value=False)
     # 放招后图标是否在长CD(=真放成功);区分 16s 长CD vs 被打断的 ~3s 短CD。
     r._real_skill_in_long_cd = mock.MagicMock(return_value=in_long_cd)
-    # settle_skill_after_cast 有独立单测(TestSettleSkill);这里 mock 掉只测 cast_real_skill 编排。
-    r.settle_skill_after_cast = mock.MagicMock(return_value=False)
     # 视觉判定打桩:固定返回 skill_kind(plan entry 经 is_real_skill_now 读取)
     r.classify_skill_visual = mock.MagicMock(return_value=skill_kind)
     r._maybe_trigger_g_skill = mock.MagicMock(return_value=False)
@@ -126,35 +124,39 @@ class TestRequiemSkillClassification(unittest.TestCase):
         self.assertTrue(r.should_force_off_field(), "识别不到应按真技能切人")
         r.free_skill_followup_attack.assert_not_called()
 
-    # ---- 一次放成功(进长CD)→ 不经 settle 直接 overlap ----
+    # ---- 一次放成功(进长CD)→ 直接 overlap ----
     def test_real_skill_first_try_long_cd_switches(self):
         r = make_requiem(self.clock, skill_kind="real", in_long_cd=True)
         run_requiem_plan(r)
         self.assertTrue(r.should_force_off_field(), "进长CD=放成功, 应 overlap 下场")
-        r.settle_skill_after_cast.assert_not_called()
+        r.click_skill.assert_called_with(
+            settle_cooldown=r.REAL_SKILL_CD,
+            settle_max_duration=r.REAL_SKILL_RETRY_MAX_DURATION,
+        )
 
     # ---- 进的是短CD(被闪避打断的假成功)→ 不切, 修掉"短CD误当放成功" ----
     def test_real_skill_short_cd_does_not_switch(self):
         r = make_requiem(self.clock, skill_kind="real", in_long_cd=False)
         run_requiem_plan(r)
         self.assertFalse(r.should_force_off_field(), "短CD=被打断, 不该 overlap")
-        r.settle_skill_after_cast.assert_called_once()  # 没放成 → 交给 settle
+        r.click_skill.assert_called_with(
+            settle_cooldown=r.REAL_SKILL_CD,
+            settle_max_duration=r.REAL_SKILL_RETRY_MAX_DURATION,
+        )
 
-    # ---- 没按出去(还就绪)→ settle 补放进长CD → overlap ----
-    def test_real_skill_settle_lands_long_cd_switches(self):
+    # ---- 没按出去，经公共 click_skill 恢复后进长CD → overlap ----
+    def test_real_skill_common_recovery_lands_long_cd_switches(self):
         r = make_requiem(self.clock, skill_kind="real", in_long_cd=True)
-        # 首次确认仍可用 = 没按出去 → _try_land 返回 False, 进 settle
+        # 首次确认仍可用 = 没按出去 → _try_land 返回 False，复查公共恢复后的最终 CD。
         r._skill_still_available_after_input_mode_delay = mock.MagicMock(return_value=True)
         run_requiem_plan(r)
-        r.settle_skill_after_cast.assert_called_once()
         self.assertTrue(r.should_force_off_field(), "settle 后进长CD应 overlap 下场")
 
-    # ---- 没按出去, settle 后仍没进长CD → 不切, 下轮重试 ----
-    def test_real_skill_settle_fails_no_switch(self):
+    # ---- 没按出去，公共恢复后仍没进长CD → 不切, 下轮重试 ----
+    def test_real_skill_common_recovery_fails_no_switch(self):
         r = make_requiem(self.clock, skill_kind="real", in_long_cd=False)
         r._skill_still_available_after_input_mode_delay = mock.MagicMock(return_value=True)
         run_requiem_plan(r)
-        r.settle_skill_after_cast.assert_called_once()
         self.assertFalse(r.should_force_off_field(), "settle 后仍没进长CD, 不该 overlap")
 
     # ---- _real_skill_in_long_cd 轮询: CD数字滞后, 几帧后刷出长CD → 提前判成功 ----

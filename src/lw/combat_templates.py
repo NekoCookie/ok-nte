@@ -9,7 +9,6 @@ from src.combat.planner import (
     RoleProfile,
 )
 from src.combat.planner import Role as PlannerRole
-from src.lw.skill_cast_settle import SkillCastSettleMixin
 
 
 class MainDps(BaseChar):
@@ -118,7 +117,7 @@ class MainDps(BaseChar):
         super().switch_next_char(post_action=post_action, free_intro=free_intro)
 
 
-class ResourceSupport(SkillCastSettleMixin, BaseChar):
+class ResourceSupport(BaseChar):
     """增益辅助与治疗共用的资源识别、进场动作和技能结算基础模板。"""
 
     RESOURCE_PROBE_INTERVAL = 30.0
@@ -291,12 +290,10 @@ class ResourceSupport(SkillCastSettleMixin, BaseChar):
         return self.plan(ultimate, skill, claims=claims, entry=entry)
 
     def _execute_support_skill(self, context=None):
-        """放招→当场锚 CD→闪避打断结算；没放成则看差一点就绪留场等。"""
+        """放招→当场锚 CD；通用闪避打断恢复由 BaseChar.click_skill 处理。"""
         if self.click_skill(down_time=self.SKILL_DOWN_TIME):
             self.logger.info(f"{type(self).__name__} skill cast (anchor cd {self.SKILL_COOLDOWN}s)")
             self.task.note_skill_on_cd(self.index, cd=self.SKILL_COOLDOWN)
-            cast_at = self.task.cds.get(self.index, {}).get("skill_cast_at", 0)
-            self.settle_skill_after_cast(cast_at, self.SKILL_COOLDOWN)
             return True
         return self._cast_skill_if_about_ready()
 

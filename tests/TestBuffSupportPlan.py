@@ -179,19 +179,16 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         with mock.patch.object(BaseChar, "combat_plan", return_value="base-default"):
             self.assertEqual(c.combat_plan(None), "base-default")
 
-    def test_skill_execute_anchors_cd_and_settles(self):
-        # 技能 execute 保留放招+锚CD+结算
+    def test_skill_execute_anchors_cd_after_common_click_flow(self):
+        # 闪避打断恢复已由 BaseChar.click_skill 统一处理；资源模板只负责精确锚 CD。
         c = make_buff()
         c.SKILL_DOWN_TIME = 0.01
         c.SKILL_COOLDOWN = 20.0
         c.click_skill = mock.MagicMock(return_value=True)
         c.logger = mock.MagicMock()
-        c.settle_skill_after_cast = mock.MagicMock()
         c.task = mock.MagicMock()
-        c.task.cds = {1: {"skill_cast_at": 123.0}}
         self.assertTrue(c._execute_support_skill(None))
         c.task.note_skill_on_cd.assert_called_once_with(1, cd=20.0)
-        c.settle_skill_after_cast.assert_called_once_with(123.0, 20.0)
 
     def test_skill_execute_falls_back_to_about_ready(self):
         c = make_buff()

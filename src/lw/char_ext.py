@@ -1,5 +1,6 @@
-# [lw] BaseChar 的用户扩展: 空闲平A填充、输入模式重试和大招演出保护等。
+# [lw] BaseChar 的用户扩展: 技能打断恢复、空闲平A填充、输入模式重试和大招演出保护等。
 # 接线: class BaseChar(CharExtMixin), self 即角色实例。
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -16,10 +17,59 @@ class CharExtMixin(_CharProxy):
     ULTIMATE_COMBAT_SETTLE_TIMEOUT = 2.5
     IDLE_FILL_ATTACK_INTERVAL = 0.1
     SKILL_INPUT_MODE_RETRY_DELAY = 0.12
+    SKILL_SETTLE_MAX_DURATION = 0.5
+    SKILL_SETTLE_INTERVAL = 0.1
+    SKILL_SETTLE_MIN_ON_CD = 1.0
     # 大招演出结束(已回到队伍画面)后,等"时停解除/CD 开始走"的精确确认超时。
     # 正常 1~2s 内 condition 就满足;深渊换层等场景下大招图标区识别会失效,会一直空等到
     # 超时,导致角色卡住十几秒不切人。这第二段只用来算 freeze 时长,缩短它纯止血、不影响放招。
     ULTIMATE_UNFREEZE_TIMEOUT = 4
+
+    def lw_skill_cooldown_hint(self):
+        """返回技能结算使用的标称 CD；未知角色交给 CombatExt 的保守占位。"""
+
+        return getattr(self, "SKILL_COOLDOWN", None)
+
+    def settle_skill_after_cast(
+        self,
+        cast_at,
+        cooldown=None,
+        max_duration=None,
+        down_time=None,
+    ):
+        """技能发键后发生闪避时，确认是否进 CD；未放出则在短窗口内补发。
+
+        这是所有角色都会遇到的输入恢复问题，由 BaseChar.click_skill 统一触发。
+        ResourceSupport 的资源缓存和 Requiem 的长短 CD/下场判断仍留在各自业务层。
+        """
+        if not self.is_current_char:
+            return False
+
+        # 放招瞬间触发的闪避可能还在队列中，先落地再判断，避免紧接切人时漏检。
+        self.task.flush_pending_dodge()
+        if not (cast_at > 0 and self.task.last_dodge_time() >= cast_at):
+            return False
+
+        down_time = 0.01 if down_time is None else down_time
+        duration = self.SKILL_SETTLE_MAX_DURATION if max_duration is None else max_duration
+        self.logger.info("放招后触发闪避, 留场结算技能(校准/补放)")
+        deadline = time.time() + duration
+        while time.time() < deadline:
+            self.task.next_frame()
+            # 只认本帧 OCR 原始 CD；推算 CD 会被刚写入的标称值污染。
+            raw = self.task.skill_ocr_raw(self.index)
+            if raw is not None and raw >= self.SKILL_SETTLE_MIN_ON_CD:
+                self.logger.info(f"放招后结算: 技能已进CD, 校准为真实CD={raw:.1f}s")
+                return True
+
+            self.send_skill_key(down_time=down_time)
+            self.task.note_skill_on_cd(self.index, cd=cooldown)
+            self.normal_attack()
+            self.sleep(self.SKILL_SETTLE_INTERVAL)
+
+        self.task.note_skill_ready(self.index)
+        self.logger.info("放招后结算: 超时仍就绪(没放出), 锚为就绪等下次")
+        return False
 
     def fill_idle_attack(self, interval=None):
         current_char = self.task.get_current_char(raise_exception=False)

@@ -17,10 +17,10 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.char.BaseChar import BaseChar
-from src.lw.skill_cast_settle import SkillCastSettleMixin
+from src.lw.char_ext import CharExtMixin
 
 
-class _SettleChar(SkillCastSettleMixin):
+class _SettleChar(CharExtMixin):
     pass
 
 
@@ -61,7 +61,7 @@ def make_char(clock, is_current=True, dodge_after_cast=True, ocr_raw=None, ocr_r
 class TestSettleSkillAfterCast(unittest.TestCase):
     def setUp(self):
         self.clock = FakeClock(now=1000.0)
-        self.patcher = mock.patch("src.lw.skill_cast_settle.time", self.clock)
+        self.patcher = mock.patch("src.lw.char_ext.time", self.clock)
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
 
@@ -173,6 +173,63 @@ class TestIdleAttackGuard(unittest.TestCase):
 
         c.fill_idle_attack.assert_called_once_with(interval=0.1)
         c.sleep.assert_not_called()
+
+
+class TestCommonSkillSettleHook(unittest.TestCase):
+    def make_char(self, clicked=True, animated=False):
+        c = BaseChar.__new__(BaseChar)
+        c.logger = mock.MagicMock()
+        c.skill_available = mock.MagicMock()
+        c.lw_send_skill_action_factory = mock.MagicMock(return_value=mock.MagicMock())
+        c._try_available_action = mock.MagicMock(
+            return_value={"timed_out": False, "action_time": 123.0}
+        )
+        c._finish_skill_action = mock.MagicMock(
+            return_value=(clicked, 0.2, animated)
+        )
+        c.settle_skill_after_cast = mock.MagicMock()
+        return c
+
+    def test_every_base_char_uses_common_settle_after_skill(self):
+        c = self.make_char()
+
+        self.assertTrue(c.click_skill(down_time=0.2))
+
+        c.settle_skill_after_cast.assert_called_once_with(
+            123.0,
+            None,
+            max_duration=None,
+            down_time=0.2,
+        )
+
+    def test_role_can_supply_precise_cooldown_and_longer_window(self):
+        c = self.make_char()
+
+        c.click_skill(
+            settle_cooldown=16.0,
+            settle_max_duration=3.0,
+        )
+
+        c.settle_skill_after_cast.assert_called_once_with(
+            123.0,
+            16.0,
+            max_duration=3.0,
+            down_time=0.05,
+        )
+
+    def test_confirmed_animation_does_not_retry_skill(self):
+        c = self.make_char(animated=True)
+
+        self.assertTrue(c.click_skill(has_animation=True))
+
+        c.settle_skill_after_cast.assert_not_called()
+
+    def test_failed_skill_does_not_start_settle(self):
+        c = self.make_char(clicked=False)
+
+        self.assertFalse(c.click_skill())
+
+        c.settle_skill_after_cast.assert_not_called()
 
 
 class TestAvailableActionCombatCheck(unittest.TestCase):
