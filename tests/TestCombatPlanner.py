@@ -13,6 +13,7 @@ from src.combat.planner import (
     CombatPlanner,
     ExpectedEntry,
     FieldClaim,
+    FieldClaimTiming,
     FieldPreference,
     FollowupStep,
     Planner,
@@ -31,6 +32,9 @@ class FakeTask:
         return 999
 
     def find_element_ring_reaction_target(self, source_char):
+        return self.reaction_target
+
+    def find_element_reaction_target(self, source_char):
         return self.reaction_target
 
 
@@ -339,6 +343,62 @@ class TestCombatPlanner(unittest.TestCase):
 
         self.assertEqual(decision.target, claimed)
         self.assertIn("field claim", decision.reason)
+
+    def test_preemptive_field_claim_runs_before_automatic_element_reaction(self):
+        current = FakeChar(0, "current", cycle_full=True)
+        reaction = FakeChar(1, "reaction")
+        support = FakeChar(
+            2,
+            "support",
+            claims=[FieldClaim.preemptive("confirmed buff resource")],
+        )
+        planner = self._planner([current, reaction, support])
+        planner.task.reaction_target = reaction
+
+        decision = planner.decide_switch(current)
+
+        self.assertEqual(decision.target, support)
+        self.assertEqual(decision.priority, 999600)
+        self.assertIn("preemptive field claim", decision.reason)
+        self.assertIs(
+            list(support.combat_plan(None).claims)[0].timing,
+            FieldClaimTiming.PREEMPTIVE,
+        )
+
+    def test_strict_route_preempts_preemptive_field_claim(self):
+        source = FakeChar(0, "source")
+        route_target = FakeChar(1, "route_target", tags={ActionTag.SKILL_ACTION})
+        support = FakeChar(
+            2,
+            "support",
+            claims=[FieldClaim.preemptive("confirmed buff resource")],
+        )
+        planner = self._planner([source, route_target, support])
+        self._publish(
+            planner,
+            source,
+            lambda context: context.request_route(
+                [FollowupStep.for_action(route_target, ActionSlot.SKILL, reason="required E")],
+                reason="hard route",
+            ),
+        )
+
+        decision = planner.decide_switch(source)
+
+        self.assertEqual(decision.target, route_target)
+        self.assertEqual(decision.priority, 999999)
+
+    def test_normal_field_claim_does_not_preempt_automatic_element_reaction(self):
+        current = FakeChar(0, "current", cycle_full=True)
+        reaction = FakeChar(1, "reaction")
+        claimed = FakeChar(2, "claimed", claims=[FieldClaim.critical("ordinary claim")])
+        planner = self._planner([current, reaction, claimed])
+        planner.task.reaction_target = reaction
+
+        decision = planner.decide_switch(current)
+
+        self.assertEqual(decision.target, reaction)
+        self.assertEqual(decision.reason, "element reaction")
 
     def test_field_claim_expected_entry_replays_into_entry_flow(self):
         calls = []

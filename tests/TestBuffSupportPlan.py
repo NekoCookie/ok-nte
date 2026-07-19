@@ -14,6 +14,7 @@ from src.combat.planner import (
     CombatPlan,
     CombatPlanner,
     FieldClaimLevel,
+    FieldClaimTiming,
     FieldPreference,
     RoleProfile,
 )
@@ -128,6 +129,7 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         c = make_buff(ult_ready=True, buff_pending=True)
         claims = list(c.combat_plan(None).claims)
         self.assertTrue(claims and claims[0].level == FieldClaimLevel.HIGH)
+        self.assertIs(claims[0].timing, FieldClaimTiming.PREEMPTIVE)
 
     def test_combat_plan_without_ready_resource_has_no_claim(self):
         c = make_buff(ult_ready=False, skill_ready=False, buff_pending=False)
@@ -137,12 +139,14 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         c = make_buff(ult_ready=False, skill_ready=True, buff_pending=False)
         claims = list(c.combat_plan(None).claims)
         self.assertTrue(claims and claims[0].level == FieldClaimLevel.HIGH)
+        self.assertIs(claims[0].timing, FieldClaimTiming.PREEMPTIVE)
 
     def test_due_resource_probe_claims_high_and_enables_skill(self):
         c = make_buff(ult_ready=False, skill_ready=False, buff_pending=False)
         c.needs_resource_probe = lambda: True
         plan = c.combat_plan(None)
         self.assertEqual(list(plan.claims)[0].level, FieldClaimLevel.HIGH)
+        self.assertIs(list(plan.claims)[0].timing, FieldClaimTiming.NORMAL)
         self.assertTrue(actions_by_slot(plan)[ActionSlot.SKILL].priority_ready(None))
 
     def test_ultimate_priority_ready_uses_diamond(self):
@@ -215,7 +219,7 @@ class TestBuffSupportMixedTeamScoring(unittest.TestCase):
         ru_main = PlannerStubChar(2, PlannerRole.MAIN_DPS, FieldPreference.MAIN_DPS)
         decision = self._decision(support, ru_main)
         self.assertIs(decision.target, support)
-        self.assertEqual(decision.priority, 500)
+        self.assertEqual(decision.priority, 999600)
 
     def test_due_probe_beats_ru_main_dps_field_time(self):
         task = self._task()
@@ -243,6 +247,48 @@ class TestBuffSupportMixedTeamScoring(unittest.TestCase):
         decision = self._decision(support, ru_main_dps)
         self.assertIs(decision.target, support)
         self.assertEqual(decision.priority, 500)
+
+    def test_confirmed_support_resource_preempts_ru_element_reaction(self):
+        task = self._task()
+        support = make_planner_buff(1, task, skill_ready=True)
+        reaction = PlannerStubChar(2, PlannerRole.MAIN_DPS, FieldPreference.MAIN_DPS)
+        current = PlannerStubChar(
+            0,
+            PlannerRole.SUB_DPS,
+            FieldPreference.SUB_DPS,
+            max_field_time=0,
+        )
+        current.is_cycle_full = lambda: True
+        task.chars = [current, support, reaction]
+        task.find_element_reaction_target.return_value = reaction
+        planner = CombatPlanner(task)
+        planner.reset(task.chars)
+
+        decision = planner.decide_switch(current)
+
+        self.assertIs(decision.target, support)
+        self.assertIn("preemptive field claim", decision.reason)
+
+    def test_unknown_support_probe_does_not_preempt_ru_element_reaction(self):
+        task = self._task()
+        support = make_planner_buff(1, task, needs_probe=True)
+        reaction = PlannerStubChar(2, PlannerRole.MAIN_DPS, FieldPreference.MAIN_DPS)
+        current = PlannerStubChar(
+            0,
+            PlannerRole.SUB_DPS,
+            FieldPreference.SUB_DPS,
+            max_field_time=0,
+        )
+        current.is_cycle_full = lambda: True
+        task.chars = [current, support, reaction]
+        task.find_element_reaction_target.return_value = reaction
+        planner = CombatPlanner(task)
+        planner.reset(task.chars)
+
+        decision = planner.decide_switch(current)
+
+        self.assertIs(decision.target, reaction)
+        self.assertEqual(decision.reason, "element reaction")
 
     def test_heal_resource_only_beats_idle_main_dps_as_fallback(self):
         task = self._task()

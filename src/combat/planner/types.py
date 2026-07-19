@@ -90,6 +90,12 @@ class Planner:
         HIGH = "high"
         CRITICAL = "critical"
 
+    class FieldClaimTiming(StrEnum):  # [lw] 支持 plan 内声明环合前的资源铺设窗口
+        """入场诉求参与切人决策的时机。"""
+
+        NORMAL = "normal"
+        PREEMPTIVE = "preemptive"
+
     class RequestStatus(StrEnum):
         """Planner request 的生命周期状态。
 
@@ -108,6 +114,7 @@ ActionTag = Planner.ActionTag
 ActionSlot = Planner.ActionSlot
 FieldPreference = Planner.FieldPreference
 FieldClaimLevel = Planner.FieldClaimLevel
+FieldClaimTiming = Planner.FieldClaimTiming  # [lw]
 RequestStatus = Planner.RequestStatus
 NEVER_EXPIRES = Planner.NEVER_EXPIRES
 
@@ -349,14 +356,16 @@ class RoleProfile:
 class FieldClaim:
     """角色向 planner 声明“我应该被切进来”的理由。
 
-    `FieldClaim` 不代表动作，也不替代 `ActionIntent`。它只抬高目标角色
-    的普通入场评分；角色切入后仍由 planner 从 `ActionIntent` 中选择要执行的动作。
+    `FieldClaim` 不代表动作，也不替代 `ActionIntent`。普通 claim 抬高目标角色
+    的入场评分；preemptive claim 在自动环合前获得一次入场机会。角色切入后仍由
+    planner 从 `ActionIntent` 中选择要执行的动作。
     """
 
     _source: int = -1
     level: FieldClaimLevel = FieldClaimLevel.NORMAL
     reason: str = ""
     expected_entry: "ExpectedEntry | None" = None
+    timing: FieldClaimTiming = FieldClaimTiming.NORMAL  # [lw]
 
     @classmethod
     def low(
@@ -401,6 +410,24 @@ class FieldClaim:
         """声明最高强度入场诉求。"""
 
         return cls._from_source(source, FieldClaimLevel.CRITICAL, reason, expected_entry)
+
+    @classmethod
+    def preemptive(  # [lw]
+        cls,
+        source: "BaseChar | str | None" = None,
+        reason: str = "",
+        expected_entry: "ExpectedEntry | None" = None,
+        level: FieldClaimLevel = FieldClaimLevel.HIGH,
+    ) -> "FieldClaim":
+        """声明应在自动环合前处理的入场诉求。
+
+        只用于已经确认、若延后会错过队伍输出窗口的短期资源；未知状态探测应继续
+        使用普通 claim。
+        """
+
+        claim = cls._from_source(source, level, reason, expected_entry)
+        claim.timing = FieldClaimTiming.PREEMPTIVE
+        return claim
 
     @classmethod
     def _from_source(
@@ -759,7 +786,8 @@ class SwitchDecision:
 class ExpectedEntry:
     """切入目标角色后应优先尝试的动作期望。
 
-    普通切人评分不会设置 expected entry；strict route 这类硬调度才会设置。
+    普通 action 评分不会设置 expected entry；strict route 或显式携带
+    `expected_entry` 的 FieldClaim 会设置。
     """
 
     slot: ActionSlot | None = None

@@ -318,7 +318,7 @@ class BuffSupport(ResourceSupport):
         )
 
     def ultimate_buff_pending(self):
-        """大招就绪、待上场铺，用于发布 high FieldClaim，提高普通切人评分。"""
+        """大招就绪、待上场铺，用于发布环合前的 preemptive FieldClaim。"""
         if not self.team_has_main_dps() or self.recently_used_resource():
             return False
         if self.is_current_char:
@@ -327,9 +327,9 @@ class BuffSupport(ResourceSupport):
 
     def resource_field_claims(self, needs_probe):
         if self.ultimate_buff_pending():
-            return [FieldClaim.high(source=self, reason="support ultimate buff pending")]
+            return [FieldClaim.preemptive(source=self, reason="support ultimate buff pending")]
         if self.has_skill_resource():
-            return [FieldClaim.high(source=self, reason="support skill resource ready")]
+            return [FieldClaim.preemptive(source=self, reason="support skill resource ready")]
         if needs_probe:
             return [FieldClaim.high(source=self, reason="support resource probe due")]
         return []

@@ -34,6 +34,7 @@ from .types import (
     ExpectedEntry,
     FieldClaim,
     FieldClaimLevel,
+    FieldClaimTiming,  # [lw]
     FieldPreference,
     FollowupStep,
     Planner,
@@ -68,6 +69,7 @@ __all__ = [
     "ExpectedEntry",
     "FieldClaim",
     "FieldClaimLevel",
+    "FieldClaimTiming",  # [lw]
     "FieldPreference",
     "FollowupStep",
     "Planner",
@@ -142,7 +144,7 @@ class CombatPlanner:
     关键行为:
         - 切人评分与进场执行顺序分离。评分选出的最佳 action 只用于判断目标角色
           是否值得切入；普通切入后仍按角色声明顺序尝试 action。
-        - strict route / entry reaction 才会设置 expected entry 并强制首动。
+        - strict route / 带 expected_entry 的 FieldClaim 会设置切入期望并强制首动。
         - `priority_ready` 只用于评分；`can_execute` 是硬限制。
     """
 
@@ -575,8 +577,9 @@ class CombatPlanner:
     ) -> SwitchDecision:
         """根据当前状态决定是否切人以及切给谁。
 
-        优先级顺序为 strict route、入场/环合请求、游戏环合反应、普通动作评分。
-        只有 strict route 这类硬调度会返回 `SwitchDecision.expected_entry`。
+        优先级顺序为 strict route、入场/环合请求、preemptive claim、游戏环合反应、
+        普通动作评分。[lw]
+        strict route 和显式带 `expected_entry` 的 FieldClaim 会返回切入期望。
         普通评分只决定“谁值得切出来”，不改写目标角色自己的动作声明顺序。
 
         普通动作评分时，每个角色只用自己的最佳 action 参与比较；多个 action 的
@@ -614,6 +617,17 @@ class CombatPlanner:
         if entry_request_decision is not None:
             self._log_switch_decision(current_char, entry_request_decision)
             return entry_request_decision
+
+        # [lw] 已确认的短期资源在环合前铺设；仍由 CombatPlan/FieldClaim 声明，
+        # 不在 BaseCombatTask 另造一条切人路径。
+        preemptive_claim_decision = self._preemptive_field_claim_decision(
+            current_char,
+            context,
+            has_intro,
+        )
+        if preemptive_claim_decision is not None:
+            self._log_switch_decision(current_char, preemptive_claim_decision)
+            return preemptive_claim_decision
 
         reaction_decision = self._element_reaction_decision(current_char, has_intro)
         if reaction_decision is not None:
@@ -791,6 +805,47 @@ class CombatPlanner:
             999500,
             has_intro,
             None,
+        )
+
+    def _preemptive_field_claim_decision(  # [lw]
+        self,
+        current_char: "BaseChar",
+        context: CombatContext,
+        has_intro: bool,
+    ) -> SwitchDecision | None:
+        """选择应在自动环合前处理的 plan 入场诉求。"""
+
+        candidates: list[tuple[int, float, int, "BaseChar", FieldClaim]] = []
+        for char in self.state.chars:
+            if char == current_char or not self._can_switch_to(char):
+                continue
+            claims = [
+                claim
+                for claim in self._claims_for(char, context)
+                if claim.matches_char(char) and claim.timing == FieldClaimTiming.PREEMPTIVE
+            ]
+            if not claims:
+                continue
+            claim = max(claims, key=lambda item: FIELD_CLAIM_SCORES.get(item.level, 0))
+            candidates.append(
+                (
+                    FIELD_CLAIM_SCORES.get(claim.level, 0),
+                    -getattr(char, "last_perform", 0),
+                    -getattr(char, "index", 0),
+                    char,
+                    claim,
+                )
+            )
+
+        if not candidates:
+            return None
+        _, _, _, target, claim = max(candidates, key=lambda item: item[:3])
+        return SwitchDecision(
+            target=target,
+            reason=f"preemptive field claim: {claim.reason}",
+            priority=999600,
+            has_intro=has_intro,
+            expected_entry=claim.expected_entry,
         )
 
     def _entry_reaction_request_decision(
