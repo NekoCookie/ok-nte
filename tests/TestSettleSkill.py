@@ -118,5 +118,17 @@ class TestSettleSkillAfterCast(unittest.TestCase):
         self.assertGreater(c.send_skill_key.call_count, 20)
 
 
+class TestUltimateUnfreezeSettle(unittest.TestCase):
+    def test_fill_click_does_not_run_full_combat_check_during_ultimate(self):
+        c = BaseChar.__new__(BaseChar)
+        c.check_combat = mock.MagicMock()
+        c.click_with_interval = mock.MagicMock()
+
+        c._click_during_ultimate_unfreeze()
+
+        c.click_with_interval.assert_called_once_with()
+        c.check_combat.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

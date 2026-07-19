@@ -137,7 +137,8 @@ class CharExtMixin(_CharProxy):
         return True
 
     def _click_during_ultimate_unfreeze(self):
-        self.check_combat()
+        # 大招演出/时停解除前，队伍与目标 UI 会短暂消失。这里处在 skip_sleep_checks
+        # 保护区内，只做填充点击；完整战斗检测交给大招动作返回后的外层战斗循环。
         self.click_with_interval()
 
     def _current_char_still_self(self):

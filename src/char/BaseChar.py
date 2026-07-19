@@ -649,7 +649,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         self.logger.info("waiting for ultimate unfrozen")
         self.task.wait_until(
             lambda: self.has_cd("ultimate"),
-            post_action=self._click_during_ultimate_unfreeze,  # [lw] 点击时顺带查战斗
+            post_action=self._click_during_ultimate_unfreeze,  # [lw] 结算期只填充点击，不做脱战检测
             time_out=2,
         )
         box_ultimate = self.task.get_box_by_name(Labels.box_ultimate)
@@ -673,7 +673,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         self.task.wait_until(
             condition,
             time_out=self.ULTIMATE_UNFREEZE_TIMEOUT,  # [lw] 原10s, 识别失效时空等太久
-            post_action=self._click_during_ultimate_unfreeze,  # [lw]
+            post_action=self._click_during_ultimate_unfreeze,  # [lw] 结算期只填充点击
         )
         duration = time.time() - start
         self.add_freeze_duration(start, duration, cause="大招时停")  # [lw] cause=
