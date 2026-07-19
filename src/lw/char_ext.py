@@ -1,10 +1,8 @@
 # [lw] BaseChar 的用户扩展: 技能收尾结算、大招 settle 等待/强制、空闲平A填充、
-# 输入模式重试、旧版切换优先级机制(上游 planner 化后移除, 迁移至此)等。
+# 输入模式重试等。
 # 接线: class BaseChar(CharExtMixin), self 即角色实例。
 import time
 from typing import TYPE_CHECKING
-
-from src.lw.legacy_priority import Priority
 
 if TYPE_CHECKING:
     from src.char.BaseChar import BaseChar
@@ -17,10 +15,6 @@ else:
 
 
 class CharExtMixin(_CharProxy):
-    priority = Priority.BASE  # [lw] 旧版切换优先级基准(原 BaseChar.__init__ 字段)
-    # 开=定义了 do_perform 的用户角色(Requiem/MainDps系)在 BaseChar.perform 顶部分发到
-    # lw_perform 走旧手感路径; 关=全部角色走上游 planner(perform_current_char), 仅排查对照。
-    LW_DO_PERFORM = True
     ULTIMATE_COMBAT_SETTLE_TIMEOUT = 2.5
     ULTIMATE_COMBAT_SETTLE_CLICK = True
     ULTIMATE_COMBAT_SETTLE_FORCE_ON_TIMEOUT = True
@@ -38,28 +32,6 @@ class CharExtMixin(_CharProxy):
     # 正常 1~2s 内 condition 就满足;深渊换层等场景下大招图标区识别会失效,会一直空等到
     # 超时,导致角色卡住十几秒不切人。这第二段只用来算 freeze 时长,缩短它纯止血、不影响放招。
     ULTIMATE_UNFREEZE_TIMEOUT = 4
-
-    def lw_use_do_perform(self):
-        """perform 分发判定: True 走 lw_perform→do_perform(用户旧手感路径),
-        False 走上游 planner(combat_planner.perform_current_char)。
-        默认=定义了 do_perform 就走用户路径; 模板角色覆写此方法实现
-        "模板体系不成立时整体退回上游打法"(主C模板没辅助配合/辅助模板没主C)。"""
-        return hasattr(self, "do_perform")
-
-    def lw_perform(self):
-        """perform 的旧版(merge-base 46e9225)流程, 保住用户角色的 do_perform 手感路径
-        (免费技留场/闪避接combo/站场combo/禁用技能大招测试开关等)。上游 planner 化后
-        perform 改走 combat_planner.perform_current_char, 不再调 do_perform——定义了
-        do_perform 的角色由 BaseChar.perform 顶部 LW_DO_PERFORM 分发到这里。
-        注: 旧版的 need_fast_perform/do_fast_perform 已随上游删除且无引用, 不再保留;
-        wait_intro 由各 do_perform 自行处理(与旧版语义一致)。"""
-        self.last_perform = time.time()
-        if self.has_intro:
-            self.add_intro_motion_freeze(self.last_perform)
-        self.do_perform()
-        self.logger.debug(f"set current char false {self.index}")
-        self.task.refresh_cd()  # 吸收上游新版perform: 下场前刷一次CD(利于lw锚定读真值)
-        self.switch_next_char()
 
     def settle_skill_after_cast(self, cast_at, cooldown, max_duration=None):
         """放长CD技能后的收尾结算 —— 校准CD / 补放。放技能那一下若**紧接着触发了闪避**,
@@ -181,62 +153,6 @@ class CharExtMixin(_CharProxy):
             and self.task.is_in_team()
             and self.skill_available()
         )
-
-    # ---------- 旧版切换优先级机制(上游 planner 化后从 BaseChar 移除, 迁移至此) ----------
-    # 供 lw_decide_switch_to(combat_ext.py)与用户角色(MainDps.py 等)使用;
-    # 来源: merge-base 46e9225 的 BaseChar 原版实现。
-
-    def get_switch_priority(self, current_char, has_intro):
-        """获取切换到此角色的优先级。
-
-        Args:
-            current_char (BaseChar): 当前场上角色。
-            has_intro (bool): 当前场上角色是否拥有入场技。
-
-        Returns:
-            Priority: 优先级数值。
-        """
-        priority = self.do_get_switch_priority(current_char, has_intro)
-        if (
-            priority < Priority.MAX
-            and self.time_elapsed_accounting_for_freeze(self.last_switch_time) < 0.9
-            and not has_intro
-        ):
-            return Priority.SWITCH_CD
-        else:
-            return priority
-
-    def do_get_switch_priority(self, current_char, has_intro=False):
-        """计算切换到此角色的基础优先级 (不考虑切换CD)。
-
-        Args:
-            current_char (BaseChar): 当前场上角色。
-            has_intro (bool): 当前场上角色是否拥有入场技。
-
-        Returns:
-            int: 优先级数值。
-        """
-        priority = self.priority
-        if self.count_ultimate_priority() and self.ultimate_available():
-            priority += self.count_ultimate_priority()
-        if self.count_skill_priority() and self.skill_available():
-            priority += self.count_skill_priority()
-        if priority > self.priority:
-            priority += Priority.SKILL_AVAILABLE
-        priority += self.count_base_priority()
-        return priority
-
-    def count_base_priority(self):
-        """计算角色的基础优先级值。"""
-        return 0
-
-    def count_ultimate_priority(self):
-        """计算终结技技能对切换优先级的贡献值。"""
-        return 1
-
-    def count_skill_priority(self):
-        """计算技能对切换优先级的贡献值。"""
-        return 10
 
     def lw_send_skill_action_factory(self, down_time):
         """click_skill 的发键动作: 首次按键后若技能仍就绪(输入模式没吃到键), 重试一次。"""

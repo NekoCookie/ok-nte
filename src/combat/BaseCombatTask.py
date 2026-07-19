@@ -38,10 +38,6 @@ class CharDeadException(NotInCombatException):
     pass
 
 
-class CharUnavailableException(NotInCombatException):  # [lw] 用户异常, 合并上游时保留
-    pass
-
-
 class TeamChangedException(NotInCombatException):  # [lw] 用户异常, 合并上游时保留
     pass
 
@@ -140,8 +136,6 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
         min_time = float("inf")
         min_index = -1
         for char in self.chars:
-            if char is None or self.is_char_unavailable(char):  # [lw] 跳过不可用角色
-                continue
             if char.last_switch_time < min_time:
                 min_time = char.last_switch_time
                 min_index = char.index
@@ -389,7 +383,6 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
         self.wait_until(
             self.in_combat, time_out=wait_combat_time, raise_if_not_found=raise_if_not_found
         )
-        self.reset_unavailable_chars()  # [lw]
         self.switch_to_combat_start_char()
         self.info["Combat Count"] = self.info.get("Combat Count", 0) + 1
         with self.retarget_turn_policy(enable=True):
@@ -420,8 +413,6 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
         free_intro=False,
         require_intro=False,
     ):
-        if self.LW_SWITCH_DECIDE:  # [lw] 开=龙威切换决策(src/lw/combat_ext.py), 关=下面的上游原版(仅排查对照)
-            return self.lw_decide_switch_to(current_char, free_intro, require_intro)  # [lw]
         decision = self.combat_planner.decide_switch(
             current_char,
             free_intro=free_intro,
@@ -459,8 +450,6 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
 
     def _set_current_char(self, current_char: "BaseChar | None", switch_to: "BaseChar", has_intro):
         self.in_animation = False
-        self.unavailable_char_until.pop(switch_to.index, None)  # [lw] 切到即视为恢复可用
-        self.unavailable_char_failures.pop(switch_to.index, None)  # [lw]
         if current_char:
             current_char.switch_out()
             if has_intro:
@@ -575,8 +564,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
                         self.screenshot(
                             f"switch_not_detected_{current_char_name}_to_{switch_to_name}"
                         )
-                    self.mark_char_unavailable(switch_to, f"{log_prefix} failed")  # [lw] 原为 raise_not_in_combat
-                    raise CharUnavailableException(f"{log_prefix} failed {switch_to_name}")  # [lw]
+                    self.raise_not_in_combat(f"{log_prefix} failed {switch_to_name}")
 
                 self.sleep(0.01)
 
@@ -637,11 +625,6 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
             post_action (callable, optional): 切换后执行的动作 (回调函数)。默认为 None。
             free_intro (bool, optional): 是否强制认为拥有入场技 (通常在协奏值满时)。默认为 False。
         """
-        from src.lw.planner_migration import USE_PLANNER  # [lw]
-        # [lw] 开=龙威切换决策(legacy Priority); USE_PLANNER 总开关开启时改走下面上游 planner
-        # 原版 decide_switch(全面升级: 全队 planner 出招 + planner 切换, 整体 A/B)。
-        if self.LW_SWITCH_NEXT and not USE_PLANNER:
-            return self.lw_switch_next_char(current_char, post_action=post_action, free_intro=free_intro)  # [lw]
         if self.team_size <= 1:
             self.click(action_name="switch_char_click", interval=0.1)
             return

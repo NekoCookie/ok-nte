@@ -2,8 +2,8 @@
 # 这样 CharFactory.py 里只需两行接线, 新增/改动角色都在本文件进行。
 from typing import Any
 
-from src.char.MainDps import BuffSupport, HealSupport, MainDps, SakiriBuffSupport
 from src.char.Requiem import Requiem
+from src.lw.combat_templates import BuffSupport, HealSupport, MainDps, SakiriBuffSupport
 
 lw_char_dict: dict[str, dict[str, Any]] = {
     "template_main_dps": {"cls": MainDps, "cn_name": "主C模板"},

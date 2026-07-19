@@ -1,7 +1,7 @@
-"""纯逻辑单测:验证 Requiem 真技能 / 免费技能的分类与切人决策。
+"""纯逻辑单测:验证 Requiem CombatPlan 中真技能 / 免费技能的分类与切人决策。
 
 判定唯一依据是技能图标视觉匹配(classify_skill_visual);不再用时间锚点。
-单测把视觉判定打桩成固定结果来驱动 do_perform 分支,并单独验证:
+单测把视觉判定打桩成固定结果来驱动 plan entry 分支,并单独验证:
 - 视觉模板真/免费可分(用提交进 assets 的模板自校验)
 - 识别不到(None)时按真技能处理
 - 真技能按键没落实时不切人
@@ -14,6 +14,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.char.Requiem import Requiem
+from src.combat.planner import ActionResult
 
 
 class FakeClock:
@@ -31,11 +32,12 @@ def make_requiem(clock, skill_kind="real", skill_available=True,
                  click_skill_ok=True, click_ultimate=False, in_long_cd=True):
     """构造一个只保留决策逻辑、其余全部打桩的 Requiem 实例。
 
-    skill_kind: 'real' / 'free' / None —— 视觉判定的固定返回(驱动 do_perform 分支)。
+    skill_kind: 'real' / 'free' / None —— 视觉判定的固定返回(驱动 plan entry 分支)。
     in_long_cd: 放招后图标是否在"长CD"(_real_skill_in_long_cd 的固定返回, 即是否真放成功)。
     """
     r = Requiem.__new__(Requiem)
     r.skill_off_field_until = 0.0
+    r._pending_double_4a = None
     r.index = 0
     r.task = mock.MagicMock()
     r.task.config = {}
@@ -46,7 +48,7 @@ def make_requiem(clock, skill_kind="real", skill_available=True,
     r.click_ultimate = mock.MagicMock(return_value=click_ultimate)
     r.ultimate_available = mock.MagicMock(return_value=False)
     r.skill_available = mock.MagicMock(return_value=skill_available)
-    r.click_skill = mock.MagicMock(return_value=(click_skill_ok, 0.0, False))
+    r.click_skill = mock.MagicMock(return_value=click_skill_ok)
     r.should_yield_to_support = mock.MagicMock(return_value=False)
     r.continues_normal_attack = mock.MagicMock()
     r.idle_normal_attack = mock.MagicMock()
@@ -54,7 +56,7 @@ def make_requiem(clock, skill_kind="real", skill_available=True,
     # sleep 推进假时钟, 否则真技能重试循环(按时间 deadline)在测试里永不结束。
     r.sleep = mock.MagicMock(side_effect=lambda *a, **k: clock.advance(a[0] if a else 0))
     r.free_skill_followup_attack = mock.MagicMock()
-    # 免费技能后的"跳A打断a5"是独立的时序IO行为, 这里打桩掉, 只验证 do_perform 分支是否调它。
+    # 免费技能后的"跳A打断a5"是独立的时序IO行为, 这里打桩掉, 只验证 plan 分支是否调它。
     r._free_skill_break_a5 = mock.MagicMock()
     r.engage_before_skill = mock.MagicMock()
     # 放完真技能后的"是否真进CD"确认:默认 False = 技能已落实(进了CD)
@@ -63,9 +65,32 @@ def make_requiem(clock, skill_kind="real", skill_available=True,
     r._real_skill_in_long_cd = mock.MagicMock(return_value=in_long_cd)
     # settle_skill_after_cast 有独立单测(TestSettleSkill);这里 mock 掉只测 cast_real_skill 编排。
     r.settle_skill_after_cast = mock.MagicMock(return_value=False)
-    # 视觉判定打桩:固定返回 skill_kind(do_perform 经 is_real_skill_now 读取)
+    # 视觉判定打桩:固定返回 skill_kind(plan entry 经 is_real_skill_now 读取)
     r.classify_skill_visual = mock.MagicMock(return_value=skill_kind)
+    r._maybe_trigger_g_skill = mock.MagicMock(return_value=False)
+    r._check_combat_alive = mock.MagicMock()
     return r
+
+
+def run_requiem_plan(r):
+    """按 planner 的 allowed-action 语义执行一次 Requiem entry flow。"""
+    flow = r.combat_plan(None).entry()
+    result = None
+    while True:
+        try:
+            action = next(flow) if result is None else flow.send(result)
+        except StopIteration:
+            return
+        if action.is_allowed(None):
+            result = action.run(None)
+        else:
+            result = ActionResult(
+                name=action.name,
+                success=False,
+                tags=set(action.tags),
+                slot=action.slot,
+                reason="action blocked by planner",
+            )
 
 
 class TestRequiemSkillClassification(unittest.TestCase):
@@ -78,7 +103,7 @@ class TestRequiemSkillClassification(unittest.TestCase):
     # ---- 视觉判真 → 起手平A + 放 + 切人 ----
     def test_real_skill_switches(self):
         r = make_requiem(self.clock, skill_kind="real")
-        r.do_perform()
+        run_requiem_plan(r)
         r.engage_before_skill.assert_called_once_with(r.SKILL_ENGAGE_ATTACK)
         self.assertTrue(r.should_force_off_field(), "真技能后应触发下场")
         r.free_skill_followup_attack.assert_not_called()
@@ -87,7 +112,7 @@ class TestRequiemSkillClassification(unittest.TestCase):
     # ---- 视觉判免费 → 留场,不切,不起手平A ----
     def test_free_skill_stays_on_field(self):
         r = make_requiem(self.clock, skill_kind="free")
-        r.do_perform()
+        run_requiem_plan(r)
         r.engage_before_skill.assert_not_called()
         self.assertFalse(r.should_force_off_field(), "免费技能不应触发下场")
         r._free_skill_break_a5.assert_called_once()  # 免费技能后应先跳A打断a5
@@ -96,7 +121,7 @@ class TestRequiemSkillClassification(unittest.TestCase):
     # ---- 识别不到(None)→ 按真技能处理(切人)----
     def test_unknown_treated_as_real(self):
         r = make_requiem(self.clock, skill_kind=None)
-        r.do_perform()
+        run_requiem_plan(r)
         r.engage_before_skill.assert_called_once_with(r.SKILL_ENGAGE_ATTACK)
         self.assertTrue(r.should_force_off_field(), "识别不到应按真技能切人")
         r.free_skill_followup_attack.assert_not_called()
@@ -104,14 +129,14 @@ class TestRequiemSkillClassification(unittest.TestCase):
     # ---- 一次放成功(进长CD)→ 不经 settle 直接 overlap ----
     def test_real_skill_first_try_long_cd_switches(self):
         r = make_requiem(self.clock, skill_kind="real", in_long_cd=True)
-        r.do_perform()
+        run_requiem_plan(r)
         self.assertTrue(r.should_force_off_field(), "进长CD=放成功, 应 overlap 下场")
         r.settle_skill_after_cast.assert_not_called()
 
     # ---- 进的是短CD(被闪避打断的假成功)→ 不切, 修掉"短CD误当放成功" ----
     def test_real_skill_short_cd_does_not_switch(self):
         r = make_requiem(self.clock, skill_kind="real", in_long_cd=False)
-        r.do_perform()
+        run_requiem_plan(r)
         self.assertFalse(r.should_force_off_field(), "短CD=被打断, 不该 overlap")
         r.settle_skill_after_cast.assert_called_once()  # 没放成 → 交给 settle
 
@@ -120,7 +145,7 @@ class TestRequiemSkillClassification(unittest.TestCase):
         r = make_requiem(self.clock, skill_kind="real", in_long_cd=True)
         # 首次确认仍可用 = 没按出去 → _try_land 返回 False, 进 settle
         r._skill_still_available_after_input_mode_delay = mock.MagicMock(return_value=True)
-        r.do_perform()
+        run_requiem_plan(r)
         r.settle_skill_after_cast.assert_called_once()
         self.assertTrue(r.should_force_off_field(), "settle 后进长CD应 overlap 下场")
 
@@ -128,7 +153,7 @@ class TestRequiemSkillClassification(unittest.TestCase):
     def test_real_skill_settle_fails_no_switch(self):
         r = make_requiem(self.clock, skill_kind="real", in_long_cd=False)
         r._skill_still_available_after_input_mode_delay = mock.MagicMock(return_value=True)
-        r.do_perform()
+        run_requiem_plan(r)
         r.settle_skill_after_cast.assert_called_once()
         self.assertFalse(r.should_force_off_field(), "settle 后仍没进长CD, 不该 overlap")
 
@@ -164,7 +189,7 @@ class TestRequiemSkillClassification(unittest.TestCase):
     # ---- 没技能可放(图标没亮)→ 不放技能,走 idle ----
     def test_no_skill_when_unavailable(self):
         r = make_requiem(self.clock, skill_available=False)
-        r.do_perform()
+        run_requiem_plan(r)
         r.click_skill.assert_not_called()
         r.idle_normal_attack.assert_called_once()
 
@@ -201,7 +226,7 @@ class TestRequiemSkillClassification(unittest.TestCase):
         self.assertEqual(r.engage_attack_duration(), 0.45)
         # 配置为 0 → 不起手平A,但真技能仍正常放出+切人
         jump_task.config = {r.CONF_ENGAGE_ATTACK: 0}
-        r.do_perform()
+        run_requiem_plan(r)
         r.engage_before_skill.assert_not_called()
         self.assertTrue(r.should_force_off_field(), "真技能仍应切下场")
         jump_task.config = {r.CONF_ENGAGE_ATTACK: "abc"}

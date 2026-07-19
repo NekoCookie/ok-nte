@@ -1,11 +1,4 @@
-"""BuffSupport planner 迁移(全面升级试点)结构测试。
-
-把辅助出招从 do_perform 迁到 combat_plan(整段包进一个 planner 动作)。核心保证:
-- LW_USE_PLANNER_PLAN 默认 False → 出招仍走 do_perform(现状零变化), True → 走 combat_plan;
-- describe_role 声明 SUPPORT 定位;
-- combat_plan 有主C时按当前资源动态给 tags(大招就绪=ULTIMATE_ACTION, 仅技能=SKILL_ACTION),
-  大招 buff 待铺时发 high claim; 无主C时委托 super()(BaseChar 默认)。
-"""
+"""LW 主C/辅助模板的 CombatPlan 结构与执行回归测试。"""
 import os
 import sys
 import unittest
@@ -14,9 +7,24 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.char.BaseChar import BaseChar
-from src.char.MainDps import BuffSupport, HealSupport, MainDps, SakiriBuffSupport
-from src.combat.planner import ActionSlot, ActionTag, FieldClaimLevel, FieldPreference
+from src.combat.planner import (
+    ActionIntent,
+    ActionSlot,
+    ActionTag,
+    CombatPlan,
+    CombatPlanner,
+    FieldClaimLevel,
+    FieldPreference,
+    RoleProfile,
+)
 from src.combat.planner import Role as PlannerRole
+from src.lw.combat_templates import (
+    BuffSupport,
+    HealSupport,
+    MainDps,
+    ResourceSupport,
+    SakiriBuffSupport,
+)
 
 
 def make_buff(main_dps=True, ult_ready=False, skill_ready=True, buff_pending=False):
@@ -28,6 +36,7 @@ def make_buff(main_dps=True, ult_ready=False, skill_ready=True, buff_pending=Fal
     c.has_confirmed_resource = lambda: ult_ready
     c.has_skill_resource = lambda: skill_ready
     c.ultimate_buff_pending = lambda: buff_pending
+    c.needs_resource_probe = lambda: False
     c.skill_available = lambda: skill_ready
     c.ultimate_available = lambda: ult_ready
     return c
@@ -37,24 +46,70 @@ def actions_by_slot(plan):
     return {a.slot: a for a in plan.actions}
 
 
+class PlannerStubChar:
+    def __init__(self, index, role, preference, actions=(), max_field_time=1.5):
+        self.index = index
+        self.name = f"stub-{index}"
+        self.is_dead = False
+        self.last_switch_time = 0.0
+        self.last_perform = 0.0
+        self._profile = RoleProfile(
+            role=role,
+            field_preference=preference,
+            max_field_time=max_field_time,
+        )
+        self._actions = list(actions)
+
+    def __str__(self):
+        return self.name
+
+    def describe_role(self):
+        return self._profile
+
+    def combat_plan(self, _context):
+        return CombatPlan(self._actions)
+
+    def is_cycle_full(self):
+        return False
+
+    def time_elapsed_accounting_for_freeze(self, _start):
+        return 100.0
+
+
+def make_planner_buff(index, task, skill_ready=False, needs_probe=False):
+    c = BuffSupport.__new__(BuffSupport)
+    c.index = index
+    c.task = task
+    c.is_dead = False
+    c.last_switch_time = 0.0
+    c.last_perform = 0.0
+    c.ultimate_ready_now = lambda: False
+    c.recently_used_resource = lambda: False
+    c.has_skill_resource = lambda: skill_ready
+    c.ultimate_buff_pending = lambda: False
+    c.needs_resource_probe = lambda: needs_probe
+    c.skill_available = lambda: skill_ready
+    c.ultimate_available = lambda: False
+    return c
+
+
+def make_planner_heal(index, task, skill_ready=False):
+    c = HealSupport.__new__(HealSupport)
+    c.index = index
+    c.task = task
+    c.is_dead = False
+    c.last_switch_time = 0.0
+    c.last_perform = 0.0
+    c.ultimate_ready_now = lambda: False
+    c.recently_used_resource = lambda: False
+    c.has_skill_resource = lambda: skill_ready
+    c.needs_resource_probe = lambda: False
+    c.skill_available = lambda: skill_ready
+    c.ultimate_available = lambda: False
+    return c
+
+
 class TestBuffSupportPlannerMigration(unittest.TestCase):
-    def test_default_switch_off_keeps_do_perform(self):
-        from src.lw import planner_migration
-
-        self.assertFalse(planner_migration.USE_PLANNER, "总开关默认 False, 不改现状")
-        c = make_buff(main_dps=True)
-        with mock.patch.object(planner_migration, "USE_PLANNER", False):
-            self.assertTrue(c.lw_use_do_perform(), "开关关: 有主C走 do_perform")
-        with mock.patch.object(planner_migration, "USE_PLANNER", True):
-            self.assertFalse(c.lw_use_do_perform(), "开关开: 有主C改走 planner combat_plan")
-
-    def test_no_main_dps_always_planner(self):
-        from src.lw import planner_migration
-
-        c = make_buff(main_dps=False)
-        with mock.patch.object(planner_migration, "USE_PLANNER", False):
-            self.assertFalse(c.lw_use_do_perform(), "无主C: 无论开关都退回 planner")
-
     def test_describe_role_is_support(self):
         c = make_buff()
         self.assertEqual(c.describe_role().role, PlannerRole.SUPPORT)
@@ -74,9 +129,21 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         claims = list(c.combat_plan(None).claims)
         self.assertTrue(claims and claims[0].level == FieldClaimLevel.HIGH)
 
-    def test_combat_plan_no_buff_pending_no_claim(self):
-        c = make_buff(ult_ready=False, buff_pending=False)
+    def test_combat_plan_without_ready_resource_has_no_claim(self):
+        c = make_buff(ult_ready=False, skill_ready=False, buff_pending=False)
         self.assertEqual(list(c.combat_plan(None).claims), [])
+
+    def test_skill_resource_claims_low(self):
+        c = make_buff(ult_ready=False, skill_ready=True, buff_pending=False)
+        claims = list(c.combat_plan(None).claims)
+        self.assertTrue(claims and claims[0].level == FieldClaimLevel.LOW)
+
+    def test_due_resource_probe_claims_low_and_enables_skill(self):
+        c = make_buff(ult_ready=False, skill_ready=False, buff_pending=False)
+        c.needs_resource_probe = lambda: True
+        plan = c.combat_plan(None)
+        self.assertEqual(list(plan.claims)[0].level, FieldClaimLevel.LOW)
+        self.assertTrue(actions_by_slot(plan)[ActionSlot.SKILL].priority_ready(None))
 
     def test_ultimate_priority_ready_uses_diamond(self):
         # 大招切人评分用菱形 ultimate_ready_now(下场准), 非在场 ultimate_available
@@ -93,7 +160,7 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
             self.assertEqual(c.combat_plan(None), "base-default")
 
     def test_skill_execute_anchors_cd_and_settles(self):
-        # 技能 execute 复现 _cast_ult_and_skill 的技能分支: 放招+锚CD+结算
+        # 技能 execute 保留放招+锚CD+结算
         c = make_buff()
         c.SKILL_DOWN_TIME = 0.01
         c.SKILL_COOLDOWN = 20.0
@@ -115,8 +182,86 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         c._cast_skill_if_about_ready.assert_called_once()
 
 
-class TestHealSupportInheritsBuffPlan(unittest.TestCase):
-    """治疗继承 BuffSupport 的 ru 风格 combat_plan, 低优先级靠 override 的资源判定门自动生效。"""
+class TestBuffSupportMixedTeamScoring(unittest.TestCase):
+    def _task(self):
+        task = mock.MagicMock()
+        task.find_element_reaction_target.return_value = None
+        task.time_elapsed_accounting_for_freeze.return_value = 10.0
+        return task
+
+    def _decision(self, support, *others):
+        task = support.task
+        current = PlannerStubChar(
+            0,
+            PlannerRole.SUB_DPS,
+            FieldPreference.SUB_DPS,
+            max_field_time=0,
+        )
+        task.chars = [current, support, *others]
+        planner = CombatPlanner(task)
+        planner.reset(task.chars)
+        return planner.decide_switch(current)
+
+    def test_formal_ru_main_dps_role_activates_lw_support_plan(self):
+        task = self._task()
+        support = make_planner_buff(1, task, skill_ready=True)
+        ru_main = PlannerStubChar(2, PlannerRole.MAIN_DPS, FieldPreference.MAIN_DPS)
+        task.chars = [support, ru_main]
+        self.assertTrue(support.team_has_main_dps())
+
+    def test_ready_support_skill_beats_ru_main_dps_field_time(self):
+        task = self._task()
+        support = make_planner_buff(1, task, skill_ready=True)
+        ru_main = PlannerStubChar(2, PlannerRole.MAIN_DPS, FieldPreference.MAIN_DPS)
+        decision = self._decision(support, ru_main)
+        self.assertIs(decision.target, support)
+        self.assertEqual(decision.priority, 200)
+
+    def test_due_probe_beats_ru_main_dps_field_time(self):
+        task = self._task()
+        support = make_planner_buff(1, task, needs_probe=True)
+        ru_main = PlannerStubChar(2, PlannerRole.MAIN_DPS, FieldPreference.MAIN_DPS)
+        decision = self._decision(support, ru_main)
+        self.assertIs(decision.target, support)
+        self.assertEqual(decision.priority, 200)
+
+    def test_ru_ready_ultimate_still_beats_lw_support_probe(self):
+        task = self._task()
+        support = make_planner_buff(1, task, needs_probe=True)
+        ultimate = ActionIntent(
+            name="ru_ultimate",
+            tags={ActionTag.ULTIMATE_ACTION},
+            slot=ActionSlot.ULTIMATE,
+            execute=lambda _context: True,
+        )
+        ru_sub_dps = PlannerStubChar(
+            2,
+            PlannerRole.SUB_DPS,
+            FieldPreference.SUB_DPS,
+            actions=[ultimate],
+        )
+        decision = self._decision(support, ru_sub_dps)
+        self.assertIs(decision.target, ru_sub_dps)
+        self.assertEqual(decision.priority, 240)
+
+    def test_heal_resource_only_beats_idle_main_dps_as_fallback(self):
+        task = self._task()
+        heal = make_planner_heal(1, task, skill_ready=True)
+        ru_main = PlannerStubChar(2, PlannerRole.MAIN_DPS, FieldPreference.MAIN_DPS)
+        decision = self._decision(heal, ru_main)
+        self.assertIs(decision.target, heal)
+        self.assertEqual(decision.priority, 200)
+
+
+class TestResourceSupportHierarchy(unittest.TestCase):
+    def test_buff_and_heal_are_sibling_resource_templates(self):
+        self.assertTrue(issubclass(BuffSupport, ResourceSupport))
+        self.assertTrue(issubclass(HealSupport, ResourceSupport))
+        self.assertFalse(issubclass(HealSupport, BuffSupport))
+
+
+class TestHealSupportResourcePlan(unittest.TestCase):
+    """治疗与 BuffSupport 平级，共用 ResourceSupport 的 planner 计划骨架。"""
 
     def _heal(self, higher_busy, ult_ready=True, skill_ready=True):
         c = HealSupport.__new__(HealSupport)
@@ -127,9 +272,12 @@ class TestHealSupportInheritsBuffPlan(unittest.TestCase):
         c.ultimate_ready_now = lambda: ult_ready
         c.skill_available = lambda: skill_ready
         c.ultimate_available = lambda: ult_ready
-        # BuffSupport 基类资源判定(治疗 override 加了 _higher_priority_busy 门)
+        # ResourceSupport 公共资源判定（治疗 override 加了 _higher_priority_busy 门）
         c.has_cd_cache = lambda: True
         c.is_current_char = False
+        c.resource_cache_confirmed = False
+        c.last_resource_probe = 0.0
+        c.needs_resource_probe = lambda: False
 
         def off_field_ult(idx):
             return ult_ready
@@ -138,11 +286,12 @@ class TestHealSupportInheritsBuffPlan(unittest.TestCase):
         c.task.off_field_ultimate_ready = off_field_ult
         return c
 
-    def test_describe_role_setup_only(self):
+    def test_describe_role_has_no_idle_field_time(self):
         c = self._heal(higher_busy=False)
         role = c.describe_role()
         self.assertEqual(role.role, PlannerRole.SUPPORT)
-        self.assertEqual(role.field_preference, FieldPreference.SETUP_ONLY, "治疗不主动站场")
+        self.assertEqual(role.field_preference, FieldPreference.SUPPORT)
+        self.assertEqual(role.max_field_time, 0, "治疗无资源时不参与普通驻场")
 
     def test_priority_ready_false_when_higher_priority_busy(self):
         # 主C/别的辅助有资源时, 治疗的技能 action priority_ready=False(不抢切人)
@@ -150,9 +299,14 @@ class TestHealSupportInheritsBuffPlan(unittest.TestCase):
         skill = actions_by_slot(c.combat_plan(None))[ActionSlot.SKILL]
         self.assertFalse(skill.priority_ready(None), "有更高优先级时治疗不吸引切人")
 
-    def test_no_ultimate_buff_claim(self):
-        # 治疗 ultimate_buff_pending() 恒 False → 不发压环合 claim
-        c = self._heal(higher_busy=False)
+    def test_skill_resource_claims_low(self):
+        c = self._heal(higher_busy=False, ult_ready=False, skill_ready=True)
+        claims = list(c.combat_plan(None).claims)
+        self.assertEqual(claims[0].level, FieldClaimLevel.LOW)
+
+    def test_ultimate_does_not_publish_buff_claim(self):
+        # 治疗大招靠自身动作参与评分，不发布 BuffSupport 专属的高强度铺 buff claim。
+        c = self._heal(higher_busy=False, ult_ready=True, skill_ready=False)
         self.assertEqual(list(c.combat_plan(None).claims), [])
 
 
@@ -166,6 +320,7 @@ class TestSakiriSupportInheritsBuffPlan(unittest.TestCase):
         c.recently_used_resource = lambda: False
         c.has_skill_resource = lambda: True
         c.ultimate_buff_pending = lambda: False
+        c.needs_resource_probe = lambda: False
         c.skill_available = lambda: True
         c.ultimate_available = lambda: True
         plan = c.combat_plan(None)
@@ -211,17 +366,6 @@ class TestMainDpsPlannerMigration(unittest.TestCase):
         # idle 不主动抢切人(靠 field_time 站场), priority_ready=False
         idle = actions_by_slot(self._main().combat_plan(None))[ActionSlot.LEGACY_COMBO]
         self.assertFalse(idle.priority_ready(None))
-
-    def test_lw_use_do_perform_honors_master_switch(self):
-        from src.lw import planner_migration
-
-        c = MainDps.__new__(MainDps)
-        c.team_has_support_template = lambda: True
-        with mock.patch.object(planner_migration, "USE_PLANNER", False):
-            self.assertTrue(c.lw_use_do_perform(), "开关关+体系内: 走 do_perform")
-        with mock.patch.object(planner_migration, "USE_PLANNER", True):
-            self.assertFalse(c.lw_use_do_perform(), "开关开: 走 planner combat_plan")
-
 
 if __name__ == "__main__":
     unittest.main()

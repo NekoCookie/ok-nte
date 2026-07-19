@@ -21,7 +21,6 @@ from src.combat.planner import (
 )
 from src.Labels import Labels
 from src.lw.char_ext import CharExtMixin  # [lw]
-from src.lw.legacy_priority import Role as LwRole  # [lw] 旧版Role(planner版无DEFAULT/HEALER)
 from src.utils import game_filters as gf
 
 if TYPE_CHECKING:
@@ -75,7 +74,6 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         self.logger = Logger.get_logger(self.name)
         self.cycle_start_time = 0.0
         self.element = Element.DEFAULT
-        self.role = LwRole.DEFAULT  # [lw]
         self.planner_handles_arc = False
         self.is_dead = False
 
@@ -118,8 +116,6 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
 
     def perform(self):
         """执行当前角色的主要战斗行动序列。"""
-        if self.LW_DO_PERFORM and self.lw_use_do_perform():  # [lw] 用户角色走旧手感路径; 模板体系不成立时角色覆写判定退回planner(src/lw/char_ext.py)
-            return self.lw_perform()  # [lw]
         self.last_perform = time.time()
         if self.has_intro:
             self.add_intro_motion_freeze(self.last_perform)

@@ -19,14 +19,12 @@ from src.combat.BaseCombatTask import BaseCombatTask
 def make_run_task(use_ult_config):
     t = BaseCombatTask.__new__(BaseCombatTask)
     t.CONF_USE_ULT = "使用终结技"
-    t.CONF_USE_PLANNER = "实验·planner战斗系统(全队)"  # lw_combat_run 开战也读它
     t.config = {"使用终结技": use_ult_config}
     t.use_ultimate = True  # __init__ 默认值
     t.scene = mock.MagicMock()
     t.scene.is_in_team.return_value = True
     t.is_in_team = mock.MagicMock()
     t.in_combat = mock.MagicMock(side_effect=[True, False])  # 跑一圈即退出
-    t.reset_unavailable_chars = mock.MagicMock()
     t._last_team_recheck = 0.0
     t.switch_to_combat_start_char = mock.MagicMock()
     t._reload_if_team_size_changed = mock.MagicMock(return_value=True)

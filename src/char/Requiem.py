@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import win32con
 
-from src.char.MainDps import MainDps
+from src.lw.combat_templates import MainDps
 from src.combat import requiem_combo
 from src.combat.planner import ActionSlot, ActionTag
 from src.Labels import Labels
@@ -68,7 +68,7 @@ class _RequiemCombatIO:
                 self._last_combat_check = now
                 self._char._check_combat_alive()
                 # 为技能/大招让路: combo 进度还没过阈值(伤害大头在结尾, 过半就打完不打断),
-                # 且此刻技能/大招已就绪 → 中断本轮, 交回 do_perform 顶部去开(下一次 do_perform
+                # 且此刻技能/大招已就绪 → 中断本轮, 交回下一次 plan entry 去开
                 # 重新决策会 click_ultimate / cast skill)。恒在"鼠标已抬起"时判断, 中止安全。
                 if self._break_for_skill_ratio > 0 and self._round_seconds > 0:
                     progress = (now - self._round_start) / self._round_seconds
@@ -118,7 +118,7 @@ class Requiem(MainDps):
     DODGE_KEY = "lshift"  # 游戏闪避键
     DODGE_DIR_KEY = "w"   # 双4a尾段"带方向闪避"的方向键: 按住W再按闪避
     # 双4a"窗口内"部分时长(ms): 前段平A的前这么久在 execute_dodge 里打(立即反击+填满声音1秒去抖窗口),
-    # 之后 execute_dodge 返回、"处理这次闪避"结束, 剩余部分交 do_perform 无缝续打(可被新声音打断)。
+    # 之后 execute_dodge 返回、"处理这次闪避"结束, 剩余部分交下一次 plan entry 无缝续打。
     DODGE_WINDOW_FILL_MS = 1000
     # combo 起手前, 若紧接在闪避反击之后, 额外等这么久让反击后摇走完再落第一下(否则 combo 顺序乱)。
     # 只加在 combo 路径; 切人/技能/大招不等→立即执行取消后摇。默认值, 4A 任务里可配。
@@ -182,7 +182,7 @@ class Requiem(MainDps):
         super().__init__(*args, **kwargs)
         self.skill_off_field_until = 0.0
         self._dodge_counter_at = 0.0  # 上次闪避反击出手时刻(供 combo 起手前等后摇)
-        self._pending_double_4a = None   # 非None=双4a窗口外部分待续打(do_perform顶上处理)
+        self._pending_double_4a = None   # 非None=双4a窗口外部分待续打(plan entry优先处理)
         self._d4_front_left_ms = 0.0     # 双4a前段平A在窗口内打掉后剩余的时长(ms)
         self._d4_seam_t = 0.0            # 窗口内结束时刻(单调时钟), 供诊断续打接缝
         self._d4_last_end = 0.0           # 上轮双4a结束时刻(单调时钟), 供诊断 combo 交接
@@ -196,9 +196,9 @@ class Requiem(MainDps):
         return self._lw_combat_plan(context)
 
     def _lw_combat_plan(self, context):
-        """安魂曲双4a 迁 planner(对照 do_perform, ru 风格): 大招/真技能/免费技/双4a combo/
+        """安魂曲双4a planner 计划: 大招/真技能/免费技/双4a combo/
         窗口外续打 各是独立声明动作, execute 复用现有方法(combo 时序、cast_real_skill、续打状态机
-        一行不改), entry generator 编排 do_perform 的分支顺序。双4a 是原子动作、整段包进一个
+        一行不改), entry generator 编排分支顺序。双4a 是原子动作、整段包进一个
         LEGACY_COMBO action(planner 为 combo 迁移预留的槽), 不拆内部跳A时序。"""
         ultimate = self.planner_action(
             tags={ActionTag.ULTIMATE_ACTION},
@@ -247,7 +247,7 @@ class Requiem(MainDps):
 
         def entry():
             # 续打窗口外部分优先: 闪避那1秒窗口已在 execute_dodge 打了前段前半, 这里无缝接剩余,
-            # 跳过技能OCR(免在双4a中间插延迟打乱节奏)。对应 do_perform 顶部的 _pending 分支。
+            # 跳过技能OCR(免在双4a中间插延迟打乱节奏)。
             if self._pending_double_4a is not None:
                 yield combo_continue
                 return
@@ -276,7 +276,7 @@ class Requiem(MainDps):
         )
 
     def _execute_free_skill(self, context=None):
-        """免费技动作(对应 do_perform 的免费技分支): 放招→闪避打断拖沓的a5→后续输出。"""
+        """免费技动作: 放招→闪避打断拖沓的a5→后续输出。"""
         if self.click_skill(time_out=1.0):
             self.logger.info("requiem FREE skill cast, staying on field")
             self._free_skill_break_a5()
@@ -579,7 +579,7 @@ class Requiem(MainDps):
         """双4a 的"窗口内"部分(跑在 execute_dodge 里): 只打前段平A 的前 ~1 秒, 填满声音那 1 秒去抖
         窗口(这 1 秒新攻击本就被去抖丢、打得安心, 且是立即反击)。然后挂起 _pending_double_4a,
         execute_dodge 就此返回——"处理这次闪避"真的结束了。剩余部分(前段剩余→跳A→后段→尾段闪避→
-        补平A)交 do_perform 顶上无缝续打, 那部分是普通 combo, 被新声音打断时新闪避经正常路径触发
+        补平A)交下一次 plan entry 无缝续打, 那部分是普通 combo, 被新声音打断时新闪避经正常路径触发
         自己的新一轮反击, 不再和这次闪避耦合。"""
         front_ms = task._conf_num(task.CONF_D4_FRONT, 950)
         inside_ms = min(front_ms, self.DODGE_WINDOW_FILL_MS)
@@ -599,11 +599,11 @@ class Requiem(MainDps):
         )
         self._d4_front_left_ms = max(0.0, front_ms - inside_ms)
         self._d4_seam_t = time.perf_counter()  # 记窗口内结束时刻, 供续打测接缝延迟
-        self._pending_double_4a = task     # 交给 do_perform 顶上续打
+        self._pending_double_4a = task     # 交给下一次 plan entry 续打
         self._dodge_counter_at = 0.0
 
     def _run_double_4a_outside(self):
-        """双4a 的"窗口外"部分(跑在主循环 do_perform 顶上, 像普通 combo 一样可被新声音打断):
+        """双4a 的"窗口外"部分(跑在下一次 plan entry, 像普通 combo 一样可被新声音打断):
         前段剩余 → 跳A(续段, 第二个4a) → 后段平A → 尾段闪避 → 补平A。用普通 io: 新声音置 combat_interrupt
         即中止 → 交回主循环, sleep_check 执行那次新闪避(→ 它自己的新一轮双4a)。"""
         task = self._pending_double_4a
@@ -668,7 +668,7 @@ class Requiem(MainDps):
 
     def on_dodge_counter(self):
         """触发闪避后按"安魂曲配置"的闪避反击方式走对应流程(与测试同一份配置):
-        - 闪双4a: 前段平A的前~1秒在此打(填满声音窗口、立即反击), 剩余交 do_perform 无缝续打
+        - 闪双4a: 前段平A的前~1秒在此打(填满声音窗口、立即反击), 剩余交 plan entry 无缝续打
           (见 _dodge_double_4a_inside / _run_double_4a_outside, 后段像普通combo可被新声音打断);
         - 方案一(默认): 强制平A打反击(0.1间隔) → 主动闪避取消后摇 → 记时刻, combo起手前等后摇。
         由 task.after_dodge_executed 在闪避键按下后(主线程内)同步调用。"""
@@ -704,9 +704,9 @@ class Requiem(MainDps):
         """主C站场输出: 用一轮 4A跳A combo 替代原连点(原 2.5s)。放完一轮即返回、交战斗循环
         重新决策(下一圈再来一轮); 一轮内部可被闪避/切人打断。duration 参数忽略(一轮为准)。
 
-        技能快就绪(剩余CD < 一轮combo时长)时不开整轮 combo: 一轮会把 do_perform 焊死 ~2.1s、
+        技能快就绪(剩余CD < 一轮combo时长)时不开整轮 combo: 一轮会把本次 entry 焊死 ~2.1s、
         期间技能就绪也不复检, 打完常和辅助资源撞一起→先切辅助把就绪技能晾着(浪费)。改用短平A
-        填充让 do_perform 尽快复检、技能一好立刻放; 技能还远时才打完整 combo(输出不亏)。"""
+        填充让 planner 尽快复检、技能一好立刻放; 技能还远时才打完整 combo(输出不亏)。"""
         if self.should_yield_to_support():
             self.logger.info("support ready before requiem combo idle")
             return
@@ -836,57 +836,6 @@ class Requiem(MainDps):
             return bool(task.config.get(task.CONF_DISABLE_SKILLS, False))
         except Exception:
             return False
-
-    def do_perform(self):
-        # 双4a"窗口外"续打: 闪避那 1 秒窗口里已在 execute_dodge 打了前段前半, 这里无缝接剩余部分
-        # (前段剩余→跳A→后段→尾段闪避→补平A)。放在最顶上、跳过技能OCR, 免得在双4a中间插延迟打乱节奏。
-        if getattr(self, "_pending_double_4a", None) is not None:
-            self._run_double_4a_outside()
-            return
-
-        # G技能: 图标变了(不是基线平底锅)=就绪, 第一优先级按G触发(在大招/技能之前)。
-        if self._maybe_trigger_g_skill():
-            return
-
-        self.wait_intro()
-
-        if self._skills_disabled_for_test():
-            # 测试开关: 跳过技能/大招, 直接站场 combo(仍保留让位辅助的正常逻辑)。
-            if self.should_yield_to_support():
-                self.continues_normal_attack(0.2)
-                return
-            self.idle_normal_attack()
-            return
-
-        # 目标存活门: 开大/放技能前刷新一帧确认还在战斗, 别对着尸体开大或放真技能(白扔长CD)。
-        # 已确认脱战则抛 NotInCombat 收手。和 combo 中途 _check_combat_alive 同一判定(带去抖不误停)。
-        self._check_combat_alive()
-
-        used_ultimate = self.click_ultimate(wait_if_no_cd=self.PRE_SKILL_ULTIMATE_WAIT)  # 上游参数改名(原wait_if_cd_ready)
-
-        if self.skill_available():
-            # 真/免费只看技能图标(is_real_skill_now);识别不到按真技能处理。
-            if self.is_real_skill_now():
-                # 真技能是伤害大头: 放进去(进CD)才 overlap; 被打断会留场重试到放出。
-                self.cast_real_skill()
-                return
-            else:
-                if self.click_skill(time_out=1.0):  # 上游click_skill改返回bool(原三元组)
-                    # 免费技能:留场接平A,不触发下场。
-                    self.logger.info("requiem FREE skill cast, staying on field")
-                    self._free_skill_break_a5()  # 跳A打断拖沓低伤的第五下平A(a5), 不打那下
-                    self.free_skill_followup_attack()
-                    return
-
-        if used_ultimate:
-            return
-
-        if self.should_yield_to_support():
-            self.logger.info("support resource ready after requiem action check, yielding")
-            self.continues_normal_attack(0.2)
-            return
-
-        self.idle_normal_attack()
 
     def reset_state(self):
         super().reset_state()

@@ -1,8 +1,8 @@
-# [lw] BaseCombatTask 的用户扩展: 技能CD锚定/OCR就绪判定、角色不可用标记、
-# 队伍变更检测、切换决策诊断、队伍快照/弱识别重试等。
+# [lw] BaseCombatTask 的用户扩展: 技能CD锚定/OCR就绪判定、队伍变更检测、
+# 队伍快照/弱识别重试等。
 # 接线: class BaseCombatTask(CombatExtMixin, CombatCheck)。
-# 注: CharUnavailableException/TeamChangedException 因继承 NotInCombatException
-# 仍定义在 BaseCombatTask.py(带 [lw] 标记), 本文件方法内用局部 import 引用。
+# 注: TeamChangedException 因继承 NotInCombatException 仍定义在 BaseCombatTask.py
+# (带 [lw] 标记), 本文件方法内用局部 import 引用。
 import time
 from typing import TYPE_CHECKING
 
@@ -12,7 +12,6 @@ from ok import Logger, safe_get
 
 from src import text_white_color
 from src.char.BaseChar import BaseChar, Element
-from src.lw.legacy_priority import Priority  # [lw] 上游已移除, 迁移到 src/lw/
 from src.char.custom.CustomCharManager import CustomCharManager
 from src.char.Healer import Healer
 from src.sound_trigger.SoundCombatContext import SoundCombatContext
@@ -37,8 +36,6 @@ class CombatExtMixin(_TaskProxy):
     # 只应在"怀疑 lw 逻辑自身有问题、想和原版对照"时临时关闭。
     LW_CD_ANCHORING = True
     LW_LOAD_CHARS = True
-    LW_SWITCH_DECIDE = True
-    LW_SWITCH_NEXT = True
     LW_COMBAT_RUN = True
 
     # 锚定技能/大招 CD 时, 若 OCR 读不到数字且图标不亮(无旧锚点)的保守占位:
@@ -66,9 +63,6 @@ class CombatExtMixin(_TaskProxy):
     TEAM_SIGNATURE_CHECK_INTERVAL = 1.0
     TEAM_SIGNATURE_CONFIRM_INTERVAL = 0.5
     TEAM_SIGNATURE_MATCH_THRESHOLD = 0.6
-    CHAR_UNAVAILABLE_BASE_COOLDOWN = 8.0
-    CHAR_UNAVAILABLE_MAX_COOLDOWN = 30.0
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # 用户字段集中在这里初始化(MRO 上游类的 super().__init__ 会路过本方法),
@@ -78,44 +72,8 @@ class CombatExtMixin(_TaskProxy):
         self._pending_team_change = None
         self._pending_team_signature_change = None
         self._team_change_checking = False
-        self.unavailable_char_until = {}
-        self.unavailable_char_failures = {}
         self._last_team_recheck = 0.0  # AutoCombatTask 的队伍重载节流
         self._pending_team_shrink = None  # 主循环减员二次确认的候选(count, 首次检测时刻)
-
-    # ---------- 角色不可用标记 ----------
-
-    def reset_unavailable_chars(self):
-        self.unavailable_char_until.clear()
-        self.unavailable_char_failures.clear()
-
-    def is_char_unavailable(self, char: "BaseChar | None") -> bool:
-        if char is None:
-            return False
-        if getattr(char, "is_dead", False):  # 吸收上游fb360f3: 死亡角色也视为不可用
-            return True
-        until = self.unavailable_char_until.get(char.index)
-        if until is None:
-            return False
-        if time.time() < until:
-            return True
-        self.unavailable_char_until.pop(char.index, None)
-        return False
-
-    def mark_char_unavailable(self, char: "BaseChar | None", reason: str):
-        if char is None:
-            return
-        failures = self.unavailable_char_failures.get(char.index, 0) + 1
-        cooldown = min(
-            self.CHAR_UNAVAILABLE_BASE_COOLDOWN * failures,
-            self.CHAR_UNAVAILABLE_MAX_COOLDOWN,
-        )
-        self.unavailable_char_failures[char.index] = failures
-        self.unavailable_char_until[char.index] = time.time() + cooldown
-        self.log_info(
-            f"mark char unavailable {self._get_char_log_name(char)} "
-            f"slot {char.index + 1} for {cooldown:.1f}s: {reason}"
-        )
 
     # ---------- 闪避/放招诊断 ----------
 
@@ -529,138 +487,11 @@ class CombatExtMixin(_TaskProxy):
         except Exception as e:
             self.log_debug(f"cd estimate log failed: {e}")
 
-    # ---------- 切换决策辅助 ----------
-
-    def lw_decide_switch_to(self, current_char: "BaseChar", free_intro=False, require_intro=False):
-        """_decide_switch_to 的龙威实现(按 LW_SWITCH_DECIDE 分发到这里):
-        跳过不可用角色 + 切换决策诊断 + 辅助大招待铺时压过环合反应。"""
-        has_intro = free_intro or current_char.is_cycle_full()
-        switch_to = current_char
-
-        if require_intro and not has_intro:
-            return switch_to, has_intro
-
-        max_priority = Priority.MIN
-
-        # 只在主决策打(retry_intro 那个 0.12s 重决策不打, 免刷屏)
-        diag = [] if (self.SKILL_CD_DIAG and not require_intro) else None
-        for char in self.chars:
-            if char is None:
-                continue
-            if char != current_char and self.is_char_unavailable(char):
-                logger.debug(f"skip unavailable char {char}")
-                continue
-
-            if char == current_char:
-                priority = Priority.CURRENT_CHAR
-            else:
-                priority = char.get_switch_priority(current_char, has_intro)
-                logger.debug(f"switch_next_char priority: {char} {priority}")
-
-            if diag is not None:
-                diag.append(self._switch_diag_str(char, priority))
-
-            if priority > max_priority or (
-                priority == max_priority and char.last_perform < switch_to.last_perform
-            ):
-                if priority == max_priority:
-                    logger.debug("switch priority equal, determine by last perform")
-                max_priority = priority
-                switch_to = char
-
-        if diag is not None:
-            self.log_info(
-                f"switch决策(has_intro={has_intro}): {' | '.join(diag)} "
-                f"=> 选 {self._get_char_log_name(switch_to)}"
-            )
-
-        if has_intro and max_priority < Priority.FAST_SWITCH:
-            # 辅助大招就绪待铺时,先上场铺大招 buff,不被环合反应覆盖
-            # (按优先级切到该辅助开大);没有大招待铺时环合照常走。
-            if not self._any_support_ultimate_pending(current_char):
-                reaction_target = self.find_element_reaction_target(current_char)  # 上游改名(原find_element_ring_reaction_target)
-                if reaction_target and not self.is_char_unavailable(reaction_target):
-                    return reaction_target, has_intro
-
-        return switch_to, has_intro
-
-    def lw_switch_next_char(self, current_char: "BaseChar", post_action=None, free_intro=False):
-        """switch_next_char 的龙威实现(LW_SWITCH_NEXT 分发): 主切人决策走 lw_decide_switch_to
-        (legacy Priority 选人/跳过不可用/辅助大招压环合/诊断日志), 而非上游 planner.decide_switch。
-
-        上游 planner 化后 switch_next_char 直连 planner.decide_switch, 使 lw 切换手感只在
-        _switch_to_char 的 retry_intro 重规划(0.12s 窗口)生效、主决策被旁路。此方法把主决策
-        夺回 lw。执行机制沿用上游: 切换守卫 + wait_switch_cd + _switch_to_char(内部 record_switch
-        照常记账、retry_intro 已走 lw _decide_switch_to)。不调 planner.expect_entry_action——
-        expected_entry 仅被 planner.perform_current_char 消费(用户角色走 do_perform 不经过),
-        且正常切换本就为 None(仅 strict route 才有), 对齐旧版无此概念的行为。"""
-        if self.team_size <= 1:
-            self.click(action_name="switch_char_click", interval=0.1)
-            return
-
-        switch_to, has_intro = self.lw_decide_switch_to(current_char, free_intro=free_intro)
-        if switch_to is None or switch_to == current_char:
-            current_char.click_with_interval()
-            self.run_with_interval(
-                lambda: logger.debug(f"lw keeps current char {current_char}"),
-                0.5,
-                action_name=("lw_keep_current", current_char.index),
-            )
-            return
-
-        # 切换守卫沿用上游(strict route 时跳过, 否则等 guard + 切换CD)
-        if not self.combat_planner.has_strict_route(current_char):
-            self._wait_switch_in_guard(current_char, switch_to, has_intro)
-            current_char.wait_switch_cd()
-
-        self._switch_to_char(
-            switch_to,
-            current_char=current_char,
-            has_intro=has_intro,
-            post_action=post_action,
-            free_intro=free_intro,
-            retry_intro=True,
-            log_prefix="lw switch_next_char",
-        )
-
-    def _switch_diag_str(self, char, priority):
-        """诊断(SKILL_CD_DIAG):某角色本次切人决策拿到的优先级 + (支援)资源判定明细,
-        用来定位"技能/大招就绪却没被选中=晚切"的原因(是确认不到资源、还是优先级被压)。"""
-        s = f"{self._get_char_log_name(char)}={int(priority)}"
-        try:
-            from src.char.MainDps import BuffSupport
-
-            if isinstance(char, BuffSupport) and not char.is_current_char:
-                conf = char.has_confirmed_resource()
-                sk = char.skill_available()
-                dia = self.off_field_ultimate_ready(char.index)
-                probe = char.needs_resource_probe()
-                rcc = getattr(char, "resource_cache_confirmed", None)
-                recent = char.recently_used_resource()
-                s += (
-                    f"[确认{conf} 技能{sk} 菱形{dia} 探测{probe} "
-                    f"缓存确认{rcc} 刚用过{recent}]"
-                )
-        except Exception:
-            pass
-        return s
-
-    def _any_support_ultimate_pending(self, current_char):
-        """是否有(非当前场上的)辅助大招就绪待铺,用于让"先铺大招 buff"压过环合反应。"""
-        from src.char.MainDps import BuffSupport
-
-        for char in self.chars:
-            if char is None or char is current_char:
-                continue
-            if isinstance(char, BuffSupport) and char.ultimate_buff_pending():
-                return True
-        return False
-
     def main_dps_overlapping(self):
         """是否有主C正处于"真技能 off-field overlap"强制下场窗口(刚放完真技能、被强制让场)。
         这期间主C必须切给别人, 切上来的支援是来接 overlap 平A的(平A本身有输出), 不该被算成
         "空切/切早"。用于诊断排除这种误报。"""
-        from src.char.MainDps import MainDps
+        from src.lw.combat_templates import MainDps
 
         for char in self.chars:
             if isinstance(char, MainDps) and char.should_force_off_field():
@@ -674,9 +505,9 @@ class CombatExtMixin(_TaskProxy):
 
         注意:不能用 has_confirmed_resource() 判——治疗的资源判定会随别的辅助资源实时翻转,
         切到一半就翻成 False、守卫失效,正是之前没修好的原因。"""
-        from src.char.MainDps import BuffSupport
+        from src.lw.combat_templates import ResourceSupport
 
-        return isinstance(switch_to, BuffSupport)
+        return isinstance(switch_to, ResourceSupport)
 
     # ---------- 队伍快照 / 队伍变更检测 ----------
 
@@ -845,10 +676,9 @@ class CombatExtMixin(_TaskProxy):
 
     def lw_combat_run(self):
         """AutoCombatTask.run 的龙威实现(按 LW_COMBAT_RUN 分发到这里):
-        增加队伍变化重载、当前角色丢失重载、角色不可用/队伍变更两类异常的恢复分支。"""
+        增加队伍变化重载、当前角色丢失重载和队伍变更恢复分支。"""
         from src.combat.BaseCombatTask import (
             CharDeadException,
-            CharUnavailableException,
             NotInCombatException,
             TeamChangedException,
         )
@@ -858,7 +688,6 @@ class CombatExtMixin(_TaskProxy):
             return
 
         self._last_team_recheck = 0.0
-        self.reset_unavailable_chars()
         combat_start = time.time()
         while self.in_combat():
             try:
@@ -867,10 +696,6 @@ class CombatExtMixin(_TaskProxy):
                     # [lw] 吸收上游 run 新增: 开战读"使用终结技"开关。lw 主循环原先漏了这行,
                     # self.use_ultimate 恒为 __init__ 默认 True → UI 关掉"使用终结技"对 lw 无效。
                     self.use_ultimate = self.config.get(self.CONF_USE_ULT, True)
-                    # [lw] 全面升级A/B总开关: 开战读配置设 USE_PLANNER, 整场生效(各角色 lw_use_do_perform
-                    # 与 switch_next_char 分发都读它)。默认关=现状。
-                    import src.lw.planner_migration as _pm
-                    _pm.USE_PLANNER = self.config.get(self.CONF_USE_PLANNER, False)
                     self.switch_to_combat_start_char()
                 if not self._reload_if_team_size_changed():
                     time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
@@ -885,12 +710,6 @@ class CombatExtMixin(_TaskProxy):
             except CharDeadException:
                 self.log_error("Characters dead", notify=True)
                 break
-            except CharUnavailableException as e:
-                logger.info(
-                    f"auto_combat_task_char_unavailable "
-                    f"{int(time.time() - combat_start)} {e}"
-                )
-                continue
             except TeamChangedException as e:
                 logger.info(f"auto_combat_task_team_changed {int(time.time() - combat_start)} {e}")
                 if not self._reload_combat_team():
@@ -903,15 +722,9 @@ class CombatExtMixin(_TaskProxy):
             self.combat_end()
 
     def _reload_combat_team(self) -> bool:
-        from src.combat.BaseCombatTask import CharUnavailableException
-
         if self.load_chars():
-            self.reset_unavailable_chars()
             self._in_combat = True
-            try:
-                self.switch_to_combat_start_char()
-            except CharUnavailableException as e:
-                logger.info(f"combat start char unavailable after team reload {e}")
+            self.switch_to_combat_start_char()
             return True
 
         if self.chars and self.get_current_char() is not None:
