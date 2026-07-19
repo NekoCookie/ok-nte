@@ -458,6 +458,57 @@ class TestCombatPlanner(unittest.TestCase):
         self.assertEqual(decision.target, high)
         self.assertEqual(decision.reason, "combat start priority")
 
+    def test_combat_start_uses_preemptive_claim_without_explicit_start_target(self):
+        current = FakeChar(0, "current")
+        support = FakeChar(
+            1,
+            "support",
+            claims=[FieldClaim.preemptive("opening buff ready")],
+        )
+        planner = self._planner([current, support])
+
+        decision = planner.decide_combat_start_char(current)
+
+        self.assertEqual(decision.target, support)
+        self.assertIn("preemptive field claim", decision.reason)
+
+    def test_explicit_combat_start_priority_preempts_opening_support_claim(self):
+        current = FakeChar(0, "current")
+        explicit = FakeChar(1, "explicit", combat_start_priority=100)
+        support = FakeChar(
+            2,
+            "support",
+            claims=[FieldClaim.preemptive("opening buff ready")],
+        )
+        planner = self._planner([current, explicit, support])
+
+        decision = planner.decide_combat_start_char(current)
+
+        self.assertEqual(decision.target, explicit)
+        self.assertEqual(decision.reason, "combat start priority")
+
+    def test_opening_support_does_not_store_return_to_previous_char(self):
+        ready = {"support": True}
+        previous = FakeChar(0, "previous")
+        support = FakeChar(
+            1,
+            "support",
+            claims=lambda _: (
+                [FieldClaim.preemptive("opening buff ready")] if ready["support"] else []
+            ),
+        )
+        next_best = FakeChar(2, "next_best", tags={ActionTag.ULTIMATE_ACTION})
+        planner = self._planner([previous, support, next_best])
+
+        opening = planner.decide_combat_start_char(previous)
+        self.assertEqual(opening.target, support)
+
+        ready["support"] = False
+        following = planner.decide_switch(support)
+
+        self.assertEqual(following.target, next_best)
+        self.assertNotEqual(following.target, previous)
+
     def test_combat_start_skips_dead_characters(self):
         current = FakeChar(0, "current")
         dead_high = FakeChar(1, "dead_high", combat_start_priority=100)

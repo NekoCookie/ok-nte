@@ -58,6 +58,9 @@ class CombatExtMixin(_TaskProxy):
     # 需覆盖开战入场动画(~1.5s), 期间队伍栏头像识别不全会得到无效快照
     LOAD_CHARS_SNAPSHOT_RETRY_WINDOW = 2.5
     LOAD_CHARS_SNAPSHOT_RETRY_INTERVAL = 0.08
+    COMBAT_START_RESOURCE_SETTLE_TIMEOUT = 0.6
+    COMBAT_START_RESOURCE_SETTLE_INTERVAL = 0.08
+    COMBAT_START_RESOURCE_STABLE_FRAMES = 2
     TEAM_CHANGE_CHECK_INTERVAL = 0.3
     TEAM_CHANGE_CONFIRM_INTERVAL = 0.8
     TEAM_SIGNATURE_CHECK_INTERVAL = 1.0
@@ -74,6 +77,44 @@ class CombatExtMixin(_TaskProxy):
         self._team_change_checking = False
         self._last_team_recheck = 0.0  # AutoCombatTask 的队伍重载节流
         self._pending_team_shrink = None  # 主循环减员二次确认的候选(count, 首次检测时刻)
+
+    def lw_settle_combat_start_resources(self):
+        """开场首动作前等待增益辅助头像资源状态稳定，不参与战斗中的普通调度。"""
+
+        from src.lw.combat_templates import BuffSupport
+
+        if any(
+            char is not None
+            and not getattr(char, "is_dead", False)
+            and char.describe_role().combat_start_priority > 0
+            for char in self.chars
+        ):
+            return
+        supports = [
+            char
+            for char in self.chars
+            if isinstance(char, BuffSupport) and not char.is_current_char
+        ]
+        if not supports:
+            return
+
+        deadline = time.time() + self.COMBAT_START_RESOURCE_SETTLE_TIMEOUT
+        previous = None
+        stable_frames = 0
+        while time.time() < deadline:
+            states = tuple(char.combat_start_resource_state() for char in supports)
+            if all(state is not None for state in states):
+                stable_frames = stable_frames + 1 if states == previous else 1
+                if stable_frames >= self.COMBAT_START_RESOURCE_STABLE_FRAMES:
+                    self.log_info(f"combat start support resources settled: {states}")
+                    return
+            else:
+                stable_frames = 0
+            previous = states
+            self.next_frame()
+            self.sleep(self.COMBAT_START_RESOURCE_SETTLE_INTERVAL, sleep_check=False)
+
+        self.log_info("combat start support resources settle timeout, keep conservative state")
 
     # ---------- 闪避/放招诊断 ----------
 

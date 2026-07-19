@@ -149,6 +149,22 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         self.assertIs(list(plan.claims)[0].timing, FieldClaimTiming.NORMAL)
         self.assertTrue(actions_by_slot(plan)[ActionSlot.SKILL].priority_ready(None))
 
+    def test_combat_start_resource_state_preserves_unknown_diamond(self):
+        c = make_buff(ult_ready=False, skill_ready=False, buff_pending=False)
+        c.is_current_char = False
+        c.task = mock.MagicMock()
+        c.task.off_field_ultimate_ready.return_value = None
+
+        self.assertIsNone(c.combat_start_resource_state())
+
+    def test_combat_start_resource_state_accepts_confirmed_skill(self):
+        c = make_buff(ult_ready=False, skill_ready=True, buff_pending=False)
+        c.is_current_char = False
+        c.task = mock.MagicMock()
+
+        self.assertTrue(c.combat_start_resource_state())
+        c.task.off_field_ultimate_ready.assert_not_called()
+
     def test_ultimate_priority_ready_uses_diamond(self):
         # 大招切人评分用菱形 ultimate_ready_now(下场准), 非在场 ultimate_available
         c = make_buff(ult_ready=True)

@@ -290,6 +290,8 @@ def combat_plan(self, context):
 - 切人评分与普通 entry 执行分离。
 - 决策顺序是 strict route、入场/环合请求、preemptive claim、自动环合反应、
   switch request、普通评分。
+- 开场显式 `combat_start_priority` 仍最高；没有显式开场目标时，已确认资源的
+  preemptive claim 可以先铺设，完成后重新进入普通 planner 决策。
 - 普通评分使用 `actions` 中最高分 ready action，再叠加普通 `FieldClaim`、request 和 role 分。
 - 当前角色普通入场执行由 `entry` 控制；未写 entry 时按 `actions` 顺序执行。
 - `priority_ready=False` 只降低切人吸引力，不是硬阻止。

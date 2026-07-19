@@ -325,6 +325,17 @@ class BuffSupport(ResourceSupport):
             return self.ultimate_available()
         return self.task.off_field_ultimate_ready(self.index) is True
 
+    def combat_start_resource_state(self):
+        """开场辅助资源观测：True=确认有，False=确认无，None=头像 UI 尚未稳定。"""
+
+        if self.recently_used_resource():
+            return False
+        if self.is_current_char:
+            return self.has_resource()
+        if self.has_skill_resource():
+            return True
+        return self.task.off_field_ultimate_ready(self.index)
+
     def resource_field_claims(self, needs_probe):
         if self.ultimate_buff_pending():
             return [FieldClaim.preemptive(source=self, reason="support ultimate buff pending")]

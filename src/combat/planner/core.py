@@ -230,8 +230,9 @@ class CombatPlanner:
     def decide_combat_start_char(self, current_char: "BaseChar | None") -> SwitchDecision:
         """决定战斗刚开始时是否需要首切到指定角色。
 
-        首切只读取 `RoleProfile.combat_start_priority`，不参与普通动作评分，也不触发
-        strict route / 环合反应等战斗中调度。
+        显式 `RoleProfile.combat_start_priority` 仍拥有最高开场优先级；没有显式目标时，
+        允许已确认资源的 preemptive claim 先铺设。不开启普通动作评分，也不触发
+        strict route / 环合反应等战斗中调度。[lw]
         """
 
         candidates = []
@@ -241,6 +242,18 @@ class CombatPlanner:
             priority = char.describe_role().combat_start_priority
             if priority > 0:
                 candidates.append((priority, char))
+
+        if not candidates and current_char is not None:
+            # [lw] 开场画面由 CombatExtMixin 先稳定；这里只复用 plan 的通用前置诉求，
+            # 辅助执行完后仍走普通 decide_switch，不保存任何硬编码返回目标。
+            context = self.context_for(current_char, {})
+            preemptive = self._preemptive_field_claim_decision(
+                current_char,
+                context,
+                has_intro=False,
+            )
+            if preemptive is not None:
+                return preemptive
 
         if not candidates:
             return SwitchDecision(

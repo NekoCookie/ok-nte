@@ -694,6 +694,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
         # 否则起始角色已在场时本方法会提前 return,残留的 in_animation=True 会让该角色的
         # click_ultimate 误判"正在大招动画中"、不发招直接空等 unfreeze,卡住十几秒。
         self.in_animation = False  # [lw]
+        self.lw_settle_combat_start_resources()  # [lw] 首动作前等辅助头像资源状态稳定
         current_char = self.get_current_char(raise_exception=False)
         decision = self.combat_planner.decide_combat_start_char(current_char)
         switch_to = decision.target
