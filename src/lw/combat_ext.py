@@ -1,8 +1,6 @@
 # [lw] BaseCombatTask 的用户扩展: 技能CD锚定/OCR就绪判定、队伍变更检测、
 # 队伍快照/弱识别重试等。
 # 接线: class BaseCombatTask(CombatExtMixin, CombatCheck)。
-# 注: TeamChangedException 因继承 NotInCombatException 仍定义在 BaseCombatTask.py
-# (带 [lw] 标记), 本文件方法内用局部 import 引用。
 import time
 from typing import TYPE_CHECKING
 
@@ -14,6 +12,7 @@ from src import text_white_color
 from src.char.BaseChar import BaseChar, Element
 from src.char.custom.CustomCharManager import CustomCharManager
 from src.char.Healer import Healer
+from src.lw.team_roster import TeamReloadRequested, TeamRosterMonitor
 from src.sound_trigger.SoundCombatContext import SoundCombatContext
 from src.utils import game_filters as gf
 
@@ -72,11 +71,18 @@ class CombatExtMixin(_TaskProxy):
         # 上游 __init__ 里不留任何用户行。
         self._last_team_change_check = 0.0
         self._last_team_signature_check = 0.0
-        self._pending_team_change = None
-        self._pending_team_signature_change = None
+        self._team_roster_monitor = TeamRosterMonitor()
         self._team_change_checking = False
         self._last_team_recheck = 0.0  # AutoCombatTask 的队伍重载节流
-        self._pending_team_shrink = None  # 主循环减员二次确认的候选(count, 首次检测时刻)
+
+    def _roster_monitor(self) -> TeamRosterMonitor:
+        """兼容免 __init__ 构造的测试/旧任务实例，并集中持有队伍防抖状态。"""
+
+        monitor = getattr(self, "_team_roster_monitor", None)
+        if monitor is None:
+            monitor = TeamRosterMonitor()
+            self._team_roster_monitor = monitor
+        return monitor
 
     def lw_settle_combat_start_resources(self):
         """开场首动作前等待增益辅助头像资源状态稳定，不参与战斗中的普通调度。"""
@@ -588,8 +594,6 @@ class CombatExtMixin(_TaskProxy):
             time.sleep(self.LOAD_CHARS_SNAPSHOT_RETRY_INTERVAL)
 
     def check_team_changed_during_combat(self, force=False):
-        from src.combat.BaseCombatTask import TeamChangedException
-
         if (
             not self._in_combat
             or self.team_size <= 0
@@ -616,38 +620,39 @@ class CombatExtMixin(_TaskProxy):
             in_team, current_index, count, source="team change check"
         )
         if snapshot is None:
-            self._pending_team_change = None
+            self._roster_monitor().clear_size()
             return False
 
         current_index, count = snapshot
         if count == self.team_size:
-            self._pending_team_change = None
+            self._roster_monitor().clear_size()
             return self.check_team_signature_changed_during_combat(now)
 
-        previous = self._pending_team_change
-        if previous is None or previous[0] != count:
-            self._pending_team_change = (count, now)
+        reliable_expansion = count <= self.team_size or self.is_reliable_team_expansion(count)
+        status, change = self._roster_monitor().observe_size(
+            expected_count=self.team_size,
+            observed_count=count,
+            now=now,
+            confirm_interval=self.TEAM_CHANGE_CONFIRM_INTERVAL,
+            reliable_expansion=reliable_expansion,
+        )
+        if status == "candidate":
             self.log_info(f"team size change candidate during action {self.team_size} -> {count}")
             return False
 
-        if now - previous[1] < self.TEAM_CHANGE_CONFIRM_INTERVAL:
-            return False
-
-        if count > self.team_size and not self.is_reliable_team_expansion(count):
-            self._pending_team_change = None
+        if status == "ignored_expansion":
             self.log_info(
                 f"team size expansion ignored because added slots are unknown "
                 f"{self.team_size} -> {count}"
             )
             return False
 
-        self._pending_team_change = None
-        self.log_info(f"team size changed during action {self.team_size} -> {count}")
-        raise TeamChangedException(f"team size changed {self.team_size} -> {count}")
+        if change is not None:
+            self.log_info(f"team size changed during action {self.team_size} -> {count}")
+            raise TeamReloadRequested(change)
+        return False
 
     def check_team_signature_changed_during_combat(self, now=None):
-        from src.combat.BaseCombatTask import TeamChangedException
-
         now = now or time.time()
         if now - self._last_team_signature_check < self.TEAM_SIGNATURE_CHECK_INTERVAL:
             return False
@@ -684,18 +689,23 @@ class CombatExtMixin(_TaskProxy):
             if not is_match or match_id != char_id:
                 mismatches.append((char.index, char.char_name, confidence))
 
-        if not verified:
-            self._pending_team_signature_change = None
-            return False
-
-        if not mismatches:
-            self._pending_team_signature_change = None
+        if not verified or not mismatches:
+            self._roster_monitor().observe_signature(
+                signature=None,
+                expected_count=self.team_size,
+                now=now,
+                confirm_interval=self.TEAM_SIGNATURE_CONFIRM_INTERVAL,
+            )
             return False
 
         signature = tuple((index, name) for index, name, _ in mismatches)
-        previous = self._pending_team_signature_change
-        if previous is None or previous[0] != signature:
-            self._pending_team_signature_change = (signature, now)
+        status, change = self._roster_monitor().observe_signature(
+            signature=signature,
+            expected_count=self.team_size,
+            now=now,
+            confirm_interval=self.TEAM_SIGNATURE_CONFIRM_INTERVAL,
+        )
+        if status == "candidate":
             mismatch_text = ", ".join(
                 f"{index + 1}:{name}({confidence:.2f})"
                 for index, name, confidence in mismatches
@@ -703,12 +713,10 @@ class CombatExtMixin(_TaskProxy):
             self.log_info(f"team signature change candidate during action {mismatch_text}")
             return False
 
-        if now - previous[1] < self.TEAM_SIGNATURE_CONFIRM_INTERVAL:
-            return False
-
-        self._pending_team_signature_change = None
-        self.log_info(f"team signature changed during action {signature}")
-        raise TeamChangedException("team signature changed")
+        if change is not None:
+            self.log_info(f"team signature changed during action {signature}")
+            raise TeamReloadRequested(change)
+        return False
 
     # ---------- trigger 战斗循环的队伍重载(AutoCombatTask.run 使用) ----------
 
@@ -721,7 +729,6 @@ class CombatExtMixin(_TaskProxy):
         from src.combat.BaseCombatTask import (
             CharDeadException,
             NotInCombatException,
-            TeamChangedException,
         )
 
         ret = False
@@ -751,7 +758,7 @@ class CombatExtMixin(_TaskProxy):
             except CharDeadException:
                 self.log_error("Characters dead", notify=True)
                 break
-            except TeamChangedException as e:
+            except TeamReloadRequested as e:
                 logger.info(f"auto_combat_task_team_changed {int(time.time() - combat_start)} {e}")
                 if not self._reload_combat_team():
                     time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
@@ -786,43 +793,39 @@ class CombatExtMixin(_TaskProxy):
             in_team, current_index, count, source="team size check"
         )
         if snapshot is None:
+            self._roster_monitor().clear_size()
             return True
         current_index, count = snapshot
-        if self.team_size == 0 or count == self.team_size:
-            self._pending_team_shrink = None  # 人数恢复, 清减员候选(抖动被吸收)
-            return True
-        if count > self.team_size and not self.is_reliable_team_expansion(count):
-            self._pending_team_shrink = None
+        reliable_expansion = count <= self.team_size or self.is_reliable_team_expansion(count)
+        status, change = self._roster_monitor().observe_size(
+            expected_count=self.team_size,
+            observed_count=count,
+            now=now,
+            confirm_interval=self.TEAM_CHANGE_CONFIRM_INTERVAL,
+            reliable_expansion=reliable_expansion,
+        )
+        if status == "ignored_expansion":
             self.log_info(
                 f"team size expansion ignored during combat {self.team_size} -> {count}"
             )
             return True
 
-        # [lw] 减员二次确认: 某帧头像瞬时识别不到(大招演出/切人过渡/遮挡)会误判减员,
-        # 直接 reload 会打断战斗并触发连锁问题。要求同一 count 持续 TEAM_CHANGE_CONFIRM_INTERVAL
-        # 才真 reload; 抖动下一轮 count 恢复→上面 count==team_size 分支清候选, 不 reload。
-        # (对齐战斗动作中的 check_team_changed_during_combat, 补齐主循环这条历史遗漏的路径)
-        if count < self.team_size:
-            previous = self._pending_team_shrink
-            if previous is None or previous[0] != count:
-                self._pending_team_shrink = (count, now)
-                # 首次检测到该减员即 dump 各槽匹配分: 擦边(0.6x)=抖动误判, 归零(<0.3)=真减员
-                try:
-                    scores = self.lw_dump_char_slot_scores()
-                    fmt = ", ".join(f"槽{i + 1}={s:.2f}" for i, s in enumerate(scores))
-                    self.log_info(
-                        f"team shrink candidate {self.team_size} -> {count} @current{current_index}, "
-                        f"各槽头像匹配分[{fmt}] (>=0.70命中算有人; 0.00=低于0.30)"
-                    )
-                except Exception as e:
-                    self.log_info(f"team shrink diag failed: {e}")
-                return True  # 本轮不 reload, 继续用旧队伍
-            if now - previous[1] < self.TEAM_CHANGE_CONFIRM_INTERVAL:
-                return True  # 候选未满确认窗口, 继续等
-            self._pending_team_shrink = None  # 减员持续确认, 落地 reload
+        if status == "candidate" and count < self.team_size:
+            # 首次检测到减员即 dump 各槽匹配分: 擦边(0.6x)=抖动误判, 归零(<0.3)=真减员
+            try:
+                scores = self.lw_dump_char_slot_scores()
+                fmt = ", ".join(f"槽{i + 1}={s:.2f}" for i, s in enumerate(scores))
+                self.log_info(
+                    f"team shrink candidate {self.team_size} -> {count} @current{current_index}, "
+                    f"各槽头像匹配分[{fmt}] (>=0.70命中算有人; 0.00=低于0.30)"
+                )
+            except Exception as e:
+                self.log_info(f"team shrink diag failed: {e}")
 
-        self.log_info(f"team size changed during combat {self.team_size} -> {count}, reload chars")
-        return self._reload_combat_team()
+        if change is not None:
+            self.log_info(f"team size changed during combat {self.team_size} -> {count}")
+            raise TeamReloadRequested(change)
+        return True
 
     # ---------- 队伍加载(弱识别防抖) ----------
 
@@ -964,9 +967,7 @@ class CombatExtMixin(_TaskProxy):
         return ret
 
     def _commit_loaded_chars(self, chars: list["BaseChar"], current_index: int):
-        self._pending_team_change = None
-        self._pending_team_signature_change = None
-        self._pending_team_shrink = None
+        self._roster_monitor().reset()
         self._last_team_change_check = 0.0
         self._last_team_signature_check = 0.0
         self.clear_element_reactions()  # 上游改名(原clear_element_ring_reactions)

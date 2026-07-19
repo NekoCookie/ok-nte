@@ -14,6 +14,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.combat.BaseCombatTask import BaseCombatTask, SleepCheckSkip
+from src.lw.team_roster import TeamReloadRequested, TeamRosterMonitor
 
 
 def make_task():
@@ -27,7 +28,6 @@ def make_task():
     t.in_team = mock.MagicMock(return_value=(True, 0, 2))
     # 快照归一返回 None → 走"无效快照"早退分支, 不再依赖后续签名比对的更多状态
     t._normalize_team_snapshot = mock.MagicMock(return_value=None)
-    t._pending_team_change = None
     return t
 
 
@@ -38,7 +38,6 @@ class _SignatureTask(BaseCombatTask):
 def make_signature_task():
     t = _SignatureTask.__new__(_SignatureTask)
     t._last_team_signature_check = 0.0
-    t._pending_team_signature_change = None
     char = mock.MagicMock()
     char.char_name = "安魂曲"
     char.index = 0
@@ -70,7 +69,7 @@ class TestTeamSignatureCheck(unittest.TestCase):
             kwargs["target_char"], "char_123",
             "target_char 必须传 char_id(传 char_name 会过滤掉全部候选、置信度恒0)",
         )
-        self.assertIsNone(t._pending_team_signature_change)
+        self.assertIsNone(t._roster_monitor()._signature_candidate)
 
 
 def make_reload_task():
@@ -78,7 +77,6 @@ def make_reload_task():
     t = BaseCombatTask.__new__(BaseCombatTask)
     t.chars = [mock.MagicMock(), mock.MagicMock()]  # team_size = len(chars) = 2
     t._last_team_recheck = 0.0
-    t._pending_team_shrink = None
     t.lw_dump_char_slot_scores = mock.MagicMock(return_value=[0.6, 0.0, 0.0, 0.0])
     t.is_reliable_team_expansion = mock.MagicMock(return_value=True)
     t._reload_combat_team = mock.MagicMock(return_value=True)
@@ -107,7 +105,7 @@ class TestTeamShrinkConfirm(unittest.TestCase):
         self.assertTrue(r1)
         self.assertTrue(r2)
         t._reload_combat_team.assert_not_called()
-        self.assertIsNone(t._pending_team_shrink)
+        self.assertIsNone(t._roster_monitor()._size_candidate)
 
     def test_first_shrink_detection_does_not_reload(self):
         # 首次检测到减员只记候选、dump 诊断, 本轮不 reload
@@ -117,19 +115,21 @@ class TestTeamShrinkConfirm(unittest.TestCase):
             r = t._reload_if_team_size_changed()
         self.assertTrue(r)
         t._reload_combat_team.assert_not_called()
-        self.assertEqual(t._pending_team_shrink, (1, 10.0))
+        self.assertEqual(t._roster_monitor()._size_candidate, (1, 10.0))
         t.lw_dump_char_slot_scores.assert_called_once()
 
-    def test_sustained_shrink_reloads_after_confirm(self):
-        # 连续两次 recheck(间隔≥确认窗口)都是同一减少后人数 → 确认 reload
+    def test_sustained_shrink_requests_reload_after_confirm(self):
+        # 连续两次 recheck(间隔≥确认窗口)都是同一减少后人数 → 中断旧动作, 交主循环 reload
         t = make_reload_task()
         t.in_team = mock.MagicMock(side_effect=[(True, 0, 1), (True, 0, 1)])
         with mock.patch("src.lw.combat_ext.time.time", side_effect=[10.0, 11.0]):
             r1 = t._reload_if_team_size_changed()
-            t._reload_if_team_size_changed()
+            with self.assertRaises(TeamReloadRequested) as raised:
+                t._reload_if_team_size_changed()
         self.assertTrue(r1, "首次减员只记候选, 本轮不 reload")
-        t._reload_combat_team.assert_called_once()
-        self.assertIsNone(t._pending_team_shrink)
+        self.assertEqual(raised.exception.change.observed_count, 1)
+        t._reload_combat_team.assert_not_called()
+        self.assertIsNone(t._roster_monitor()._size_candidate)
 
     def test_recheck_throttled_within_interval(self):
         # 距上次检测不足 TEAM_RECHECK_INTERVAL → 短路, 不重复识别
@@ -161,6 +161,51 @@ class TestTeamChangeCheck(unittest.TestCase):
         t = make_task()
         t.check_team_changed_during_combat(force=True)
         self.assertFalse(t.sleep_check_skip.all, "skip 状态必须随上下文管理器退出还原")
+
+
+class TestTeamRosterMonitor(unittest.TestCase):
+    def test_size_candidate_requires_continuous_confirmation(self):
+        monitor = TeamRosterMonitor()
+        status, change = monitor.observe_size(
+            expected_count=4,
+            observed_count=3,
+            now=10.0,
+            confirm_interval=0.8,
+        )
+        self.assertEqual(status, "candidate")
+        self.assertIsNone(change)
+
+        status, change = monitor.observe_size(
+            expected_count=4,
+            observed_count=3,
+            now=10.9,
+            confirm_interval=0.8,
+        )
+        self.assertEqual(status, "confirmed")
+        self.assertEqual(change.observed_count, 3)
+
+    def test_invalid_or_restored_observation_breaks_confirmation(self):
+        monitor = TeamRosterMonitor()
+        monitor.observe_size(
+            expected_count=4,
+            observed_count=3,
+            now=10.0,
+            confirm_interval=0.8,
+        )
+        monitor.clear_size()
+        status, change = monitor.observe_size(
+            expected_count=4,
+            observed_count=3,
+            now=11.0,
+            confirm_interval=0.8,
+        )
+        self.assertEqual(status, "candidate")
+        self.assertIsNone(change)
+
+    def test_reload_signal_is_not_out_of_combat(self):
+        from src.combat.BaseCombatTask import NotInCombatException
+
+        self.assertFalse(issubclass(TeamReloadRequested, NotInCombatException))
 
 
 if __name__ == "__main__":

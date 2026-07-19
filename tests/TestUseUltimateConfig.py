@@ -14,6 +14,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.combat.BaseCombatTask import BaseCombatTask
+from src.lw.team_roster import TeamReloadRequested, TeamRosterChange
 
 
 def make_run_task(use_ult_config):
@@ -50,6 +51,17 @@ class TestUseUltimateConfig(unittest.TestCase):
         t.use_ultimate = False  # 即便实例被别处置 False, 开战也应回到配置默认
         t.lw_combat_run()
         self.assertTrue(t.use_ultimate)
+
+    def test_confirmed_team_change_reloads_instead_of_ending_combat(self):
+        t = make_run_task(True)
+        change = TeamRosterChange(kind="size", expected_count=4, observed_count=2)
+        t._reload_if_team_size_changed.side_effect = TeamReloadRequested(change)
+        t._reload_combat_team = mock.MagicMock(return_value=True)
+
+        t.lw_combat_run()
+
+        t._reload_combat_team.assert_called_once_with()
+        t.combat_end.assert_called_once_with()
 
 
 if __name__ == "__main__":

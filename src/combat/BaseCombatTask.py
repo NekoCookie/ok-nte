@@ -38,10 +38,6 @@ class CharDeadException(NotInCombatException):
     pass
 
 
-class TeamChangedException(NotInCombatException):  # [lw] 用户异常, 合并上游时保留
-    pass
-
-
 @dataclass
 class SleepCheckSkip:
     sound_combat_context: bool = False
