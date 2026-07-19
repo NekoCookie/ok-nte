@@ -520,7 +520,11 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
                     result["action_time"] = action_time
 
             self.task.next_frame()  # [lw]
-            self.check_combat()  # [lw] 等待循环里补战斗检查(上游为 sleep(0.01, sleep_check=False))
+            # [lw] 有动画动作按键后，目标/队伍 UI 会先于 animation 标志消失；此处做完整
+            # 战斗检查会把所有角色的大招演出误判成脱战。动画生命周期由本动作自己的
+            # is_in_team/超时检测负责，动作返回后外层战斗循环再恢复完整检查。
+            if not has_animation:
+                self.check_combat()
 
     def _check_available_action_result(
         self,

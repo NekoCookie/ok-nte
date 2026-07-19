@@ -130,5 +130,48 @@ class TestUltimateUnfreezeSettle(unittest.TestCase):
         c.check_combat.assert_not_called()
 
 
+class TestAvailableActionCombatCheck(unittest.TestCase):
+    def make_char(self, statuses):
+        c = BaseChar.__new__(BaseChar)
+        c.logger = mock.MagicMock()
+        c.task = mock.MagicMock()
+        c.check_combat = mock.MagicMock()
+        c._check_available_action_result = mock.MagicMock(side_effect=statuses)
+        return c
+
+    def test_animation_action_does_not_check_combat_while_starting(self):
+        c = self.make_char(["continue", "animation"])
+        available = mock.MagicMock(return_value=True)
+        send_action = mock.MagicMock(return_value=True)
+
+        result = c._try_available_action(
+            "ultimate",
+            available,
+            send_action,
+            send_click=False,
+            has_animation=True,
+        )
+
+        self.assertEqual(result["status"], "animation")
+        send_action.assert_called_once_with()
+        c.task.next_frame.assert_called_once_with()
+        c.check_combat.assert_not_called()
+
+    def test_non_animation_action_keeps_combat_check(self):
+        c = self.make_char(["continue", "released"])
+        available = mock.MagicMock(return_value=True)
+
+        result = c._try_available_action(
+            "skill",
+            available,
+            mock.MagicMock(return_value=True),
+            send_click=False,
+            has_animation=False,
+        )
+
+        self.assertEqual(result["status"], "released")
+        c.check_combat.assert_called_once_with()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
