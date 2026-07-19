@@ -580,7 +580,8 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             return False
 
         if self.ultimate_available():
-            if not self.wait_ultimate_combat_settle():  # [lw] settle等待/超时强制放, 原为combat_detect_uncertain裸轮询
+            # [lw] settle/retarget 由 LW 战斗任务协调，角色只请求动作前稳定。
+            if not self.task.lw_wait_ultimate_combat_settle(self):
                 return False  # [lw]
         else:
             self._wait_for_ultimate_ready(wait_if_no_cd)

@@ -18,7 +18,6 @@ class CharExtMixin(_CharProxy):
     ULTIMATE_COMBAT_SETTLE_TIMEOUT = 2.5
     ULTIMATE_COMBAT_SETTLE_CLICK = True
     ULTIMATE_COMBAT_SETTLE_FORCE_ON_TIMEOUT = True
-    ULTIMATE_COMBAT_SETTLE_FORCE_RETARGET = True
     IDLE_FILL_ATTACK_INTERVAL = 0.1
     SKILL_INPUT_MODE_RETRY_DELAY = 0.12
     # 放长CD技能后若"放招之后触发了闪避"(可能打断释放), 留场结算的最长时间/间隔:
@@ -82,59 +81,6 @@ class CharExtMixin(_CharProxy):
             return False
         interval = self.IDLE_FILL_ATTACK_INTERVAL if interval is None else interval
         return self.click(action_name=f"{self.name}_idle_fill_attack", interval=interval)
-
-    def _force_ultimate_after_combat_settle_timeout(self):
-        if not self.ULTIMATE_COMBAT_SETTLE_FORCE_ON_TIMEOUT:
-            self.logger.info(
-                f"click_ultimate skipped by combat_detect_settle timeout "
-                f"{self.ULTIMATE_COMBAT_SETTLE_TIMEOUT}s"
-            )
-            return False
-
-        current_char = self.task.get_current_char(raise_exception=False)
-        if current_char is not self:
-            self.logger.info("click_ultimate skipped because current char changed during settle")
-            return False
-        if not self.task.is_in_team():
-            return self.task.in_animation
-        if not self.ultimate_available():
-            self.logger.info("click_ultimate skipped because ultimate is no longer available")
-            return False
-
-        if self.ULTIMATE_COMBAT_SETTLE_FORCE_RETARGET:
-            has_target = self.task.combat_detect()
-            if not has_target and self.click(
-                key="middle", action_name="ultimate_settle_retarget", interval=0.35
-            ):
-                self.task.openvino_clear_cache()
-            self.task.next_frame()
-
-        if not self.ultimate_available():
-            self.logger.info("click_ultimate skipped after retarget because ultimate is no longer available")
-            return False
-
-        self.logger.info(
-            f"click_ultimate forced after combat_detect_settle timeout "
-            f"{self.ULTIMATE_COMBAT_SETTLE_TIMEOUT}s"
-        )
-        return True
-
-    def wait_ultimate_combat_settle(self):
-        # 上游状态机重构(f245cbd)后 _combat_settle 已移除, 改读 combat_detect_uncertain
-        if not self.task.combat_detect_uncertain:
-            return True
-
-        self.logger.info("click_ultimate blocked by combat_detect_uncertain")
-        start = time.time()
-        while self.task.combat_detect_uncertain:
-            if time.time() - start >= self.ULTIMATE_COMBAT_SETTLE_TIMEOUT:
-                return self._force_ultimate_after_combat_settle_timeout()
-            self.task.next_frame()
-            self.check_combat()
-            if self.ULTIMATE_COMBAT_SETTLE_CLICK:
-                self.fill_idle_attack()
-            self.sleep(0.1)
-        return True
 
     def _click_during_ultimate_unfreeze(self):
         # 大招演出/时停解除前，队伍与目标 UI 会短暂消失。这里处在 skip_sleep_checks

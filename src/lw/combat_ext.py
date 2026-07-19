@@ -84,6 +84,48 @@ class CombatExtMixin(_TaskProxy):
             self._team_roster_monitor = monitor
         return monitor
 
+    def lw_wait_ultimate_combat_settle(self, char: "BaseChar") -> bool:
+        """大招前等待 RU 战斗检测状态机稳定；超时策略留在 LW，但不重复重锁目标。"""
+
+        if not self.combat_detect_uncertain:
+            return True
+
+        timeout = char.ULTIMATE_COMBAT_SETTLE_TIMEOUT
+        self.log_info("click_ultimate blocked by combat_detect_uncertain")
+        start = time.time()
+        while self.combat_detect_uncertain:
+            if time.time() - start >= timeout:
+                return self._lw_allow_ultimate_after_settle_timeout(char, timeout)
+
+            self.next_frame()
+            # 由 RU CombatCheck 推进 UNCERTAIN -> VERIFY_TARGET/恢复流程；LW 不再自行
+            # combat_detect + 中键 + 清缓存，避免两套 retarget 状态互相覆盖。
+            self.check_combat()
+            if char.ULTIMATE_COMBAT_SETTLE_CLICK:
+                char.fill_idle_attack()
+            self.sleep(0.1)
+        return True
+
+    def _lw_allow_ultimate_after_settle_timeout(
+        self,
+        char: "BaseChar",
+        timeout: float,
+    ) -> bool:
+        if not char.ULTIMATE_COMBAT_SETTLE_FORCE_ON_TIMEOUT:
+            self.log_info(f"click_ultimate skipped by combat_detect_settle timeout {timeout}s")
+            return False
+        if self.get_current_char(raise_exception=False) is not char:
+            self.log_info("click_ultimate skipped because current char changed during settle")
+            return False
+        if not self.is_in_team():
+            return self.in_animation
+        if not char.ultimate_available():
+            self.log_info("click_ultimate skipped because ultimate is no longer available")
+            return False
+
+        self.log_info(f"click_ultimate forced after combat_detect_settle timeout {timeout}s")
+        return True
+
     def lw_settle_combat_start_resources(self):
         """开场首动作前等待增益辅助头像资源状态稳定，不参与战斗中的普通调度。"""
 
