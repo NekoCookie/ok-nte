@@ -101,8 +101,7 @@ class CombatExtMixin(_TaskProxy):
             # 由 RU CombatCheck 推进 UNCERTAIN -> VERIFY_TARGET/恢复流程；LW 不再自行
             # combat_detect + 中键 + 清缓存，避免两套 retarget 状态互相覆盖。
             self.check_combat()
-            if char.ULTIMATE_COMBAT_SETTLE_CLICK:
-                char.fill_idle_attack()
+            char.fill_idle_attack()
             self.sleep(0.1)
         return True
 
@@ -111,9 +110,6 @@ class CombatExtMixin(_TaskProxy):
         char: "BaseChar",
         timeout: float,
     ) -> bool:
-        if not char.ULTIMATE_COMBAT_SETTLE_FORCE_ON_TIMEOUT:
-            self.log_info(f"click_ultimate skipped by combat_detect_settle timeout {timeout}s")
-            return False
         if self.get_current_char(raise_exception=False) is not char:
             self.log_info("click_ultimate skipped because current char changed during settle")
             return False

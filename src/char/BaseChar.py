@@ -920,13 +920,15 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         """
         start = time.time()
         while time.time() - start < duration:
-            if not self._current_char_still_self() or not self.task.is_in_team():  # [lw] 已切人/不在队伍即停
-                return  # [lw]
-            if click_skill_if_ready_and_return and self.skill_available():
-                return self.click_skill()
+            if click_skill_if_ready_and_return:  # [lw] 读技能前先确认当前角色仍有效
+                if not self._current_char_still_self() or not self.task.is_in_team():
+                    return
+                if self.skill_available():
+                    return self.click_skill()
             # if until_cycle_full and self.is_cycle_full():
             #     return
-            self.fill_idle_attack(interval=interval)  # [lw] 原为 self.click()
+            if not self.fill_idle_attack(interval=interval):  # [lw] 统一处理切人/动画/队伍守卫
+                return
             self.sleep(interval)
         self.sleep(after_sleep)
 

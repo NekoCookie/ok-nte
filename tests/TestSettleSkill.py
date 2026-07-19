@@ -17,6 +17,11 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.char.BaseChar import BaseChar
+from src.lw.skill_cast_settle import SkillCastSettleMixin
+
+
+class _SettleChar(SkillCastSettleMixin):
+    pass
 
 
 class FakeClock:
@@ -31,7 +36,7 @@ class FakeClock:
 
 
 def make_char(clock, is_current=True, dodge_after_cast=True, ocr_raw=None, ocr_raw_seq=None):
-    c = BaseChar.__new__(BaseChar)
+    c = _SettleChar.__new__(_SettleChar)
     c.index = 0
     c.is_current_char = is_current
     c.logger = mock.MagicMock()
@@ -56,7 +61,7 @@ def make_char(clock, is_current=True, dodge_after_cast=True, ocr_raw=None, ocr_r
 class TestSettleSkillAfterCast(unittest.TestCase):
     def setUp(self):
         self.clock = FakeClock(now=1000.0)
-        self.patcher = mock.patch('src.char.BaseChar.time', self.clock)
+        self.patcher = mock.patch("src.lw.skill_cast_settle.time", self.clock)
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
 
@@ -117,6 +122,15 @@ class TestSettleSkillAfterCast(unittest.TestCase):
         # 3s / 0.1 间隔 ≈ 30 圈, 远多于默认 0.5s 的 5 圈
         self.assertGreater(c.send_skill_key.call_count, 20)
 
+    def test_zero_max_duration_does_not_fall_back_to_default(self):
+        c = make_char(self.clock, ocr_raw=None)
+
+        self.assertFalse(c.settle_skill_after_cast(1000.0, 16.0, max_duration=0))
+
+        c.task.next_frame.assert_not_called()
+        c.send_skill_key.assert_not_called()
+        c.task.note_skill_ready.assert_called_once_with(0)
+
 
 class TestUltimateUnfreezeSettle(unittest.TestCase):
     def test_fill_click_does_not_run_full_combat_check_during_ultimate(self):
@@ -128,6 +142,37 @@ class TestUltimateUnfreezeSettle(unittest.TestCase):
 
         c.click_with_interval.assert_called_once_with()
         c.check_combat.assert_not_called()
+
+
+class TestIdleAttackGuard(unittest.TestCase):
+    def make_char(self):
+        c = BaseChar.__new__(BaseChar)
+        c.task = mock.MagicMock()
+        c.task.get_current_char.return_value = c
+        c.task.in_animation = False
+        c.task.is_in_team.return_value = True
+        c.task.click = mock.MagicMock(return_value=None)
+        c.sleep = mock.MagicMock()
+        return c
+
+    def test_fill_idle_attack_reports_success_independent_of_click_return(self):
+        c = self.make_char()
+
+        self.assertTrue(c.fill_idle_attack(interval=0.2))
+
+        c.task.click.assert_called_once_with(
+            action_name="BaseChar_idle_fill_attack", interval=0.2
+        )
+
+    def test_continuous_attack_stops_when_shared_guard_rejects(self):
+        c = self.make_char()
+        c.fill_idle_attack = mock.MagicMock(return_value=False)
+
+        with mock.patch("src.char.BaseChar.time.time", return_value=0.0):
+            c.continues_normal_attack(1.0)
+
+        c.fill_idle_attack.assert_called_once_with(interval=0.1)
+        c.sleep.assert_not_called()
 
 
 class TestAvailableActionCombatCheck(unittest.TestCase):

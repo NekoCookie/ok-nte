@@ -9,6 +9,7 @@ from src.combat.planner import (
     RoleProfile,
 )
 from src.combat.planner import Role as PlannerRole
+from src.lw.skill_cast_settle import SkillCastSettleMixin
 
 
 class MainDps(BaseChar):
@@ -117,7 +118,7 @@ class MainDps(BaseChar):
         super().switch_next_char(post_action=post_action, free_intro=free_intro)
 
 
-class ResourceSupport(BaseChar):
+class ResourceSupport(SkillCastSettleMixin, BaseChar):
     """增益辅助与治疗共用的资源识别、进场动作和技能结算基础模板。"""
 
     RESOURCE_PROBE_INTERVAL = 30.0
@@ -125,7 +126,6 @@ class ResourceSupport(BaseChar):
     # 不再用大间隔掩盖 CD 推算误差 —— 大招就绪沿用 RU 后台模板、技能用可靠锚点推算。
     RESOURCE_RECHECK_AFTER_USE_INTERVAL = 4.0
     ULTIMATE_COMBAT_SETTLE_TIMEOUT = 0.8
-    ULTIMATE_COMBAT_SETTLE_CLICK = True
     SKILL_DOWN_TIME = 0.01  # 技能按下时长; 子类(如早雾)改常量即可改长按
     SKILL_COOLDOWN = 20.0  # 技能CD(秒),放技能时当场锚定用;子类按角色改(早雾16)。默认20。
     SKILL_ABOUT_READY_WAIT = 1.0  # 切走前若技能CD<=此值,多等一下平A放了再走

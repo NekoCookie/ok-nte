@@ -46,8 +46,6 @@ def make_task(clock, uncertain=True):
 def make_char():
     char = mock.MagicMock()
     char.ULTIMATE_COMBAT_SETTLE_TIMEOUT = 0.3
-    char.ULTIMATE_COMBAT_SETTLE_CLICK = True
-    char.ULTIMATE_COMBAT_SETTLE_FORCE_ON_TIMEOUT = True
     char.ultimate_available.return_value = True
     return char
 

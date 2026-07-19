@@ -6,6 +6,7 @@ import numpy as np
 import win32con
 
 from src.lw.combat_templates import MainDps
+from src.lw.skill_cast_settle import SkillCastSettleMixin  # [lw]
 from src.combat import requiem_combo
 from src.combat.planner import ActionSlot, ActionTag
 from src.Labels import Labels
@@ -96,7 +97,7 @@ class _RequiemCombatIO:
         time.sleep(ms / 1000.0)
 
 
-class Requiem(MainDps):
+class Requiem(SkillCastSettleMixin, MainDps):  # [lw] 仅安魂曲需要闪避打断后的技能结算
     """Main DPS template with off-field skill overlap after skill cast."""
 
     # 主C站场输出改用一轮 4A跳A combo(时序见 requiem_combo, 与跳A宏方案一同源)。
