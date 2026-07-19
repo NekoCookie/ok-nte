@@ -133,16 +133,16 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         c = make_buff(ult_ready=False, skill_ready=False, buff_pending=False)
         self.assertEqual(list(c.combat_plan(None).claims), [])
 
-    def test_skill_resource_claims_low(self):
+    def test_skill_resource_claims_high(self):
         c = make_buff(ult_ready=False, skill_ready=True, buff_pending=False)
         claims = list(c.combat_plan(None).claims)
-        self.assertTrue(claims and claims[0].level == FieldClaimLevel.LOW)
+        self.assertTrue(claims and claims[0].level == FieldClaimLevel.HIGH)
 
-    def test_due_resource_probe_claims_low_and_enables_skill(self):
+    def test_due_resource_probe_claims_high_and_enables_skill(self):
         c = make_buff(ult_ready=False, skill_ready=False, buff_pending=False)
         c.needs_resource_probe = lambda: True
         plan = c.combat_plan(None)
-        self.assertEqual(list(plan.claims)[0].level, FieldClaimLevel.LOW)
+        self.assertEqual(list(plan.claims)[0].level, FieldClaimLevel.HIGH)
         self.assertTrue(actions_by_slot(plan)[ActionSlot.SKILL].priority_ready(None))
 
     def test_ultimate_priority_ready_uses_diamond(self):
@@ -215,7 +215,7 @@ class TestBuffSupportMixedTeamScoring(unittest.TestCase):
         ru_main = PlannerStubChar(2, PlannerRole.MAIN_DPS, FieldPreference.MAIN_DPS)
         decision = self._decision(support, ru_main)
         self.assertIs(decision.target, support)
-        self.assertEqual(decision.priority, 200)
+        self.assertEqual(decision.priority, 500)
 
     def test_due_probe_beats_ru_main_dps_field_time(self):
         task = self._task()
@@ -223,9 +223,9 @@ class TestBuffSupportMixedTeamScoring(unittest.TestCase):
         ru_main = PlannerStubChar(2, PlannerRole.MAIN_DPS, FieldPreference.MAIN_DPS)
         decision = self._decision(support, ru_main)
         self.assertIs(decision.target, support)
-        self.assertEqual(decision.priority, 200)
+        self.assertEqual(decision.priority, 500)
 
-    def test_ru_ready_ultimate_still_beats_lw_support_probe(self):
+    def test_lw_support_probe_beats_ru_ready_ultimate(self):
         task = self._task()
         support = make_planner_buff(1, task, needs_probe=True)
         ultimate = ActionIntent(
@@ -234,15 +234,15 @@ class TestBuffSupportMixedTeamScoring(unittest.TestCase):
             slot=ActionSlot.ULTIMATE,
             execute=lambda _context: True,
         )
-        ru_sub_dps = PlannerStubChar(
+        ru_main_dps = PlannerStubChar(
             2,
-            PlannerRole.SUB_DPS,
-            FieldPreference.SUB_DPS,
+            PlannerRole.MAIN_DPS,
+            FieldPreference.MAIN_DPS,
             actions=[ultimate],
         )
-        decision = self._decision(support, ru_sub_dps)
-        self.assertIs(decision.target, ru_sub_dps)
-        self.assertEqual(decision.priority, 240)
+        decision = self._decision(support, ru_main_dps)
+        self.assertIs(decision.target, support)
+        self.assertEqual(decision.priority, 500)
 
     def test_heal_resource_only_beats_idle_main_dps_as_fallback(self):
         task = self._task()
@@ -251,6 +251,76 @@ class TestBuffSupportMixedTeamScoring(unittest.TestCase):
         decision = self._decision(heal, ru_main)
         self.assertIs(decision.target, heal)
         self.assertEqual(decision.priority, 200)
+
+    def test_two_supports_then_main_resources_then_heal(self):
+        task = self._task()
+        support_states = [{"ready": True}, {"ready": True}]
+        supports = []
+        for index, state in enumerate(support_states, start=1):
+            support = make_planner_buff(index, task)
+            support.has_confirmed_resource = lambda state=state: state["ready"]
+            support.has_skill_resource = lambda state=state: state["ready"]
+            support.skill_available = lambda state=state: state["ready"]
+            support.last_perform = float(index - 1)
+            supports.append(support)
+
+        main_state = {"ultimate": True, "skill": True}
+        main_ultimate = ActionIntent(
+            name="main_ultimate",
+            tags={ActionTag.ULTIMATE_ACTION},
+            slot=ActionSlot.ULTIMATE,
+            execute=lambda _context: True,
+            can_execute=lambda _context: main_state["ultimate"],
+            priority_ready=lambda _context: main_state["ultimate"],
+        )
+        main_skill = ActionIntent(
+            name="main_skill",
+            tags={ActionTag.SKILL_ACTION},
+            slot=ActionSlot.SKILL,
+            execute=lambda _context: True,
+            can_execute=lambda _context: main_state["skill"],
+            priority_ready=lambda _context: main_state["skill"],
+        )
+        main = PlannerStubChar(
+            3,
+            PlannerRole.MAIN_DPS,
+            FieldPreference.MAIN_DPS,
+            actions=[main_ultimate, main_skill],
+        )
+        main.skill_available = lambda: main_state["skill"]
+        main.ultimate_available = lambda: main_state["ultimate"]
+
+        heal_state = {"ready": True}
+        heal = make_planner_heal(4, task)
+        heal.has_skill_resource = (
+            lambda: heal_state["ready"] and not heal._higher_priority_busy()
+        )
+        heal.skill_available = lambda: heal_state["ready"]
+
+        current = PlannerStubChar(
+            0,
+            PlannerRole.SUB_DPS,
+            FieldPreference.SUB_DPS,
+            max_field_time=0,
+        )
+        task.chars = [current, *supports, main, heal]
+        planner = CombatPlanner(task)
+        planner.reset(task.chars)
+
+        first = planner.decide_switch(current)
+        self.assertIs(first.target, supports[0])
+        support_states[0]["ready"] = False
+
+        second = planner.decide_switch(supports[0])
+        self.assertIs(second.target, supports[1])
+        support_states[1]["ready"] = False
+
+        third = planner.decide_switch(supports[1])
+        self.assertIs(third.target, main)
+        main_state.update(ultimate=False, skill=False)
+
+        fourth = planner.decide_switch(main)
+        self.assertIs(fourth.target, heal)
 
 
 class TestResourceSupportHierarchy(unittest.TestCase):

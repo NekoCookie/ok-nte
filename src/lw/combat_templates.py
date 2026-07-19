@@ -259,8 +259,8 @@ class ResourceSupport(BaseChar):
           has_skill_resource；未知资源按探测周期获得一次有限入场机会);
         - entry generator 编排放大招→放技能→大招若刚就绪补一次，收尾更新资源缓存;
         - 技能的完整实现(放招+当场锚CD+闪避打断结算+差一点就绪留场等)封装在 skill 的 execute。
-        大招 buff 待铺时发 high claim；技能就绪或需要探测时发 low claim，使辅助先于普通
-        field-time 入场，但仍低于其他角色的真实大招。"""
+        大招、技能或资源探测待处理时都发 high claim，确保增益辅助先清完资源，
+        再把输出窗口交给主 C。"""
         if not self.team_has_main_dps():
             return super().combat_plan(context)  # 无主C: BaseChar 默认(放大招放技能)
 
@@ -329,9 +329,9 @@ class BuffSupport(ResourceSupport):
         if self.ultimate_buff_pending():
             return [FieldClaim.high(source=self, reason="support ultimate buff pending")]
         if self.has_skill_resource():
-            return [FieldClaim.low(source=self, reason="support skill resource ready")]
+            return [FieldClaim.high(source=self, reason="support skill resource ready")]
         if needs_probe:
-            return [FieldClaim.low(source=self, reason="support resource probe due")]
+            return [FieldClaim.high(source=self, reason="support resource probe due")]
         return []
 
 
