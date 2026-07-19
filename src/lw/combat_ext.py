@@ -590,9 +590,9 @@ class CombatExtMixin(_TaskProxy):
 
         注意:不能用 has_confirmed_resource() 判——治疗的资源判定会随别的辅助资源实时翻转,
         切到一半就翻成 False、守卫失效,正是之前没修好的原因。"""
-        from src.lw.combat_templates import ResourceSupport
+        from src.lw.resource_support import ResourceSupportMixin
 
-        return isinstance(switch_to, ResourceSupport)
+        return isinstance(switch_to, ResourceSupportMixin)
 
     # ---------- 队伍快照 / 队伍变更检测 ----------
 

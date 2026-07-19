@@ -40,7 +40,7 @@ class CharExtMixin(_CharProxy):
         """技能发键后发生闪避时，确认是否进 CD；未放出则在短窗口内补发。
 
         这是所有角色都会遇到的输入恢复问题，由 BaseChar.click_skill 统一触发。
-        ResourceSupport 的资源缓存和 Requiem 的长短 CD/下场判断仍留在各自业务层。
+        ResourceSupportMixin 的资源缓存和 Requiem 的长短 CD/下场判断仍留在各自业务层。
         """
         if not self.is_current_char:
             return False

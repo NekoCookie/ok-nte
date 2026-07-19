@@ -9,7 +9,8 @@
   - `combat_ext.py` → `CombatExtMixin`,接入 `BaseCombatTask`(CD锚定、角色不可用、队伍变更检测、trigger重载等)
   - `char_ext.py` → `CharExtMixin`,接入 `BaseChar`(通用技能打断恢复、输入重试、大招演出保护、空闲平A等)
   - `char_ui_ext.py` → `CharUIExtMixin`,接入 `CharUIMixin`(位于 `src/tasks/mixin/CharUIMixin.py`,大招菱形检测等)
-  - `combat_templates.py` → LW 主C、公共资源辅助、增益辅助、治疗和早雾辅助模板
+  - `combat_templates.py` → LW 主C、增益辅助、治疗和早雾辅助角色模板
+  - `resource_support.py` → `ResourceSupportMixin`,供增益辅助与治疗复用资源识别和 planner 执行骨架
   - `nte_task_ext.py` → `NTETaskExtMixin`,接入 `BaseNTETask`(find_confirm OCR认字等)
   - `sound_ext.py` → `SoundContextExtMixin`,接入 `SoundCombatContext`
   - `chars.py` → 用户角色注册表(`CharFactory.char_dict.update(lw_char_dict)`)

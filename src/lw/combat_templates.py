@@ -9,6 +9,7 @@ from src.combat.planner import (
     RoleProfile,
 )
 from src.combat.planner import Role as PlannerRole
+from src.lw.resource_support import ResourceSupportMixin
 
 
 class MainDps(BaseChar):
@@ -117,188 +118,7 @@ class MainDps(BaseChar):
         super().switch_next_char(post_action=post_action, free_intro=free_intro)
 
 
-class ResourceSupport(BaseChar):
-    """增益辅助与治疗共用的资源识别、进场动作和技能结算基础模板。"""
-
-    RESOURCE_PROBE_INTERVAL = 30.0
-    # 刚用过资源后的防抖间隔(秒): 仅防止"切出瞬间又被判有资源"的抖动。
-    # 不再用大间隔掩盖 CD 推算误差 —— 大招就绪沿用 RU 后台模板、技能用可靠锚点推算。
-    RESOURCE_RECHECK_AFTER_USE_INTERVAL = 4.0
-    ULTIMATE_COMBAT_SETTLE_TIMEOUT = 0.8
-    SKILL_DOWN_TIME = 0.01  # 技能按下时长; 子类(如早雾)改常量即可改长按
-    SKILL_COOLDOWN = 20.0  # 技能CD(秒),放技能时当场锚定用;子类按角色改(早雾16)。默认20。
-    SKILL_ABOUT_READY_WAIT = 1.0  # 切走前若技能CD<=此值,多等一下平A放了再走
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.last_resource_probe = 0.0
-        self.last_resource_use = 0.0
-        self.resource_cache_confirmed = False
-
-    def team_has_main_dps(self):
-        return any(
-            char is not None
-            and char is not self
-            and char.describe_role().role == PlannerRole.MAIN_DPS
-            for char in self.task.chars
-        )
-
-    def ultimate_ready_now(self):
-        """统一使用 RU 的大招可用真值；其后台角色路径由 ult_ready 模板识别。"""
-
-        return bool(self.ultimate_available())
-
-    def has_resource(self):
-        if not self.team_has_main_dps():
-            return super().skill_available() or super().ultimate_available()
-        return self.skill_available() or self.ultimate_ready_now()
-
-    def has_cd_cache(self):
-        return self.index in self.task.cds
-
-    def has_confirmed_resource(self):
-        if not self.team_has_main_dps():
-            return False
-        if self.recently_used_resource():
-            return False
-        if self.is_current_char:
-            return self.has_resource()
-        if self.ultimate_ready_now():
-            return True
-        # 技能下场读不到图标,仍靠在场时缓存的 CD 时间推算。
-        return self.resource_cache_confirmed and self.has_cd_cache() and self.skill_available()
-
-    def has_skill_resource(self):
-        """仅"技能"可靠就绪(放招当场已锚CD、下场推算可信)。用于让就绪技能也被服务:
-        优先级介于"大招就绪"(高, has_confirmed_resource)和"主C没资源平A"(低)之间。
-        大招走 RU 真值、不掺进来;不要求 resource_cache_confirmed(那是旧的脆弱门槛)。"""
-        if not self.team_has_main_dps():
-            return False
-        if self.recently_used_resource():
-            return False
-        if self.is_current_char:
-            return self.skill_available()
-        return self.has_cd_cache() and self.skill_available()
-
-    def ultimate_buff_pending(self):
-        """子类可覆写：是否存在需要优先铺设的大招增益。"""
-        return False
-
-    def recently_used_resource(self):
-        return time.time() - self.last_resource_use < self.RESOURCE_RECHECK_AFTER_USE_INTERVAL
-
-    def needs_resource_probe(self):
-        if not self.team_has_main_dps():
-            return False
-        if self.is_current_char or self.has_confirmed_resource() or self.recently_used_resource():
-            return False
-        return time.time() - self.last_resource_probe >= self.RESOURCE_PROBE_INTERVAL
-
-    def update_resource_after_perform(self, used_ultimate, used_skill):
-        now = time.time()
-        self.last_resource_probe = now
-
-        if used_ultimate or not self.ultimate_available():
-            if used_ultimate or used_skill:
-                self.last_resource_use = now
-            self.resource_cache_confirmed = False
-            return
-
-        if used_skill:
-            self.logger.info("support skill used while ultimate remains available")
-        self.resource_cache_confirmed = self.has_resource()
-
-    def _cast_skill_if_about_ready(self):
-        """切走前看一眼: 技能CD<=SKILL_ABOUT_READY_WAIT 就平A等到就绪、放了再走。
-        不死等(上限 CD+0.4s); 等待期用平A不空耗。放成功返回 True。"""
-        cd = self.task.get_cd("skill", self.index)
-        if not (0 < cd <= self.SKILL_ABOUT_READY_WAIT):
-            return False
-        enter_at = time.time()
-        self.task.diag_cast(self.index, enter_at, f"辅助技能差{cd:.1f}s就绪, 留场等待")
-        deadline = enter_at + cd + 0.4
-        while time.time() < deadline:
-            if self.skill_available():
-                if self.click_skill(down_time=self.SKILL_DOWN_TIME):  # 上游click_skill改返回bool
-                    self.logger.info(
-                        f"{type(self).__name__} 技能差{cd:.1f}s就绪, 等放完再走"
-                    )
-                    self.task.note_skill_on_cd(self.index, cd=self.SKILL_COOLDOWN)
-                    self.task.diag_cast(self.index, enter_at, "辅助技能等待→放成功")
-                    return True
-                self.task.diag_cast(self.index, enter_at, "辅助技能等待→按键没发出, 放弃")
-                return False
-            self.normal_attack()
-        self.task.diag_cast(self.index, enter_at, "辅助技能等待→超时仍没就绪, 放弃")
-        return False
-
-    def describe_role(self):
-        raise NotImplementedError
-
-    def skill_priority_ready(self):
-        """技能是否可用于普通切人评分；下场不可见时允许按周期入场探测。"""
-        return (
-            self.has_skill_resource() or self.needs_resource_probe()
-        ) and not self.recently_used_resource()
-
-    def resource_field_claims(self, needs_probe):
-        """子类按自身定位声明资源入场诉求。"""
-        return []
-
-    def combat_plan(self, context):
-        """独立声明动作 + entry 编排:
-        - 大招/技能各是一个独立 action(planner 能分别评分、被 route/reservation 精确匹配);
-        - priority_ready 用辅助资源判定(大招看 RU ultimate_ready_now、技能看
-          has_skill_resource；未知资源按探测周期获得一次有限入场机会);
-        - entry generator 编排放大招→放技能→大招若刚就绪补一次，收尾更新资源缓存;
-        - 技能的完整实现(放招+当场锚CD+闪避打断结算+差一点就绪留场等)封装在 skill 的 execute。
-        大招、技能或资源探测待处理时都发 high claim，确保增益辅助先清完资源，
-        再把输出窗口交给主 C。"""
-        if not self.team_has_main_dps():
-            return super().combat_plan(context)  # 无主C: BaseChar 默认(放大招放技能)
-
-        needs_probe = self.needs_resource_probe()
-        ultimate = self.planner_action(
-            tags={ActionTag.SUPPORT, ActionTag.ULTIMATE_ACTION},
-            slot=ActionSlot.ULTIMATE,
-            execute=lambda _: self.click_ultimate(),
-            name=f"{self}_ultimate",
-            reason="support ultimate ready",
-            can_execute=lambda _: self.ultimate_available(),
-            priority_ready=lambda _: self.ultimate_ready_now() and not self.recently_used_resource(),
-        )
-        skill = self.planner_action(
-            tags={ActionTag.SUPPORT, ActionTag.SKILL_ACTION},
-            slot=ActionSlot.SKILL,
-            execute=self._execute_support_skill,
-            name=f"{self}_skill",
-            reason="support skill ready",
-            # 下场时无法直接看技能图标；探测到期允许切入尝试，实际施放失败仍按失败结算。
-            can_execute=lambda _: self.skill_available() or needs_probe,
-            priority_ready=lambda _: self.skill_priority_ready(),
-        )
-        claims = self.resource_field_claims(needs_probe)
-
-        def entry():
-            used_ultimate = bool((yield ultimate))
-            used_skill = bool((yield skill))
-            # 放技能后大招常刚好充满，同一站场补放一次
-            if not used_ultimate and self.ultimate_available():
-                used_ultimate = bool((yield ultimate))
-            self.update_resource_after_perform(used_ultimate, used_skill)
-
-        return self.plan(ultimate, skill, claims=claims, entry=entry)
-
-    def _execute_support_skill(self, context=None):
-        """放招→当场锚 CD；通用闪避打断恢复由 BaseChar.click_skill 处理。"""
-        if self.click_skill(down_time=self.SKILL_DOWN_TIME):
-            self.logger.info(f"{type(self).__name__} skill cast (anchor cd {self.SKILL_COOLDOWN}s)")
-            self.task.note_skill_on_cd(self.index, cd=self.SKILL_COOLDOWN)
-            return True
-        return self._cast_skill_if_about_ready()
-
-
-class BuffSupport(ResourceSupport):
+class BuffSupport(ResourceSupportMixin, BaseChar):
     """增益辅助模板：确认有资源时先入场铺 buff，再把输出窗口交给主 C。"""
 
     def describe_role(self):
@@ -335,7 +155,7 @@ class BuffSupport(ResourceSupport):
         return []
 
 
-class HealSupport(ResourceSupport):
+class HealSupport(ResourceSupportMixin, BaseChar):
     """治疗模板与增益辅助平级，共用资源检测和执行骨架，但保持最低切人优先级。
 
     只有当主C没爆发、且增益辅助也没资源时，治疗资源才参与 planner 评分。

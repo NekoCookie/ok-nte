@@ -7,6 +7,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.char.BaseChar import BaseChar
+from src.combat.BaseCombatTask import BaseCombatTask
 from src.combat.planner import (
     ActionIntent,
     ActionSlot,
@@ -23,9 +24,9 @@ from src.lw.combat_templates import (
     BuffSupport,
     HealSupport,
     MainDps,
-    ResourceSupport,
     SakiriBuffSupport,
 )
+from src.lw.resource_support import ResourceSupportMixin
 
 
 def make_buff(main_dps=True, ult_ready=False, skill_ready=True, buff_pending=False):
@@ -384,13 +385,24 @@ class TestBuffSupportMixedTeamScoring(unittest.TestCase):
 
 class TestResourceSupportHierarchy(unittest.TestCase):
     def test_buff_and_heal_are_sibling_resource_templates(self):
-        self.assertTrue(issubclass(BuffSupport, ResourceSupport))
-        self.assertTrue(issubclass(HealSupport, ResourceSupport))
+        self.assertIn(BaseChar, BuffSupport.__bases__)
+        self.assertIn(BaseChar, HealSupport.__bases__)
+        self.assertTrue(issubclass(BuffSupport, BaseChar))
+        self.assertTrue(issubclass(HealSupport, BaseChar))
+        self.assertTrue(issubclass(BuffSupport, ResourceSupportMixin))
+        self.assertTrue(issubclass(HealSupport, ResourceSupportMixin))
         self.assertFalse(issubclass(HealSupport, BuffSupport))
+
+    def test_entry_commit_guard_checks_capability_not_role_parent(self):
+        task = BaseCombatTask.__new__(BaseCombatTask)
+
+        self.assertTrue(task._committing_to_ready_support(BuffSupport.__new__(BuffSupport)))
+        self.assertTrue(task._committing_to_ready_support(HealSupport.__new__(HealSupport)))
+        self.assertFalse(task._committing_to_ready_support(MainDps.__new__(MainDps)))
 
 
 class TestHealSupportResourcePlan(unittest.TestCase):
-    """治疗与 BuffSupport 平级，共用 ResourceSupport 的 planner 计划骨架。"""
+    """治疗与 BuffSupport 平级，共用 ResourceSupportMixin 的 planner 计划骨架。"""
 
     def _heal(self, higher_busy, ult_ready=True, skill_ready=True):
         c = HealSupport.__new__(HealSupport)
@@ -401,7 +413,7 @@ class TestHealSupportResourcePlan(unittest.TestCase):
         c.ultimate_ready_now = lambda: ult_ready
         c.skill_available = lambda: skill_ready
         c.ultimate_available = lambda: ult_ready
-        # ResourceSupport 公共资源判定（治疗 override 加了 _higher_priority_busy 门）
+        # ResourceSupportMixin 公共资源判定（治疗 override 加了 _higher_priority_busy 门）
         c.has_cd_cache = lambda: True
         c.is_current_char = False
         c.resource_cache_confirmed = False
