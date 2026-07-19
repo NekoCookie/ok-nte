@@ -149,24 +149,24 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         self.assertIs(list(plan.claims)[0].timing, FieldClaimTiming.NORMAL)
         self.assertTrue(actions_by_slot(plan)[ActionSlot.SKILL].priority_ready(None))
 
-    def test_combat_start_resource_state_preserves_unknown_diamond(self):
+    def test_combat_start_resource_observation_preserves_unknown_diamond(self):
         c = make_buff(ult_ready=False, skill_ready=False, buff_pending=False)
         c.is_current_char = False
         c.task = mock.MagicMock()
         c.task.off_field_ultimate_ready.return_value = None
 
-        self.assertIsNone(c.combat_start_resource_state())
+        self.assertIsNone(c.combat_start_resource_observation())
 
-    def test_combat_start_resource_state_accepts_confirmed_skill(self):
+    def test_combat_start_resource_observation_accepts_confirmed_skill(self):
         c = make_buff(ult_ready=False, skill_ready=True, buff_pending=False)
         c.is_current_char = False
         c.task = mock.MagicMock()
 
-        self.assertTrue(c.combat_start_resource_state())
+        self.assertTrue(c.combat_start_resource_observation())
         c.task.off_field_ultimate_ready.assert_not_called()
 
     def test_ultimate_priority_ready_uses_diamond(self):
-        # 大招切人评分用菱形 ultimate_ready_now(下场准), 非在场 ultimate_available
+        # 大招切人评分统一走 RU ultimate_ready_now。
         c = make_buff(ult_ready=True)
         ult = actions_by_slot(c.combat_plan(None))[ActionSlot.ULTIMATE]
         self.assertTrue(ult.priority_ready(None))

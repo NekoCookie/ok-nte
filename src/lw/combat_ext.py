@@ -108,7 +108,7 @@ class CombatExtMixin(_TaskProxy):
         previous = None
         stable_frames = 0
         while time.time() < deadline:
-            states = tuple(char.combat_start_resource_state() for char in supports)
+            states = tuple(char.combat_start_resource_observation() for char in supports)
             if all(state is not None for state in states):
                 stable_frames = stable_frames + 1 if states == previous else 1
                 if stable_frames >= self.COMBAT_START_RESOURCE_STABLE_FRAMES:
@@ -195,7 +195,7 @@ class CombatExtMixin(_TaskProxy):
         # 关键: 不要把"OCR 没读到数字"当成 CD=0。读不到时用图标高亮区分:
         #   图标亮 = 已就绪 -> 锚 0; 图标暗 = 仍在冷却但数字没识别(坏帧) -> 保留上次可信锚点。
         for box, ocr_cd in ocr_cds.items():
-            # 只截技能图标做诊断;大招走头像菱形稳定判定、不靠这套, 截了纯属浪费。
+            # 只截技能图标做诊断；后台大招走 RU ult_ready 模板，不靠这套 CD OCR。
             if self.SKILL_CD_DIAG and box == "skill":
                 self._dump_box_debug(box, ocr_cd)
             # 记下这一帧 OCR 的原始读数(None=没读到数字), 供 settle / 真技能判定不受 note 标称CD 污染地判进CD/就绪。
@@ -245,7 +245,7 @@ class CombatExtMixin(_TaskProxy):
                         cds["skill_time"] = now
                     # else: 没数字但没到去抖窗 → 保留上次锚点继续倒数(偶发坏帧, 不动)
             elif self._box_ready_no_number(box):
-                # 大招(ultimate): 维持原"图标就绪→锚0"判定(大招走头像菱形那条线, 不改)。
+                # 大招(ultimate): 在场 CD 锚点仍维持原"图标就绪→锚0"判定。
                 cds[box] = 0
                 cds[box + "_time"] = now
             elif box not in cds:
@@ -262,7 +262,7 @@ class CombatExtMixin(_TaskProxy):
         """OCR 读不到 CD 数字时判该格是否就绪。
         技能: 该角色有就绪模板 → 带遮罩模板匹配(只比白图标、忽略透明区透出的场景, 准且场景鲁棒);
               无模板的角色 → 退回原 box_highlighted。
-        大招: 仍用 box_highlighted(大招实际走头像菱形, 这条线不改)。"""
+        大招: 在场 CD 锚点仍用 box_highlighted；后台角色由 RU ult_ready 模板判断。"""
         if box == "skill":
             ready = self._skill_ready_by_template()
             if ready is not None:

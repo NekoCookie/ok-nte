@@ -1,4 +1,4 @@
-"""下场大招"元素菱形"视觉识别 + BuffSupport 接线的单测。
+"""下场大招"元素菱形"视觉识别及其开场稳定门控单测。
 
 识别原理:下场角色头像右侧的元素菱形格,大招满时亮起硬描边菱形(高边缘能量),
 没满时是空背景/光晕(平滑、低边缘能量),用 Laplacian 方差区分(属性无关、亮暗通吃)。
@@ -67,12 +67,17 @@ class TestDiamondRecognition(unittest.TestCase):
 
 
 class TestBuffSupportUltimateWiring(unittest.TestCase):
-    """验证大招视觉判定接进 BuffSupport 的资源判定。"""
+    """普通调度统一使用 RU 大招真值，LW 菱形只参与开场稳定观察。"""
 
-    # ---- 下场:菱形视觉=有大招 → 直接确认资源(不受缓存门槛限制)----
-    def test_off_field_visual_ultimate_confirms_resource(self):
-        s = make_support(off_field=True, cache_confirmed=False, skill=False)
-        self.assertTrue(s.has_confirmed_resource(), "下场菱形亮=大招就绪,应直接确认资源")
+    def test_ru_off_field_ultimate_confirms_resource(self):
+        s = make_support(off_field=False, cache_confirmed=False, skill=False, ult=True)
+        self.assertTrue(s.has_confirmed_resource())
+        s.task.off_field_ultimate_ready.assert_not_called()
+
+    def test_geometry_does_not_override_ru_during_normal_dispatch(self):
+        s = make_support(off_field=True, cache_confirmed=False, skill=False, ult=False)
+        self.assertFalse(s.has_confirmed_resource())
+        s.task.off_field_ultimate_ready.assert_not_called()
 
     # ---- 下场:菱形=无大招,技能缓存满足 → 仍按技能确认 ----
     def test_off_field_skill_cache_confirms(self):
@@ -84,50 +89,47 @@ class TestBuffSupportUltimateWiring(unittest.TestCase):
         s = make_support(off_field=False, cache_confirmed=False, skill=False)
         self.assertFalse(s.has_confirmed_resource())
 
-    # ---- 视觉不确定(None)→ 不当作大招确认,回退技能缓存逻辑 ----
-    def test_visual_none_falls_back_to_cache(self):
+    def test_skill_cache_remains_independent_of_geometry(self):
         s = make_support(off_field=None, cache_confirmed=True, has_cd=True, skill=True)
-        self.assertTrue(s.has_confirmed_resource(), "视觉None时应回退到技能缓存")
+        self.assertTrue(s.has_confirmed_resource())
         s2 = make_support(off_field=None, cache_confirmed=False, skill=False)
         self.assertFalse(s2.has_confirmed_resource())
 
-    # ---- ultimate_ready_now:下场看视觉,在场看底部图标 ----
-    def test_ultimate_ready_now_off_field_uses_visual(self):
-        self.assertTrue(make_support(off_field=True).ultimate_ready_now())
-        self.assertFalse(make_support(off_field=False).ultimate_ready_now())
-
-    def test_ultimate_ready_now_visual_none_falls_back(self):
-        s = make_support(off_field=None, ult=True)
-        self.assertTrue(s.ultimate_ready_now(), "视觉None时回退 ultimate_available")
-
-    def test_ultimate_ready_now_on_field_uses_icon(self):
-        s = make_support(off_field=False, is_current=True, ult=True)
-        self.assertTrue(s.ultimate_ready_now(), "在场应看底部大招图标,不看菱形")
+    def test_ultimate_ready_now_always_uses_ru_truth(self):
+        s = make_support(off_field=True, ult=False)
+        self.assertFalse(s.ultimate_ready_now())
+        s.ultimate_available.assert_called_once_with()
         s.task.off_field_ultimate_ready.assert_not_called()
 
     # ---- has_resource:技能或大招任一就绪即有资源 ----
     def test_has_resource_skill_or_ultimate(self):
-        self.assertTrue(make_support(skill=True, off_field=False).has_resource())
-        self.assertTrue(make_support(skill=False, off_field=True).has_resource())
-        self.assertFalse(make_support(skill=False, off_field=False).has_resource())
+        self.assertTrue(make_support(skill=True, ult=False).has_resource())
+        self.assertTrue(make_support(skill=False, ult=True).has_resource())
+        self.assertFalse(make_support(skill=False, ult=False).has_resource())
 
     # ---- ultimate_buff_pending:只看大招,用于压过环合优先铺大招 buff ----
     def test_ultimate_buff_pending_only_ultimate(self):
-        # 下场大招就绪 → 待铺
-        self.assertTrue(make_support(off_field=True).ultimate_buff_pending())
-        self.assertFalse(make_support(off_field=False).ultimate_buff_pending())
-        self.assertFalse(make_support(off_field=None).ultimate_buff_pending())
+        self.assertTrue(make_support(ult=True).ultimate_buff_pending())
+        self.assertFalse(make_support(ult=False).ultimate_buff_pending())
         # 只看大招:技能就绪但大招没好 → 不算待铺(不打断环合)
-        self.assertFalse(make_support(off_field=False, skill=True).ultimate_buff_pending())
+        self.assertFalse(make_support(skill=True, ult=False).ultimate_buff_pending())
 
     def test_ultimate_buff_pending_recently_used(self):
-        s = make_support(off_field=True)
+        s = make_support(ult=True)
         s.recently_used_resource = mock.MagicMock(return_value=True)
         self.assertFalse(s.ultimate_buff_pending(), "刚用过大招不算待铺")
 
-    def test_ultimate_buff_pending_on_field_uses_icon(self):
-        s = make_support(off_field=False, is_current=True, ult=True)
-        self.assertTrue(s.ultimate_buff_pending(), "在场看底部大招图标")
+    def test_opening_observation_keeps_geometry_tristate_gate(self):
+        unknown = make_support(off_field=None, ult=False, skill=False)
+        self.assertIsNone(unknown.combat_start_resource_observation())
+        unknown.task.off_field_ultimate_ready.assert_called_once_with(1)
+
+        present = make_support(off_field=True, ult=False, skill=False)
+        self.assertTrue(present.combat_start_resource_observation())
+
+    def test_opening_observation_prefers_ru_truth(self):
+        s = make_support(off_field=None, ult=True, skill=False)
+        self.assertTrue(s.combat_start_resource_observation())
         s.task.off_field_ultimate_ready.assert_not_called()
 
 

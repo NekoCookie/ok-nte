@@ -30,7 +30,7 @@ def make_support(states):
     support.describe_role = mock.MagicMock(
         return_value=SimpleNamespace(combat_start_priority=0)
     )
-    support.combat_start_resource_state = mock.MagicMock(side_effect=states)
+    support.combat_start_resource_observation = mock.MagicMock(side_effect=states)
     return support
 
 
@@ -60,7 +60,7 @@ class TestCombatStartResourceSettle(unittest.TestCase):
 
         task.lw_settle_combat_start_resources()
 
-        self.assertEqual(support.combat_start_resource_state.call_count, 3)
+        self.assertEqual(support.combat_start_resource_observation.call_count, 3)
         self.assertEqual(task.next_frame.call_count, 2)
         task.log_info.assert_called_once_with(
             "combat start support resources settled: (True,)"
@@ -88,7 +88,7 @@ class TestCombatStartResourceSettle(unittest.TestCase):
 
         task.lw_settle_combat_start_resources()
 
-        support.combat_start_resource_state.assert_not_called()
+        support.combat_start_resource_observation.assert_not_called()
         task.next_frame.assert_not_called()
 
 

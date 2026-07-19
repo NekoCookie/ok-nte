@@ -122,7 +122,7 @@ class ResourceSupport(BaseChar):
 
     RESOURCE_PROBE_INTERVAL = 30.0
     # 刚用过资源后的防抖间隔(秒): 仅防止"切出瞬间又被判有资源"的抖动。
-    # 不再用大间隔掩盖 CD 推算误差 —— 大招就绪由头像菱形精确判定、技能由可靠锚点的 CD 推算判定。
+    # 不再用大间隔掩盖 CD 推算误差 —— 大招就绪沿用 RU 后台模板、技能用可靠锚点推算。
     RESOURCE_RECHECK_AFTER_USE_INTERVAL = 4.0
     ULTIMATE_COMBAT_SETTLE_TIMEOUT = 0.8
     ULTIMATE_COMBAT_SETTLE_CLICK = True
@@ -145,14 +145,9 @@ class ResourceSupport(BaseChar):
         )
 
     def ultimate_ready_now(self):
-        """大招就绪判定:在场看底部大招图标;下场看头像元素菱形(视觉)。
-        视觉不确定(None)时回退到 ultimate_available 的时间推算。"""
-        if self.is_current_char:
-            return self.ultimate_available()
-        visual = self.task.off_field_ultimate_ready(self.index)
-        if visual is None:
-            return self.ultimate_available()
-        return visual
+        """统一使用 RU 的大招可用真值；其后台角色路径由 ult_ready 模板识别。"""
+
+        return bool(self.ultimate_available())
 
     def has_resource(self):
         if not self.team_has_main_dps():
@@ -169,16 +164,15 @@ class ResourceSupport(BaseChar):
             return False
         if self.is_current_char:
             return self.has_resource()
-        # 下场:大招直接看头像菱形(可靠,不受缓存门槛限制),只有视觉明确"有"才算确认。
-        if self.task.off_field_ultimate_ready(self.index) is True:
+        if self.ultimate_ready_now():
             return True
         # 技能下场读不到图标,仍靠在场时缓存的 CD 时间推算。
         return self.resource_cache_confirmed and self.has_cd_cache() and self.skill_available()
 
     def has_skill_resource(self):
         """仅"技能"可靠就绪(放招当场已锚CD、下场推算可信)。用于让就绪技能也被服务:
-        优先级介于"大招菱形就绪"(高, has_confirmed_resource)和"主C没资源平A"(低)之间。
-        大招走菱形、不掺进来;不要求 resource_cache_confirmed(那是旧的脆弱门槛,现在锚点可靠)。"""
+        优先级介于"大招就绪"(高, has_confirmed_resource)和"主C没资源平A"(低)之间。
+        大招走 RU 真值、不掺进来;不要求 resource_cache_confirmed(那是旧的脆弱门槛)。"""
         if not self.team_has_main_dps():
             return False
         if self.recently_used_resource():
@@ -255,7 +249,7 @@ class ResourceSupport(BaseChar):
     def combat_plan(self, context):
         """独立声明动作 + entry 编排:
         - 大招/技能各是一个独立 action(planner 能分别评分、被 route/reservation 精确匹配);
-        - priority_ready 用辅助资源判定(大招看菱形 ultimate_ready_now、技能看
+        - priority_ready 用辅助资源判定(大招看 RU ultimate_ready_now、技能看
           has_skill_resource；未知资源按探测周期获得一次有限入场机会);
         - entry generator 编排放大招→放技能→大招若刚就绪补一次，收尾更新资源缓存;
         - 技能的完整实现(放招+当场锚CD+闪避打断结算+差一点就绪留场等)封装在 skill 的 execute。
@@ -321,19 +315,17 @@ class BuffSupport(ResourceSupport):
         """大招就绪、待上场铺，用于发布环合前的 preemptive FieldClaim。"""
         if not self.team_has_main_dps() or self.recently_used_resource():
             return False
-        if self.is_current_char:
-            return self.ultimate_available()
-        return self.task.off_field_ultimate_ready(self.index) is True
+        return self.ultimate_ready_now()
 
-    def combat_start_resource_state(self):
-        """开场辅助资源观测：True=确认有，False=确认无，None=头像 UI 尚未稳定。"""
+    def combat_start_resource_observation(self):
+        """仅用于开场稳定门控：技能/RU 真值优先，LW 几何识别保留三态 UI 观察。"""
 
         if self.recently_used_resource():
             return False
-        if self.is_current_char:
-            return self.has_resource()
-        if self.has_skill_resource():
+        if self.has_skill_resource() or self.ultimate_ready_now():
             return True
+        if self.is_current_char:
+            return False
         return self.task.off_field_ultimate_ready(self.index)
 
     def resource_field_claims(self, needs_probe):
