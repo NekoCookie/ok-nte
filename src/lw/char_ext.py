@@ -144,10 +144,13 @@ class CharExtMixin(_CharProxy):
     def _current_char_still_self(self):
         return self.task.get_current_char(raise_exception=False) is self
 
-    def _skill_still_available_after_input_mode_delay(self):
+    def _skill_still_available_after_input_mode_delay(self, has_animation=False):
         self.sleep(self.SKILL_INPUT_MODE_RETRY_DELAY, sleep_check=False)
         self.task.next_frame()
-        self.check_combat()
+        # 带动画技能按键后可能先隐藏目标/UI，再由外层动作循环确认 animation。
+        # 此处若做完整战斗检查，会与大招起手一样把正常演出误判为脱战。
+        if not has_animation:
+            self.check_combat()
         return (
             self._current_char_still_self()
             and not self.task.in_animation
@@ -155,7 +158,7 @@ class CharExtMixin(_CharProxy):
             and self.skill_available()
         )
 
-    def lw_send_skill_action_factory(self, down_time):
+    def lw_send_skill_action_factory(self, down_time, has_animation=False):
         """click_skill 的发键动作: 首次按键后若技能仍就绪(输入模式没吃到键), 重试一次。"""
         state = {"retry_used": False}
 
@@ -165,7 +168,9 @@ class CharExtMixin(_CharProxy):
             )
             if sent is False or state["retry_used"]:
                 return sent
-            if not self._skill_still_available_after_input_mode_delay():
+            if not self._skill_still_available_after_input_mode_delay(
+                has_animation=has_animation
+            ):
                 return sent
 
             state["retry_used"] = True

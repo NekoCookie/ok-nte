@@ -173,5 +173,37 @@ class TestAvailableActionCombatCheck(unittest.TestCase):
         c.check_combat.assert_called_once_with()
 
 
+class TestSkillInputRetryCombatCheck(unittest.TestCase):
+    def make_char(self):
+        c = BaseChar.__new__(BaseChar)
+        c.SKILL_INPUT_MODE_RETRY_DELAY = 0.12
+        c.task = mock.MagicMock()
+        c.task.in_animation = False
+        c.task.is_in_team.return_value = True
+        c.sleep = mock.MagicMock()
+        c.check_combat = mock.MagicMock()
+        c._current_char_still_self = mock.MagicMock(return_value=True)
+        c.skill_available = mock.MagicMock(return_value=True)
+        return c
+
+    def test_animation_skill_retry_probe_skips_full_combat_check(self):
+        c = self.make_char()
+
+        self.assertTrue(
+            c._skill_still_available_after_input_mode_delay(has_animation=True)
+        )
+
+        c.check_combat.assert_not_called()
+
+    def test_non_animation_skill_retry_probe_keeps_combat_check(self):
+        c = self.make_char()
+
+        self.assertTrue(
+            c._skill_still_available_after_input_mode_delay(has_animation=False)
+        )
+
+        c.check_combat.assert_called_once_with()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

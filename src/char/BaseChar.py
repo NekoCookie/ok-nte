@@ -707,7 +707,10 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         result = self._try_available_action(
             "skill",
             self.skill_available,
-            self.lw_send_skill_action_factory(down_time),  # [lw] 输入模式没吃到键则重试一次
+            self.lw_send_skill_action_factory(  # [lw] 输入模式没吃到键则重试一次
+                down_time,
+                has_animation=has_animation,
+            ),
             send_click=send_click,
             time_out=the_time_out,
             has_animation=has_animation,
