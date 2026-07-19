@@ -112,7 +112,7 @@ class CombatExtMixin(_TaskProxy):
                 stable_frames = 0
             previous = states
             self.next_frame()
-            self.sleep(self.COMBAT_START_RESOURCE_SETTLE_INTERVAL, sleep_check=False)
+            self.sleep(self.COMBAT_START_RESOURCE_SETTLE_INTERVAL)
 
         self.log_info("combat start support resources settle timeout, keep conservative state")
 

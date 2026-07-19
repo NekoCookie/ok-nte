@@ -48,7 +48,7 @@ class TestCombatStartResourceSettle(unittest.TestCase):
         task.COMBAT_START_RESOURCE_SETTLE_INTERVAL = 0.08
         task.COMBAT_START_RESOURCE_STABLE_FRAMES = 2
         task.next_frame = mock.MagicMock()
-        task.sleep = mock.MagicMock(side_effect=lambda duration, **_: self.clock.sleep(duration))
+        task.sleep = mock.MagicMock(side_effect=self.clock.sleep)
         task.log_info = mock.MagicMock()
         return task
 
