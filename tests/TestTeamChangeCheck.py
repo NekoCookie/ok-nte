@@ -24,6 +24,7 @@ def make_task():
     t._team_change_checking = False
     t.in_sleep_check = False  # 实机由 ok-script 运行时维护
     t._last_team_change_check = 0.0
+    t._team_reload_enabled = True  # 模拟处于 lw_combat_run 的 team_reload_watch 作用域内
     t.sleep_check_skip = SleepCheckSkip()
     t.in_team = mock.MagicMock(return_value=(True, 0, 2))
     # 快照归一返回 None → 走"无效快照"早退分支, 不再依赖后续签名比对的更多状态
@@ -161,6 +162,44 @@ class TestTeamChangeCheck(unittest.TestCase):
         t = make_task()
         t.check_team_changed_during_combat(force=True)
         self.assertFalse(t.sleep_check_skip.all, "skip 状态必须随上下文管理器退出还原")
+
+
+class TestTeamReloadOptIn(unittest.TestCase):
+    """队伍变更检测必须 opt-in(2026-07-21 日常任务事故回归)。
+
+    背景: df8d8fb 把 TeamChangedException(NotInCombatException 子类)重构为
+    TeamReloadRequested(普通 Exception), 只在 lw_combat_run 捕获; 但检测挂在
+    check_combat 上, combat_once 路径(AnomalyTask/DSDFarmTask)也会触发——大招光效
+    压低头像匹配分误报队伍变更后, 信号无人接, 一路炸穿 DailyTask 整条任务链。
+    修复: 检测默认静默, 仅在 lw_combat_run 的 team_reload_watch 作用域内开启。
+    锁住: 默认(combat_once 场景)不检测不抛; watch 作用域异常退出也必须复位开关。
+    """
+
+    def test_disabled_by_default_short_circuits(self):
+        t = make_task()
+        del t._team_reload_enabled  # 回到类级默认 False, 即 combat_once 场景
+        result = t.check_team_changed_during_combat(force=True)
+        self.assertFalse(result)
+        t.in_team.assert_not_called()
+
+    def test_watch_scope_enables_then_restores_on_exception(self):
+        t = BaseCombatTask.__new__(BaseCombatTask)
+        with self.assertRaises(RuntimeError):
+            with t.team_reload_watch():
+                self.assertTrue(t._team_reload_enabled)
+                raise RuntimeError("boom")
+        self.assertFalse(t._team_reload_enabled, "异常退出也必须复位, 否则泄漏到日常战斗")
+
+    def test_watch_scope_resets_stale_candidates(self):
+        t = BaseCombatTask.__new__(BaseCombatTask)
+        t._roster_monitor().observe_size(
+            expected_count=4, observed_count=3, now=10.0, confirm_interval=0.8
+        )
+        with t.team_reload_watch():
+            self.assertIsNone(
+                t._roster_monitor()._size_candidate,
+                "上一场残留候选必须清掉, 否则新战斗开场可能瞬间确认误报",
+            )
 
 
 class TestTeamRosterMonitor(unittest.TestCase):
