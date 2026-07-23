@@ -539,6 +539,11 @@ dependencies = [
     { name = "sounddevice" },
 ]
 
+[package.optional-dependencies]
+virtual-gamepad = [
+    { name = "vgamepad" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "polib" },
@@ -559,7 +564,9 @@ requires-dist = [
     { name = "pyside6", specifier = "==6.9.1" },
     { name = "scikit-image", specifier = ">=0.26.0" },
     { name = "sounddevice", specifier = ">=0.5.5" },
+    { name = "vgamepad", marker = "extra == 'virtual-gamepad'", specifier = ">=0.1.0" },
 ]
+provides-extras = ["virtual-gamepad"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "polib", specifier = ">=1.2.0" }]
@@ -4262,3 +4269,9 @@ sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
 ]
+
+[[package]]
+name = "vgamepad"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/8a/54/0eaddc33f84247963af078f364b37153d09fcd6cdc398f243ec3e8842c56/vgamepad-0.1.0.tar.gz", hash = "sha256:57f6bd01aec0c172947517fb782d150ef9b285f7f4d524c317374fa5c24a89de", size = 1174896, upload-time = "2023-10-14T20:29:06.154Z" }

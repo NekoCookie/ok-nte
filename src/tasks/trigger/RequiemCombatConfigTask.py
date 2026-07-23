@@ -10,6 +10,10 @@ from ok.util.config import Config
 from ok.util.file import get_relative_path
 
 from src.combat import requiem_combo
+from src.lw.virtual_gamepad import (
+    VirtualGamepadPulseTester,
+    VirtualGamepadUnavailableError,
+)
 from src.tasks.BaseNTETask import BaseNTETask
 
 
@@ -166,6 +170,11 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_GROUP_DODGE = "▸ 闪避反击设置(展开)"     # 分组折叠开关: 展开=闪避方式(下拉)+选闪双4a时的时序
     CONF_GROUP_TUNING = "▸ 实战调优参数(展开)"    # 分组折叠开关
     CONF_GROUP_TEST = "▸ 测试开关与测试键(展开)"   # 分组折叠开关
+    # [lw] 虚拟手柄共存实验: 不读取/隐藏实体手柄, 虚拟手柄摇杆始终中立, 只周期按 A。
+    CONF_GROUP_GAMEPAD = "▸ 虚拟手柄共存测试(展开)"
+    CONF_GAMEPAD_TEST = "启用虚拟手柄A键脉冲"
+    CONF_GAMEPAD_INTERVAL = "虚拟手柄A键间隔(s)"
+    GAMEPAD_TEST_HOLD_SECONDS = 0.08
 
     # 配置档位: 界面内保存/载入 1~4 套配置(存在 PRESET_FILE), 外加导出/从文件导入。
     CONF_PRESET_SLOT = "配置档位"       # drop_down 1/2/3/4
@@ -285,6 +294,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_DODGE_TEST_KEY: "7",
                 self.CONF_FREE_BREAK_TEST_KEY: "8",
                 self.CONF_FREE_SKILL_KEY: "e",
+                # [lw] 实验功能默认关闭，避免未验证双手柄兼容性时影响游戏输入。
+                self.CONF_GROUP_GAMEPAD: False,
+                self.CONF_GAMEPAD_TEST: False,
+                self.CONF_GAMEPAD_INTERVAL: 3.0,
                 self.CONF_PRESET_SLOT: "1",
             }
         )
@@ -375,6 +388,15 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                         ],
                     },
                 },
+                # [lw] 单独折叠，避免实验功能裸露在安魂曲配置最外层。
+                self.CONF_GROUP_GAMEPAD: {
+                    "sub_configs": {
+                        True: [
+                            self.CONF_GAMEPAD_TEST,
+                            self.CONF_GAMEPAD_INTERVAL,
+                        ],
+                    },
+                },
                 self.CONF_TRIGGER_MODE: {
                     "type": "drop_down",
                     "options": [self.TRIGGER_HOLD, self.TRIGGER_TOGGLE],
@@ -459,6 +481,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_GROUP_TRIGGER: "▸ 分组折叠: 展开基础触发设置(触发键/宏模式/触发方式/输入方式)",
                 self.CONF_GROUP_TUNING: "▸ 分组折叠: 展开实战调优参数(反击平A/后摇/主动闪避/轮数/技能前平A/脱战复查/让路)",
                 self.CONF_GROUP_TEST: "▸ 分组折叠: 展开测试开关与测试键(闪避反击测试/禁用技能大招/首平A/模拟闪避)",
+                self.CONF_GROUP_GAMEPAD: "▸ 分组折叠: 展开实体手柄与虚拟手柄共存测试",
+                self.CONF_GAMEPAD_TEST: "开=虚拟Xbox手柄每隔数秒按一次A；不接管、不隐藏实体手柄",
+                self.CONF_GAMEPAD_INTERVAL: "虚拟手柄两次A键测试脉冲之间的秒数",
                 self.CONF_PRESET_SLOT: "选择配置档位(1~4), 存取/导入导出都对该档位",
                 self.CONF_PRESET_OPS: "保存=当前配置存到该档位; 载入=把该档位配置读回界面",
                 self.CONF_PRESET_FILE: "导出=当前配置存成json; 从文件导入=读json回界面",
@@ -477,6 +502,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         self._fk_was_down = False     # 闪避后首平A测试键的前态(边沿检测)
         self._dtk_was_down = False    # 闪避反击模拟测试键(7)的前态(边沿检测)
         self._fbk_was_down = False    # 免费技能后接combo测试键的前态(边沿检测)
+        self._gamepad_tester = None     # [lw] 延迟创建，默认关闭时不加载 vgamepad
+        self._next_gamepad_pulse_at = 0.0
+        self._gamepad_error_reported = False
 
     def load_config(self):
         """首次改名时沿用旧类名对应的用户配置，已有新配置时不覆盖。"""
@@ -501,11 +529,15 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
 
     def _loop(self):
         if not self.enabled:
+            self._close_gamepad_test()
+            self._gamepad_error_reported = False
             self._submitted = False
             self._key_was_down = False
             self._macro_running = False
             self._last_seen_dodge = None
             return False
+
+        self._poll_gamepad_test()
 
         # 闪避反击模拟测试键(7, 边沿触发): 假装出现声音, 走一整轮完整流程(含初始闪避)。
         dtk = self.config.get(self.CONF_DODGE_TEST_KEY)
@@ -580,6 +612,46 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         self._key_was_down = True
         self._run_macro()
         return True
+
+    def _poll_gamepad_test(self):
+        """[lw] 周期发送虚拟 A 键；实体手柄完全由游戏直接读取。"""
+        if not self.config.get(self.CONF_GAMEPAD_TEST, False):
+            self._close_gamepad_test()
+            self._gamepad_error_reported = False
+            return
+
+        now = time.monotonic()
+        if now < self._next_gamepad_pulse_at:
+            return
+
+        interval = max(0.5, self._conf_num(self.CONF_GAMEPAD_INTERVAL, 3.0))
+        try:
+            starting = self._gamepad_tester is None
+            if self._gamepad_tester is None:
+                self._gamepad_tester = VirtualGamepadPulseTester()
+            self._gamepad_tester.pulse_a(self.GAMEPAD_TEST_HOLD_SECONDS)
+            if starting:
+                self.log_info("虚拟手柄共存测试已启动: 摇杆中立，仅周期发送A键")
+            self._next_gamepad_pulse_at = time.monotonic() + interval
+            self._gamepad_error_reported = False
+        except (VirtualGamepadUnavailableError, OSError, RuntimeError) as exc:
+            self._close_gamepad_test()
+            self._next_gamepad_pulse_at = time.monotonic() + interval
+            if not self._gamepad_error_reported:
+                self.log_error(f"虚拟手柄共存测试不可用: {exc}", notify=True)
+                self._gamepad_error_reported = True
+
+    def _close_gamepad_test(self):
+        """[lw] 复位所有虚拟输入并释放控制器句柄。"""
+        tester = self._gamepad_tester
+        self._gamepad_tester = None
+        self._next_gamepad_pulse_at = 0.0
+        if tester is None:
+            return
+        try:
+            tester.close()
+        except (OSError, RuntimeError) as exc:
+            self.log_error(f"释放虚拟手柄失败: {type(exc).__name__}")
 
     def _conf_num(self, key, default):
         try:

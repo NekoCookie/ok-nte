@@ -20,6 +20,11 @@ dependencies = [
     "sounddevice>=0.5.5",
 ]
 
+[project.optional-dependencies]
+virtual-gamepad = [
+    "vgamepad>=0.1.0",
+]
+
 [dependency-groups]
 dev = [
     "polib>=1.2.0",

@@ -1145,3 +1145,20 @@ msgstr "No hay pantalla de juego disponible"
 
 msgid "请先捕获、选择礼物并启用至少一个角色。"
 msgstr "Por favor, capture, seleccione regalos y habilite al menos un personaje primero."
+msgid "▸ 虚拟手柄共存测试(展开)"
+msgstr "▸ Prueba de coexistencia del mando virtual (expandir)"
+
+msgid "启用虚拟手柄A键脉冲"
+msgstr "Activar pulsos del botón A del mando virtual"
+
+msgid "虚拟手柄A键间隔(s)"
+msgstr "Intervalo del botón A del mando virtual (s)"
+
+msgid "▸ 分组折叠: 展开实体手柄与虚拟手柄共存测试"
+msgstr "▸ Grupo: expandir la prueba de coexistencia de mandos físico y virtual"
+
+msgid "开=虚拟Xbox手柄每隔数秒按一次A；不接管、不隐藏实体手柄"
+msgstr "Activado = el mando Xbox virtual pulsa A cada pocos segundos; no controla ni oculta el mando físico"
+
+msgid "虚拟手柄两次A键测试脉冲之间的秒数"
+msgstr "Segundos entre pulsos de prueba del botón A del mando virtual"
