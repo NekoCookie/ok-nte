@@ -24,6 +24,12 @@ class Globals(QObject):
         ).start()
         threading.Thread(target=self.init_openvino, daemon=True, name="OpenVINOInit").start()
 
+    def on_show_main_window(self, main_window):
+        # [lw] ok-script 1.0.176 keeps the task info table at a fixed 300 px height.
+        from src.lw.task_info_layout import install_task_info_layout
+
+        install_task_info_layout(main_window)
+
     def stop(self):
         self._sound_context_stop_event.set()
         from src.sound_trigger.SoundCombatContext import SoundCombatContext
