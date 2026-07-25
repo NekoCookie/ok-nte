@@ -1,5 +1,7 @@
 import unittest
 
+from PySide6.QtWidgets import QSizePolicy
+
 from src.lw.task_info_layout import (
     calculate_task_info_table_height,
     install_task_info_layout,
@@ -74,6 +76,10 @@ class _Table:
 class _Container:
     def __init__(self):
         self.geometry_updates = 0
+        self.size_policy = None
+
+    def setSizePolicy(self, horizontal, vertical):
+        self.size_policy = (horizontal, vertical)
 
     def updateGeometry(self):
         self.geometry_updates += 1
@@ -108,6 +114,10 @@ class TestTaskInfoLayout(unittest.TestCase):
         install_task_info_layout(main_window)
 
         self.assertEqual(92, task_tab.task_info_table.fixed_height)
+        self.assertEqual(
+            (QSizePolicy.Expanding, QSizePolicy.Fixed),
+            task_tab.task_info_container.size_policy,
+        )
         self.assertEqual(1, len(task_tab.timer.timeout.callbacks))
 
         task_tab.task_info_table.row_heights = [30]

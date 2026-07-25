@@ -22,7 +22,7 @@ def calculate_task_info_table_height(
 
 
 def update_task_info_table_height(task_tab):
-    """[lw] Shrink the framework task info table when it has only a few rows."""
+    """[lw] Keep the framework task info card at its content height."""
     table = getattr(task_tab, "task_info_table", None)
     if table is None:
         return
@@ -41,6 +41,10 @@ def update_task_info_table_height(task_tab):
 
     container = getattr(task_tab, "task_info_container", None)
     if container is not None:
+        # Task cards use an expanding vertical policy. Without fixing this outer
+        # container, QVBoxLayout gives all spare height to the transparent part
+        # below the visible info card and pushes task cards to the page bottom.
+        container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         container.updateGeometry()
 
 
