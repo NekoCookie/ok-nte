@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import MagicMock
 
+from ok import CannotFindException
+
 from src.tasks.DailyTask import DailyTask
 
 
@@ -76,6 +78,60 @@ class TestDailyTaskOrder(unittest.TestCase):
             task_keys.index(DailyTask.CONF_COFFEE_TASK),
             task_keys.index(DailyTask.CONF_CLAIM_BP),
         )
+
+
+class TestDailyTaskExecution(unittest.TestCase):
+    def _task(self):
+        task = object.__new__(DailyTask)
+        task.task_status = {
+            "success": [],
+            "failed": [],
+            "skipped": [],
+            "pending": ["测试子任务"],
+        }
+        task.current_task_key = None
+        task.ensure_main = MagicMock()
+        task.log_info = MagicMock()
+        task.log_error = MagicMock()
+        task.screenshot = MagicMock()
+        return task
+
+    def test_main_precondition_failure_is_attributed_and_stops(self):
+        task = self._task()
+        task.ensure_main.side_effect = CannotFindException("main unavailable")
+        func = MagicMock()
+
+        with self.assertRaises(CannotFindException):
+            task.execute_task("测试子任务", True, func)
+
+        func.assert_not_called()
+        self.assertEqual(["测试子任务"], task.task_status["failed"])
+        self.assertEqual("测试子任务", task.current_task_key)
+        task.screenshot.assert_called_once_with("fail_测试子任务")
+
+    def test_failed_subtask_recovers_before_continuing(self):
+        task = self._task()
+        func = MagicMock(side_effect=RuntimeError("task failed"))
+
+        task.execute_task("测试子任务", True, func)
+
+        self.assertEqual(2, task.ensure_main.call_count)
+        self.assertEqual(["测试子任务"], task.task_status["failed"])
+        self.assertIsNone(task.current_task_key)
+        task.screenshot.assert_called_once_with("fail_测试子任务")
+
+    def test_failed_subtask_stops_when_recovery_fails(self):
+        task = self._task()
+        recovery_error = CannotFindException("recovery failed")
+        task.ensure_main.side_effect = [None, recovery_error]
+        func = MagicMock(side_effect=RuntimeError("task failed"))
+
+        with self.assertRaises(CannotFindException):
+            task.execute_task("测试子任务", True, func)
+
+        self.assertEqual(["测试子任务"], task.task_status["failed"])
+        self.assertEqual("测试子任务", task.current_task_key)
+        task.screenshot.assert_called_once_with("fail_测试子任务")
 
 
 class TestDailyCoffeeLocaleGate(unittest.TestCase):

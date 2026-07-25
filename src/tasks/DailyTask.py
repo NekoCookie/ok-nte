@@ -200,7 +200,14 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
         self.current_task_key = key
         self.log_info(f"开始任务: {key}")
 
-        self.ensure_main()
+        try:
+            self.ensure_main()
+        except TaskDisabledException:
+            raise
+        except Exception as e:
+            self.log_error(f"任务: {key} 执行前无法返回主界面", e)
+            self._record_task_failure(key)
+            raise
 
         try:
             result = func()
@@ -211,14 +218,26 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
             result = False
 
         if result is False:
-            self.task_status["failed"].append(key)
-            self.screenshot(f"fail_{key}")
-            self.log_info(f"任务失败: {key}")
+            self._record_task_failure(key)
+            try:
+                self.ensure_main()
+            except TaskDisabledException:
+                raise
+            except Exception as e:
+                self.log_error(f"任务: {key} 失败后无法返回主界面", e)
+                raise
+            self.current_task_key = None
             return
 
         self.task_status["success"].append(key)
         self.log_info(f"任务完成: {key}")
         self.current_task_key = None
+
+    def _record_task_failure(self, key):
+        if key not in self.task_status["failed"]:
+            self.task_status["failed"].append(key)
+            self.screenshot(f"fail_{key}")
+        self.log_info(f"任务失败: {key}")
 
     def _reset_task_status(self, tasks):
         """重置任务状态。
