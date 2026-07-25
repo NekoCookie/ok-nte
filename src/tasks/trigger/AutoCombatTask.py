@@ -1,11 +1,7 @@
-import time
-
-from ok import Logger, TriggerTask
+from ok import TriggerTask
 from qfluentwidgets import FluentIcon
 
-from src.combat.BaseCombatTask import BaseCombatTask, CharDeadException, NotInCombatException
-
-logger = Logger.get_logger(__name__)
+from src.combat.BaseCombatTask import BaseCombatTask
 
 
 class AutoCombatTask(BaseCombatTask, TriggerTask):
@@ -33,25 +29,5 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         self.origin_func = {}
 
     def run(self):
-        if self.LW_COMBAT_RUN:  # [lw] 开=龙威战斗主循环(src/lw/combat_ext.py), 关=下面的上游原版(仅排查对照)
-            return self.lw_combat_run()  # [lw]
-        ret = False
-        if not self.scene.is_in_team(self.is_in_team):
-            return
-
-        while self.in_combat():
-            try:
-                if not ret:
-                    ret = True
-                    combat_start = time.time()
-                    self.use_ultimate = self.config.get(self.CONF_USE_ULT, True)
-                    self.switch_to_combat_start_char()
-                self.get_current_char(raise_exception=True).perform()
-            except CharDeadException:
-                self.log_error("Characters dead", notify=True)
-                break
-            except NotInCombatException as e:
-                logger.info(f"auto_combat_task_out_of_combat {int(time.time() - combat_start)} {e}")
-                break
-        if ret:
-            self.combat_end()
+        """运行合并了 RU 战斗行为与 LW 队伍热重载的唯一主循环。"""
+        return self.lw_combat_run()  # [lw] 单一路径接入 src/lw/combat_ext.py

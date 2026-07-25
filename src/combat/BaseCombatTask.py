@@ -285,29 +285,8 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
         return time.time() - start - to_minus
 
     def refresh_cd(self):
-        if self.LW_CD_ANCHORING:  # [lw] 开=龙威CD锚定(src/lw/combat_ext.py), 关=下面的上游原版(仅排查对照)
-            return self.lw_refresh_cd()  # [lw]
-        if self.scene.cd_refreshed:
-            return
-        index = self.get_current_char().index
-        cds = self.cds.get(index)
-        if cds is None:
-            cds = {}
-            self.cds[index] = cds
-        cds["time"] = time.time()
-        cds["skill"] = 0
-        cds["ultimate"] = 0
-        texts = self.ocr(
-            0.8594, 0.8847, 0.9578, 0.9139, frame_processor=gf.isolate_cd_to_black, match=cd_regex
-        )
-        for text in texts:
-            cd = convert_cd(text)
-            if text.x < self.width_of_screen(0.89):
-                cds["skill"] = cd
-            elif text.x > self.width_of_screen(0.925):
-                cds["ultimate"] = cd
-        self.scene.cd_refreshed = True
-        # self.log_debug(f"cd refreshed: {cds} {time.time() - cds['time']}")
+        """刷新技能冷却，统一使用 LW 锚定与去抖实现。"""
+        return self.lw_refresh_cd()  # [lw] 单一路径接入 src/lw/combat_ext.py
 
     def get_cd(self, box_name, char_index=None):  # [lw] 本方法被大幅改写: 按box独立锚点时间+UNKNOWN_CD兜底+诊断
         self.refresh_cd()
@@ -912,62 +891,8 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
         return get_char_by_pos(self, box_scaled, index, safe_get(self.chars, index))
 
     def load_chars(self) -> bool:
-        """加载队伍中的角色信息。"""
-        if self.LW_LOAD_CHARS:  # [lw] 开=龙威队伍加载(src/lw/combat_ext.py), 关=下面的上游原版(仅排查对照)
-            return self.lw_load_chars()  # [lw]
-        ret = False
-        now = time.perf_counter()
-        self.load_hotkey()
-        in_team, current_index, count = self.in_team()
-        if not in_team or current_index == -1:
-            return ret
-
-        if count > 4:
-            logger.warning(f"char count {count} larger than 4, set to 4")
-            count = 4
-        self.log_info(f"load_chars count {count} current_index {current_index}")
-
-        self.clear_element_reactions()
-        fixed_team = CustomCharManager().get_fixed_team()
-        fixed_slots = fixed_team.get("slots", []) if fixed_team.get("enabled", False) else []
-        new_chars = []
-        indices_to_detect = []
-        for i in range(count):
-            char = self._do_load_char(i, fixed_slots)
-            new_chars.append(char)
-            if char.element is Element.DEFAULT:
-                indices_to_detect.append(i)
-
-        if indices_to_detect:
-            detected_elements = self.load_chars_element(indices_to_detect)
-            for i in indices_to_detect:
-                new_chars[i].element = detected_elements.get(i, Element.DEFAULT)
-
-        elements = [char.element for char in new_chars]
-        self.chars = new_chars
-        self.combat_planner.reset(self.chars)
-        self.info_set("char elements", elements)
-
-        self.info_set("chars", [])
-        for char in self.chars:
-            if char is not None:
-                char.reset_state()
-                if char.index == current_index:
-                    char.is_current_char = True
-                else:
-                    char.is_current_char = False
-                name = char.char_name
-                conf = char.confidence
-                elem = char.element
-                self.log_info(f"load char success {char} {name} {conf:.2f} {elem}")
-                self.info_add_to_list("chars", f"{char.char_name}: {char.combo_name}")
-
-        if self.team_size > 0:
-            self.combat_start = time.time()
-            ret = True
-            self._apply_sound_config()
-        logger.debug(f"load_chars cost {time.perf_counter() - now:.3f}s")
-        return ret
+        """加载队伍，统一使用 LW 快照重试与弱识别恢复实现。"""
+        return self.lw_load_chars()  # [lw] 单一路径接入 src/lw/combat_ext.py
 
     def is_cycle_full(self) -> bool:
         img = self.box_of_screen_scaled(

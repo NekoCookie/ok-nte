@@ -1,10 +1,10 @@
-"""lw_combat_run 必须在开战时读取"使用终结技"配置。
+"""AutoCombatTask.run 必须在开战时读取"使用终结技"配置。
 
 合并回归: 上游 planner 化后给 AutoCombatTask.run 开战分支新增
-`self.use_ultimate = self.config.get(self.CONF_USE_ULT, True)`, 但实际运行的
-lw_combat_run 漏了这行 → self.use_ultimate 恒为 __init__ 默认 True, UI 里关掉
+`self.use_ultimate = self.config.get(self.CONF_USE_ULT, True)`, 但 LW 主循环曾漏掉这行，
+导致 self.use_ultimate 恒为 __init__ 默认 True, UI 里关掉
 "使用终结技"对 lw 主循环无效(BaseChar 读 self.task.use_ultimate 决定放不放大招)。
-本测试锁住: 开战按配置设置 use_ultimate。
+本测试通过唯一公开入口锁住: 开战按配置设置 use_ultimate。
 """
 import os
 import sys
@@ -13,12 +13,12 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.combat.BaseCombatTask import BaseCombatTask
 from src.lw.team_roster import TeamReloadRequested, TeamRosterChange
+from src.tasks.trigger.AutoCombatTask import AutoCombatTask
 
 
 def make_run_task(use_ult_config):
-    t = BaseCombatTask.__new__(BaseCombatTask)
+    t = AutoCombatTask.__new__(AutoCombatTask)
     t.CONF_USE_ULT = "使用终结技"
     t.config = {"使用终结技": use_ult_config}
     t.use_ultimate = True  # __init__ 默认值
@@ -37,19 +37,19 @@ def make_run_task(use_ult_config):
 class TestUseUltimateConfig(unittest.TestCase):
     def test_use_ultimate_disabled_by_config(self):
         t = make_run_task(False)
-        t.lw_combat_run()
+        t.run()
         self.assertFalse(t.use_ultimate, "开战必须按配置关掉 use_ultimate, 否则 UI 开关无效")
 
     def test_use_ultimate_enabled_by_config(self):
         t = make_run_task(True)
-        t.lw_combat_run()
+        t.run()
         self.assertTrue(t.use_ultimate)
 
     def test_use_ultimate_defaults_true_when_missing(self):
         t = make_run_task(True)
         t.config = {}  # 配置缺失 → 默认 True
         t.use_ultimate = False  # 即便实例被别处置 False, 开战也应回到配置默认
-        t.lw_combat_run()
+        t.run()
         self.assertTrue(t.use_ultimate)
 
     def test_confirmed_team_change_reloads_instead_of_ending_combat(self):
@@ -58,7 +58,7 @@ class TestUseUltimateConfig(unittest.TestCase):
         t._reload_if_team_size_changed.side_effect = TeamReloadRequested(change)
         t._reload_combat_team = mock.MagicMock(return_value=True)
 
-        t.lw_combat_run()
+        t.run()
 
         t._reload_combat_team.assert_called_once_with()
         t.combat_end.assert_called_once_with()

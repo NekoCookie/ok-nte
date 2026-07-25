@@ -31,13 +31,6 @@ logger = Logger.get_logger(__name__)
 
 
 class CombatExtMixin(_TaskProxy):
-    # 策略开关: True=走本文件的龙威实现, False=走上游原版(留在 BaseCombatTask.py 里, 仅排查对照用)。
-    # 注意: settle 结算/主C资源判定依赖 lw 锚定写入的字段(skill_ocr_raw 等), 关掉后这些会退化,
-    # 只应在"怀疑 lw 逻辑自身有问题、想和原版对照"时临时关闭。
-    LW_CD_ANCHORING = True
-    LW_LOAD_CHARS = True
-    LW_COMBAT_RUN = True
-
     # 锚定技能/大招 CD 时, 若 OCR 读不到数字且图标不亮(无旧锚点)的保守占位:
     # 当成仍在冷却, 宁可多冷却也不误判可用(避免空切)。
     UNKNOWN_CD_SECONDS = 20.0
@@ -225,8 +218,7 @@ class CombatExtMixin(_TaskProxy):
     # ---------- 技能CD锚定 / OCR就绪判定 ----------
 
     def lw_refresh_cd(self):
-        """refresh_cd 的龙威实现(BaseCombatTask.refresh_cd 按 LW_CD_ANCHORING 分发到这里):
-        OCR 读数为主判据 + 图标/模板兜底 + 去抖/grace, 每 box 独立锚点时间。"""
+        """refresh_cd 的唯一实现：OCR 主判据 + 图标兜底 + 去抖/grace 独立锚定。"""
         from src.combat.BaseCombatTask import cd_regex, convert_cd
 
         if self.scene.cd_refreshed:
@@ -786,8 +778,7 @@ class CombatExtMixin(_TaskProxy):
     TEAM_RELOAD_WAIT_INTERVAL = 0.2
 
     def lw_combat_run(self):
-        """AutoCombatTask.run 的龙威实现(按 LW_COMBAT_RUN 分发到这里):
-        增加队伍变化重载、当前角色丢失重载和队伍变更恢复分支。"""
+        """AutoCombatTask.run 的唯一实现，包含队伍变化重载和当前角色丢失恢复。"""
         from src.combat.BaseCombatTask import (
             CharDeadException,
             NotInCombatException,
@@ -954,8 +945,7 @@ class CombatExtMixin(_TaskProxy):
         return True
 
     def lw_load_chars(self, preserve_on_weak=True) -> bool:
-        """load_chars 的龙威实现(BaseCombatTask.load_chars 按 LW_LOAD_CHARS 分发到这里):
-        快照带重试(覆盖开战入场动画)+ 弱识别(unknown)防抖重试/保留旧队伍。"""
+        """load_chars 的唯一实现：快照重试 + unknown 防抖重试/保留旧队伍。"""
         ret = False
         now = time.perf_counter()
         self.load_hotkey()
