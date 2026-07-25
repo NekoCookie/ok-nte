@@ -737,9 +737,6 @@ msgstr "모든 키 테스트"
 msgid "自动弹琴"
 msgstr "자동 피아노"
 
-msgid "自动战斗任务不可用"
-msgstr "자동 전투 임무 사용 불가"
-
 msgid "自动音高"
 msgstr "자동 피치"
 
@@ -1065,8 +1062,8 @@ msgstr "메인 인터페이스 감지에 실패했습니다. 권장 조치: \n1.
 msgid "大世界检测失败: 请检查游戏内 UI 透明度是否已设置为 1.0。"
 msgstr "오픈 월드 감지에 실패했습니다: 게임 내 UI 투명도가 1.0으로 설정되어 있는지 확인하세요."
 
-msgid "当前 CPU 不支持 AVX2, 无法运行 OpenVINO 2026 CPU 推理；自动战斗的目标检测将不可用。"
-msgstr "현재 CPU가 AVX2를 지원하지 않아 OpenVINO 2026 CPU 추론을 실행할 수 없습니다. 자동 전투의 대상 감지를 사용할 수 없습니다."
+msgid "当前 CPU 不支持 AVX2, 无法运行 OpenVINO 2026 CPU 推理；自动战斗的目标检测将不可用，交战流畅度将受到影响。"
+msgstr "현재 CPU가 AVX2를 지원하지 않아 OpenVINO 2026 CPU 추론을 실행할 수 없습니다. 자동 전투의 대상 감지를 사용할 수 없으며, 전투 매끄러움에 영향을 미칩니다."
 
 msgid "战斗后等待至时长上限"
 msgstr "전투 후 최대 시간까지 대기"
@@ -1162,3 +1159,51 @@ msgstr "켜짐 = 가상 Xbox 컨트롤러가 몇 초마다 A를 누르며 실제
 
 msgid "虚拟手柄两次A键测试脉冲之间的秒数"
 msgstr "가상 게임패드 A 버튼 테스트 펄스 사이의 초"
+
+msgid "使用录制功能"
+msgstr "기록 기능 사용"
+
+msgid "启用后录制并回放选择目标关卡的操作"
+msgstr "활성화하면 목표 스테이지 선택 동작을 기록하고 재생합니다"
+
+msgid "异象追猎"
+msgstr "이소 추적"
+
+msgid "追猎目标"
+msgstr "추적 대상"
+
+msgid "自动进行异象追猎任务"
+msgstr "이소 추적 작업을 자동으로 진행합니다"
+
+msgid "领取奖励次数"
+msgstr "보상 수령 횟수"
+
+msgid "设置为0则领取当前体力可领取的全部奖励"
+msgstr "0으로 설정하면 현재 활력으로 받을 수 있는 모든 보상을 수령합니다"
+
+msgid "音霸魔王"
+msgstr "Beat King"
+
+msgid "无首铁驭"
+msgstr "Headless Rider"
+
+msgid "塞润尼缇"
+msgstr "Serenetti"
+
+msgid "黑之书"
+msgstr "Black Tome"
+
+msgid "海囚"
+msgstr "Sea Prisoner"
+
+msgid "围巢鸟"
+msgstr "Nestbound Bird"
+
+msgid "斑蝶"
+msgstr "Swallowtail"
+
+msgid "自动战斗检测诊断"
+msgstr "자동 전투 감지 진단"
+
+msgid "持续检测诊断 Lv, 锁定目标标记(白色菱形)和红色血条; 请手动停止以查看完整报告"
+msgstr "Lv, 고정 대상 표시(흰색 마름모) 및 빨간색 체력 바의 감지 진단을 계속합니다. 전체 보고서를 보려면 수동으로 중지하십시오"

@@ -46,7 +46,7 @@ class CharUIMixin(CharUIExtMixin, BaseTask):  # [lw] 插入用户扩展基类
 
     def get_base_char_element_box(self):
         box = self.box_of_screen_scaled(
-            2560, 1440, 2438, 335, width_original=29, height_original=29
+            2560, 1440, 2438, 335, width_original=29, height_original=29, name="element"
         )
         box = self._shift_char_ui_box(box, expend=True)
         return box
@@ -218,7 +218,7 @@ class CharUIMixin(CharUIExtMixin, BaseTask):  # [lw] 插入用户扩展基类
         return arr
 
 
-class CharElementUIMixin(BaseTask):
+class CharElementUIMixin(CharUIMixin):
     _element_template_cache = {}
     _element_template_cache_lock = Lock()
     _element_template_preheat_started = False

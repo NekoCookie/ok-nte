@@ -802,8 +802,8 @@ msgstr "Falha ao detectar a interface principal. Ações sugeridas: \n1. Desativ
 msgid "大世界检测失败: 请检查游戏内 UI 透明度是否已设置为 1.0。"
 msgstr "Falha ao detectar o mundo aberto: verifique se a opacidade da interface do usuário no jogo foi definida como 1.0."
 
-msgid "当前 CPU 不支持 AVX2, 无法运行 OpenVINO 2026 CPU 推理；自动战斗的目标检测将不可用。"
-msgstr "A CPU atual não suporta AVX2, portanto a inferência de CPU do OpenVINO 2026 não pode ser executada; a detecção de alvos para combate automático ficará indisponível."
+msgid "当前 CPU 不支持 AVX2, 无法运行 OpenVINO 2026 CPU 推理；自动战斗的目标检测将不可用，交战流畅度将受到影响。"
+msgstr "A CPU atual não suporta AVX2, portanto a inferência de CPU do OpenVINO 2026 não pode ser executada; a detecção de alvos para combate automático ficará indisponível e a fluidez do combate será afetada."
 
 msgid "战斗后等待至时长上限"
 msgstr "Aguardar até o tempo limite após o combate"
@@ -902,3 +902,51 @@ msgstr "Ligado = o controle Xbox virtual pressiona A a cada poucos segundos; nã
 
 msgid "虚拟手柄两次A键测试脉冲之间的秒数"
 msgstr "Segundos entre pulsos de teste do botão A do controle virtual"
+
+msgid "使用录制功能"
+msgstr "Usar recurso de gravação"
+
+msgid "启用后录制并回放选择目标关卡的操作"
+msgstr "Quando ativado, grava e reproduz as ações usadas para selecionar a fase alvo"
+
+msgid "异象追猎"
+msgstr "Caça às Anomalias"
+
+msgid "追猎目标"
+msgstr "Alvo da Caça"
+
+msgid "自动进行异象追猎任务"
+msgstr "Executa automaticamente as tarefas de Caça às Anomalias"
+
+msgid "领取奖励次数"
+msgstr "Vezes para resgatar recompensa"
+
+msgid "设置为0则领取当前体力可领取的全部奖励"
+msgstr "Defina como 0 para resgatar todas as recompensas disponíveis com a energia atual"
+
+msgid "音霸魔王"
+msgstr "Beat King"
+
+msgid "无首铁驭"
+msgstr "Headless Rider"
+
+msgid "塞润尼缇"
+msgstr "Serenetti"
+
+msgid "黑之书"
+msgstr "Black Tome"
+
+msgid "海囚"
+msgstr "Sea Prisoner"
+
+msgid "围巢鸟"
+msgstr "Nestbound Bird"
+
+msgid "斑蝶"
+msgstr "Swallowtail"
+
+msgid "自动战斗检测诊断"
+msgstr "Diagnósticos de detecção de combate automático"
+
+msgid "持续检测诊断 Lv, 锁定目标标记(白色菱形)和红色血条; 请手动停止以查看完整报告"
+msgstr "Diagnostica continuamente a detecção de Lv, marcador de alvo fixado (losango branco) e barra de vida vermelha; por favor, pare manualmente para visualizar o relatório completo."

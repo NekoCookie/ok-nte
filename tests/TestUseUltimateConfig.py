@@ -63,6 +63,17 @@ class TestUseUltimateConfig(unittest.TestCase):
         t._reload_combat_team.assert_called_once_with()
         t.combat_end.assert_called_once_with()
 
+    def test_action_error_still_runs_combat_cleanup(self):
+        t = make_run_task(True)
+        current_char = mock.MagicMock()
+        current_char.perform.side_effect = RuntimeError("action failed")
+        t.get_current_char.return_value = current_char
+
+        with self.assertRaisesRegex(RuntimeError, "action failed"):
+            t.run()
+
+        t.combat_end.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -737,9 +737,6 @@ msgstr "Test All Keys"
 msgid "自动弹琴"
 msgstr "Auto Piano"
 
-msgid "自动战斗任务不可用"
-msgstr "Auto-combat Tasks Unavailable"
-
 msgid "自动音高"
 msgstr "Auto Pitch"
 
@@ -1065,8 +1062,8 @@ msgstr "Main interface detection failed. Suggested actions: \n1. Disable GPU fil
 msgid "大世界检测失败: 请检查游戏内 UI 透明度是否已设置为 1.0。"
 msgstr "Overworld detection failed: Please check if the in-game UI opacity has been set to 1.0."
 
-msgid "当前 CPU 不支持 AVX2, 无法运行 OpenVINO 2026 CPU 推理；自动战斗的目标检测将不可用。"
-msgstr "The current CPU does not support AVX2, so OpenVINO 2026 CPU inference cannot be run; target detection for auto-combat will be unavailable."
+msgid "当前 CPU 不支持 AVX2, 无法运行 OpenVINO 2026 CPU 推理；自动战斗的目标检测将不可用，交战流畅度将受到影响。"
+msgstr "The current CPU does not support AVX2, so OpenVINO 2026 CPU inference cannot be run. Target detection for auto-combat will be unavailable, and combat smoothness will be affected."
 
 msgid "战斗后等待至时长上限"
 msgstr "Wait until max duration after combat"
@@ -1162,3 +1159,51 @@ msgstr "On = virtual Xbox controller presses A every few seconds; does not take 
 
 msgid "虚拟手柄两次A键测试脉冲之间的秒数"
 msgstr "Seconds between virtual gamepad A-button test pulses"
+
+msgid "使用录制功能"
+msgstr "Use recording feature"
+
+msgid "启用后录制并回放选择目标关卡的操作"
+msgstr "When enabled, records and replays the actions used to select the target level"
+
+msgid "异象追猎"
+msgstr "Anomaly Hunts"
+
+msgid "追猎目标"
+msgstr "Hunt Target"
+
+msgid "自动进行异象追猎任务"
+msgstr "Automatically run Anomaly Hunt tasks"
+
+msgid "领取奖励次数"
+msgstr "Claim Reward Count"
+
+msgid "设置为0则领取当前体力可领取的全部奖励"
+msgstr "Set to 0 to claim all rewards available within current stamina"
+
+msgid "音霸魔王"
+msgstr "Beat King"
+
+msgid "无首铁驭"
+msgstr "Headless Rider"
+
+msgid "塞润尼缇"
+msgstr "Serenetti"
+
+msgid "黑之书"
+msgstr "Black Tome"
+
+msgid "海囚"
+msgstr "Sea Prisoner"
+
+msgid "围巢鸟"
+msgstr "Nestbound Bird"
+
+msgid "斑蝶"
+msgstr "Swallowtail"
+
+msgid "自动战斗检测诊断"
+msgstr "Auto-Combat Detection Diagnostics"
+
+msgid "持续检测诊断 Lv, 锁定目标标记(白色菱形)和红色血条; 请手动停止以查看完整报告"
+msgstr "Continuously diagnose detection for Lv, lock-on target marker (white diamond), and red health bar; please stop manually to view the full report."

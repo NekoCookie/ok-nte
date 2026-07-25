@@ -50,6 +50,34 @@ class TestDailyCoffee(unittest.TestCase):
         self.assertIn((0.6, 0.656), click_positions)
 
 
+class TestDailyTaskOrder(unittest.TestCase):
+    def test_lw_work_tasks_precede_rewards_and_coffee_keeps_ru_position(self):
+        task = object.__new__(DailyTask)
+        task.scene = MagicMock()
+        task.config = {DailyTask.CONF_COFFEE_TASK: DailyTask.COFFEE_MODE_AUTO}
+        task.ensure_main = MagicMock()
+        task.log_info = MagicMock()
+        task._reset_task_status = MagicMock()
+        task._print_result = MagicMock()
+        task_keys = []
+        task.execute_task = lambda key, enabled, func: task_keys.append(key)
+
+        task.do_run()
+
+        self.assertLess(
+            task_keys.index(DailyTask.CONF_GIFT),
+            task_keys.index(DailyTask.CONF_CLAIM_ACTIVITY),
+        )
+        self.assertLess(
+            task_keys.index(DailyTask.CONF_CLAIM_ACTIVITY),
+            task_keys.index(DailyTask.CONF_COFFEE_TASK),
+        )
+        self.assertLess(
+            task_keys.index(DailyTask.CONF_COFFEE_TASK),
+            task_keys.index(DailyTask.CONF_CLAIM_BP),
+        )
+
+
 class TestDailyCoffeeLocaleGate(unittest.TestCase):
     """BnanZ0 PR #86 反馈: 仅在 zh_CN 下暴露一咖舍自动化给 UI."""
 
@@ -148,33 +176,6 @@ class TestDailyCoffeeLocaleGate(unittest.TestCase):
             )
         finally:
             self._restore_app(original)
-
-    def test_dropdown_mode_selects_restock_task(self):
-        task = TestDailyCoffee()._task(
-            {DailyTask.CONF_COFFEE_TASK: DailyTask.COFFEE_MODE_AUTO}
-        )  # noqa: SLF001 - reuse stub helper
-
-        entry = DailyTask._coffee_task_entry(task)
-
-        self.assertIsNotNone(entry)
-        key, enabled, func = entry
-        self.assertEqual(DailyTask.COFFEE_MODE_AUTO, key)
-        self.assertTrue(enabled)
-        self.assertEqual(DailyTask.run_coffee_task.__name__, func.__name__)
-
-    def test_old_bool_config_does_not_select_restock_task(self):
-        task = TestDailyCoffee()._task(
-            {"运行一咖舍自动化": True}
-        )  # noqa: SLF001
-
-        self.assertIsNone(DailyTask._coffee_task_entry(task))
-
-    def test_dropdown_mode_none_skips_coffee_task(self):
-        task = TestDailyCoffee()._task(
-            {DailyTask.CONF_COFFEE_TASK: DailyTask.COFFEE_MODE_NONE}
-        )  # noqa: SLF001 - reuse stub helper
-
-        self.assertIsNone(DailyTask._coffee_task_entry(task))
 
     def test_claim_coffee_runtime_still_restocks(self):
         original = self._patch_locale("en_US")

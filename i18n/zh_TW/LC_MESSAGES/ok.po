@@ -737,9 +737,6 @@ msgstr "測試全部鍵"
 msgid "自动弹琴"
 msgstr "自動彈琴"
 
-msgid "自动战斗任务不可用"
-msgstr "自動戰鬥任務不可用"
-
 msgid "自动音高"
 msgstr "自動音高"
 
@@ -1065,8 +1062,8 @@ msgstr "主介面檢測失敗。建議操作: \n1. 關閉顯示卡濾鏡與銳�
 msgid "大世界检测失败: 请检查游戏内 UI 透明度是否已设置为 1.0。"
 msgstr "大世界檢測失敗: 請檢查遊戲內 UI 透明度是否已設置為 1.0。"
 
-msgid "当前 CPU 不支持 AVX2, 无法运行 OpenVINO 2026 CPU 推理；自动战斗的目标检测将不可用。"
-msgstr "目前 CPU 不支援 AVX2，無法執行 OpenVINO 2026 CPU 推理；自動戰鬥的目標檢測將不可用。"
+msgid "当前 CPU 不支持 AVX2, 无法运行 OpenVINO 2026 CPU 推理；自动战斗的目标检测将不可用，交战流畅度将受到影响。"
+msgstr "目前 CPU 不支援 AVX2，無法執行 OpenVINO 2026 CPU 推理；自動戰鬥的目標檢測將不可用，交戰流暢度將受到影響。"
 
 msgid "战斗后等待至时长上限"
 msgstr "戰鬥後等待至時長上限"
@@ -1162,3 +1159,51 @@ msgstr "開=虛擬Xbox手把每隔數秒按一次A；不接管、不隱藏實體
 
 msgid "虚拟手柄两次A键测试脉冲之间的秒数"
 msgstr "虛擬手把兩次A鍵測試脈衝之間的秒數"
+
+msgid "使用录制功能"
+msgstr "使用錄製功能"
+
+msgid "启用后录制并回放选择目标关卡的操作"
+msgstr "啟用後會錄製並重播選擇目標關卡的操作"
+
+msgid "异象追猎"
+msgstr "異象追獵"
+
+msgid "追猎目标"
+msgstr "追獵目標"
+
+msgid "自动进行异象追猎任务"
+msgstr "自動進行異象追獵任務"
+
+msgid "领取奖励次数"
+msgstr "領取獎勵次數"
+
+msgid "设置为0则领取当前体力可领取的全部奖励"
+msgstr "設置為0則領取當前體力可領取的全部獎勵"
+
+msgid "音霸魔王"
+msgstr "音霸魔王"
+
+msgid "无首铁驭"
+msgstr "無首鐵馭"
+
+msgid "塞润尼缇"
+msgstr "塞潤尼緹"
+
+msgid "黑之书"
+msgstr "黑之書"
+
+msgid "海囚"
+msgstr "海囚"
+
+msgid "围巢鸟"
+msgstr "圍巢鳥"
+
+msgid "斑蝶"
+msgstr "斑蝶"
+
+msgid "自动战斗检测诊断"
+msgstr "自動戰鬥檢測診斷"
+
+msgid "持续检测诊断 Lv, 锁定目标标记(白色菱形)和红色血条; 请手动停止以查看完整报告"
+msgstr "持續檢測診斷 Lv, 鎖定目標標記(白色菱形)和紅色血條; 請手動停止以查看完整報告"

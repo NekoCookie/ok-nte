@@ -32,6 +32,7 @@ MSG_WORLD_DETECTION_FAILED = "大世界检测失败: 请检查游戏内 UI 透�
 
 class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMixin, LogGateMixin, BaseTask):  # type: ignore  # [lw] 插入用户扩展基类
     CONF_ROUNDS = "循环次数"
+    CONF_CLAIM_REWARD_COUNT = "领取奖励次数"
     INFINITE_ROUNDS_TEXT = "∞"
     DEFAULT_MOVE = False
 
@@ -71,6 +72,12 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
     def add_rounds_config(self, default=0):
         self.default_config.update({self.CONF_ROUNDS: default})
         self.config_description.update({self.CONF_ROUNDS: "设置为0则一直运行"})
+
+    def add_claim_reward_count_config(self, default=0):
+        self.default_config.update({self.CONF_CLAIM_REWARD_COUNT: default})
+        self.config_description.update(
+            {self.CONF_CLAIM_REWARD_COUNT: "设置为0则领取当前体力可领取的全部奖励"}
+        )
 
     def sync_config(self, config=None):
         """同步并保存配置"""
@@ -140,6 +147,10 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
         if og.my_app is None:
             return None
         return getattr(og.my_app, "openvino_latest_image", None)
+
+    @property
+    def openvino_available(self):
+        return getattr(og.my_app, "openvino_available", None)
 
     @property
     def main_viewport(self):
@@ -346,7 +357,9 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
         in_world = self.in_world()
         return in_team and in_world
 
-    def wait_in_team(self, time_out=30, raise_if_not_found=True, esc=False, settle_time=0):
+    def wait_in_team(
+        self, time_out=30, raise_if_not_found=True, esc=False, settle_time=0
+    ) -> Box | None:
         success = self.wait_until(
             self.is_in_team,
             time_out=time_out,
@@ -498,22 +511,26 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
         self.sleep(0.1)
         self.wait_until(
             lambda: not self.find_traval_button(),
-            pre_action=lambda: self.operate_click(travel_btn, interval=1),
+            pre_action=lambda: self.operate_click(travel_btn, interval=2),
             time_out=20,
             settle_time=0.5,
             raise_if_not_found=raise_if_not_found,
         )
+        self.monitor_and_sync_cursor()
         self.sleep(0.1)
         return True
 
     def openF1panel(self):
         if hasattr(self, "reset_to_false"):
-            self.reset_to_false("opening f1 panel")
-        if self.is_in_team():
-            self.send_key("f1", after_sleep=1)
-            self.log_info("send f1 key to open the panel")
+            self.reset_to_false()
 
-        result = self.wait_panel(Labels.f1_panel)
+        def action():
+            if self.is_in_team():
+                self.send_key("f1", after_sleep=1)
+                self.log_info("send f1 key to open the panel")
+            return self.wait_panel(Labels.f1_panel)
+
+        result = self.retry_on_action(action, self.ensure_main)
         if not result:
             self.log_error("can't find panel, make sure f1 is the hotkey for panel", notify=True)
             raise CannotFindException("can't find panel, make sure f1 is the hotkey for panel")
@@ -522,12 +539,15 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
 
     def openF2panel(self):
         if hasattr(self, "reset_to_false"):
-            self.reset_to_false("opening f2 panel")
-        if self.is_in_team():
-            self.send_key("f2", after_sleep=1)
-            self.log_info("send f2 key to open the panel")
+            self.reset_to_false()
 
-        result = self.wait_panel(Labels.f2_panel)
+        def action():
+            if self.is_in_team():
+                self.send_key("f2", after_sleep=1)
+                self.log_info("send f2 key to open the panel")
+            return self.wait_panel(Labels.f2_panel)
+
+        result = self.retry_on_action(action, self.ensure_main)
         if not result:
             self.log_error("can't find panel, make sure f2 is the hotkey for panel", notify=True)
             raise CannotFindException("can't find panel, make sure f2 is the hotkey for panel")
@@ -536,33 +556,39 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
 
     def openF5panel(self):
         if hasattr(self, "reset_to_false"):
-            self.reset_to_false("opening f5 panel")
-        if self.is_in_team():
-            self.send_key("f5", after_sleep=1)
-            self.log_info("send f5 key to open the panel")
+            self.reset_to_false()
 
-        result = self.wait_panel(Labels.f5_panel)
+        def action():
+            if self.is_in_team():
+                self.send_key("f5", after_sleep=1)
+                self.log_info("send f5 key to open the panel")
+            return self.wait_panel(Labels.f5_panel)
+
+        result = self.retry_on_action(action, self.ensure_main)
         if not result:
             self.log_error("can't find panel, make sure f5 is the hotkey for panel", notify=True)
             raise CannotFindException("can't find panel, make sure f5 is the hotkey for panel")
-        self.sleep(0.5)
+        self.sleep(1.5)
         return result
 
     def openESCpanel(self):
         if hasattr(self, "reset_to_false"):
-            self.reset_to_false("opening esc panel")
-        if self.is_in_team():
-            self.send_key("esc", after_sleep=1)
-            self.log_info("send esc key to open the panel")
+            self.reset_to_false()
 
-        result = self.wait_panel(Labels.esc_option, box=Labels.box_all_esc_options, threshold=0.3)
+        def action():
+            if self.is_in_team():
+                self.send_key("esc", after_sleep=1)
+                self.log_info("send esc key to open the panel")
+            return self.wait_panel(Labels.esc_option, box=Labels.box_all_esc_options, threshold=0.3)
+
+        result = self.retry_on_action(action, self.ensure_main)
         if not result:
             self.log_error("can't find panel, make sure esc is the hotkey for panel", notify=True)
             raise CannotFindException("can't find panel, make sure esc is the hotkey for panel")
         self.sleep(0.5)
         return result
 
-    def wait_panel(self, feature, box=None, threshold=0.8, time_out=4.5):
+    def wait_panel(self, feature, box=None, threshold=0.7, time_out=5):
         result = self.wait_until(
             lambda: self.find_one(feature, box=box, threshold=threshold),
             time_out=time_out,
@@ -608,36 +634,40 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
     def find_monthly_card(self):
         return self.find_one(Labels.monthly_card)
 
-    def should_check_monthly_card(self):
+    def check_monthly_card(self):
         if self.next_monthly_card_start > 0:
-            if 0 < time.time() - self.next_monthly_card_start < 120:
+            if (
+                0 < time.time() - self.next_monthly_card_start < 120
+                and not self.is_in_team()
+                and self.find_monthly_card()
+            ):
                 return True
         return False
 
     def handle_monthly_card(self):
-        if self.is_in_team():
-            return False
         monthly_card = self.find_monthly_card()
-        # self.screenshot('monthly_card1')
         if monthly_card is not None:
-            # self.screenshot('monthly_card1')
             self.log_info("monthly_card found click")
             deadline = time.time() + 20
             settle = -1
             while time.time() < deadline:
-                if self.is_in_team():
-                    if settle < 0:
-                        settle = time.time()
-                    elif time.time() - settle > 2:
-                        break
-                else:
+                if self.find_monthly_card():
                     self.operate_click(0.50, 0.89, after_sleep=2)
                     settle = -1
+                    continue
+                if self.find_one(Labels.reward_popup):
+                    self.send_key("esc", after_sleep=2)
+                    settle = -1
+                    continue
+                if settle < 0:
+                    settle = time.time()
+                elif time.time() - settle > 2:
+                    break
             else:
                 raise WaitFailedException()
-            # self.screenshot('monthly_card3')
             self.set_check_monthly_card(next_day=True)
-        # logger.debug(f'check_monthly_card {monthly_card}')
+        else:
+            self.log_warning_gated("monthly_card not found")
         return monthly_card is not None
 
     def set_check_monthly_card(self, next_day=False):
@@ -893,6 +923,10 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
         ):
             return False
         return True
+
+    def monitor_and_sync_cursor(self, timeout=1):
+        if interaction := self.executor.interaction:
+            interaction.monitor_and_sync_cursor(timeout=timeout)
 
 
 def interac_mask(image):

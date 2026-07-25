@@ -726,9 +726,6 @@ msgstr ""
 msgid "自动弹琴"
 msgstr ""
 
-msgid "自动战斗任务不可用"
-msgstr ""
-
 msgid "自动音高"
 msgstr ""
 
@@ -1054,7 +1051,7 @@ msgstr ""
 msgid "大世界检测失败: 请检查游戏内 UI 透明度是否已设置为 1.0。"
 msgstr ""
 
-msgid "当前 CPU 不支持 AVX2, 无法运行 OpenVINO 2026 CPU 推理；自动战斗的目标检测将不可用。"
+msgid "当前 CPU 不支持 AVX2, 无法运行 OpenVINO 2026 CPU 推理；自动战斗的目标检测将不可用，交战流畅度将受到影响。"
 msgstr ""
 
 msgid "战斗后等待至时长上限"
@@ -1151,3 +1148,51 @@ msgstr "开=虚拟Xbox手柄每隔数秒按一次A；不接管、不隐藏实体
 
 msgid "虚拟手柄两次A键测试脉冲之间的秒数"
 msgstr "虚拟手柄两次A键测试脉冲之间的秒数"
+
+msgid "使用录制功能"
+msgstr ""
+
+msgid "启用后录制并回放选择目标关卡的操作"
+msgstr ""
+
+msgid "异象追猎"
+msgstr ""
+
+msgid "追猎目标"
+msgstr ""
+
+msgid "自动进行异象追猎任务"
+msgstr ""
+
+msgid "领取奖励次数"
+msgstr ""
+
+msgid "设置为0则领取当前体力可领取的全部奖励"
+msgstr ""
+
+msgid "音霸魔王"
+msgstr ""
+
+msgid "无首铁驭"
+msgstr ""
+
+msgid "塞润尼缇"
+msgstr ""
+
+msgid "黑之书"
+msgstr ""
+
+msgid "海囚"
+msgstr ""
+
+msgid "围巢鸟"
+msgstr ""
+
+msgid "斑蝶"
+msgstr ""
+
+msgid "自动战斗检测诊断"
+msgstr ""
+
+msgid "持续检测诊断 Lv, 锁定目标标记(白色菱形)和红色血条; 请手动停止以查看完整报告"
+msgstr ""

@@ -779,10 +779,7 @@ class CombatExtMixin(_TaskProxy):
 
     def lw_combat_run(self):
         """AutoCombatTask.run 的唯一实现，包含队伍变化重载和当前角色丢失恢复。"""
-        from src.combat.BaseCombatTask import (
-            CharDeadException,
-            NotInCombatException,
-        )
+        from src.combat.BaseCombatTask import NotInCombatException
 
         ret = False
         if not self.scene.is_in_team(self.is_in_team):
@@ -790,42 +787,37 @@ class CombatExtMixin(_TaskProxy):
 
         self._last_team_recheck = 0.0
         combat_start = time.time()
-        with self.team_reload_watch():
-            while self.in_combat():
-                try:
-                    if not ret:
-                        ret = True
-                        # [lw] 吸收上游 run 新增: 开战读"使用终结技"开关。lw 主循环原先漏了这行,
-                        # self.use_ultimate 恒为 __init__ 默认 True → UI 关掉"使用终结技"对 lw 无效。
-                        self.use_ultimate = self.config.get(self.CONF_USE_ULT, True)
-                        self.switch_to_combat_start_char()
-                    if not self._reload_if_team_size_changed():
-                        time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
-                        continue
-                    current_char = self.get_current_char()
-                    if current_char is None:
-                        self.log_info("current char missing during combat, reload chars")
+        try:
+            with self.team_reload_watch():
+                while self.in_combat():
+                    try:
+                        if not ret:
+                            ret = True
+                            # [lw] 保留开战读取终结技开关, 避免 UI 配置被默认值覆盖.
+                            self.use_ultimate = self.config.get(self.CONF_USE_ULT, True)
+                            self.switch_to_combat_start_char()
+                        if not self._reload_if_team_size_changed():
+                            time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
+                            continue
+                        current_char = self.get_current_char()
+                        if current_char is None:
+                            self.log_info("current char missing during combat, reload chars")
+                            if not self._reload_combat_team():
+                                time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
+                            continue
+                        current_char.perform()
+                    except TeamReloadRequested as e:
+                        logger.info(
+                            f"auto_combat_task_team_changed {int(time.time() - combat_start)} {e}"
+                        )
                         if not self._reload_combat_team():
                             time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
                         continue
-                    current_char.perform()
-                except CharDeadException:
-                    self.log_error("Characters dead", notify=True)
-                    break
-                except TeamReloadRequested as e:
-                    logger.info(
-                        f"auto_combat_task_team_changed {int(time.time() - combat_start)} {e}"
-                    )
-                    if not self._reload_combat_team():
-                        time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
-                    continue
-                except NotInCombatException as e:
-                    logger.info(
-                        f"auto_combat_task_out_of_combat {int(time.time() - combat_start)} {e}"
-                    )
-                    break
-        if ret:
-            self.combat_end()
+        except NotInCombatException as e:
+            logger.info(f"auto_combat_task_out_of_combat {int(time.time() - combat_start)} {e}")
+        finally:
+            if ret:
+                self.combat_end()
 
     def _reload_combat_team(self) -> bool:
         if self.load_chars():

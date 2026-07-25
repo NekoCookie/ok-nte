@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
     QHBoxLayout,
+    QSizePolicy,
     QStackedWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -22,6 +23,7 @@ from qfluentwidgets import (
     BodyLabel,
     ComboBox,
     FluentIcon,
+    IndeterminateProgressRing,
     PrimaryToolButton,
     PushButton,
     SearchLineEdit,
@@ -100,6 +102,7 @@ class MidiPlayerTab(CustomTab):
         self.tr_no_song_selected = og.app.tr("未选择歌曲")
         self.is_playing = False
         self.is_favorite = False
+        self.favorite_active_icon = FluentSystemIcon.HEART_FILL.colored("#E81123", "#FF99A4")
         self.current_key_mode = "36_keys"
         self.config = Config("MidiPlayerTab", MIDI_PLAYER_CONFIG_DEFAULTS)
         self.library = MidiLibraryService()
@@ -108,6 +111,7 @@ class MidiPlayerTab(CustomTab):
         self.playing_song_id = None
         self.fav_filter = "all"
         self.track_checkboxes = []
+        self._loaded = False
         self._track_ui_song_id = None
         self._loading_settings = False
         self._loading_tracks = False
@@ -159,7 +163,18 @@ class MidiPlayerTab(CustomTab):
         self.segmented_widget.setCurrentItem("36_keys")
         self._load_saved_settings()
 
-        self.refresh_song_list()
+        # Loading overlay
+        self.progress_ring = IndeterminateProgressRing()
+        self.progress_ring.setFixedSize(50, 50)
+        self.progress_container = QWidget()
+        progress_layout = QVBoxLayout(self.progress_container)
+        progress_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        progress_layout.addWidget(self.progress_ring, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.progress_container.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self.left_v_layout.insertWidget(2, self.progress_container)
+        self.progress_container.setVisible(False)
 
     @property
     def name(self):
@@ -645,9 +660,14 @@ class MidiPlayerTab(CustomTab):
                 self.logger.error("Failed to index MIDI library", e)
             self.midi_signals.library_indexed.emit(selected_id)
 
+        self.progress_container.setVisible(True)
+        self.progress_ring.start()
+
         threading.Thread(target=_task, daemon=True).start()
 
     def _on_library_indexed(self, selected_id):
+        self.progress_ring.stop()
+        self.progress_container.setVisible(False)
         self.songs_by_id = {song.id: song for song in self.library.list_songs()}
         self._prune_missing_song_settings()
         self.populate_song_list(selected_id)
@@ -1474,11 +1494,9 @@ class MidiPlayerTab(CustomTab):
 
     def _update_favorite_button(self):
         if self.is_favorite:
-            self.btn_favorite.setIcon(FluentSystemIcon.HEART_FILL)
-            self.btn_favorite.setStyleSheet("TransparentToolButton { color: red; }")
+            self.btn_favorite.setIcon(self.favorite_active_icon)
         else:
             self.btn_favorite.setIcon(FluentIcon.HEART)
-            self.btn_favorite.setStyleSheet("")
 
     def on_prev_clicked(self):
         ids = self._playlist_song_ids()
@@ -1654,3 +1672,9 @@ class MidiPlayerTab(CustomTab):
         if isinstance(current_widget, KeyConfigWidget):
             return current_widget.get_coords()
         return (0, 0, 0, 0)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._loaded:
+            self._loaded = True
+            self.refresh_song_list()
