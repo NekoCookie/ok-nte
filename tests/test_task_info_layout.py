@@ -1,5 +1,6 @@
 import unittest
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QSizePolicy
 
 from src.lw.task_info_layout import (
@@ -47,6 +48,7 @@ class _Table:
         self.fixed_height = None
         self.geometry_updates = 0
         self.size_policy = None
+        self.vertical_scroll_bar_policy = None
 
     def horizontalScrollBar(self):
         return _ScrollBar()
@@ -65,6 +67,9 @@ class _Table:
 
     def setSizePolicy(self, horizontal, vertical):
         self.size_policy = (horizontal, vertical)
+
+    def setVerticalScrollBarPolicy(self, policy):
+        self.vertical_scroll_bar_policy = policy
 
     def setFixedHeight(self, height):
         self.fixed_height = height
@@ -100,10 +105,10 @@ class _MainWindow:
 
 
 class TestTaskInfoLayout(unittest.TestCase):
-    def test_height_shrinks_to_content_and_caps_at_framework_limit(self):
+    def test_height_always_includes_every_row(self):
         self.assertEqual(92, calculate_task_info_table_height(30, [30, 30], frame_width=1))
         self.assertEqual(
-            300,
+            332,
             calculate_task_info_table_height(30, [100, 100, 100], frame_width=1),
         )
 
@@ -117,6 +122,10 @@ class TestTaskInfoLayout(unittest.TestCase):
         self.assertEqual(
             (QSizePolicy.Expanding, QSizePolicy.Fixed),
             task_tab.task_info_container.size_policy,
+        )
+        self.assertEqual(
+            Qt.ScrollBarAlwaysOff,
+            task_tab.task_info_table.vertical_scroll_bar_policy,
         )
         self.assertEqual(1, len(task_tab.timer.timeout.callbacks))
 

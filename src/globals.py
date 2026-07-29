@@ -25,7 +25,7 @@ class Globals(QObject):
         threading.Thread(target=self.init_openvino, daemon=True, name="OpenVINOInit").start()
 
     def on_show_main_window(self, main_window):
-        # [lw] ok-script 1.0.176 keeps the task info table at a fixed 300 px height.
+        # [lw] Expand task info tables so rows use the page scroll instead of being hidden.
         from src.lw.task_info_layout import install_task_info_layout
 
         install_task_info_layout(main_window)
