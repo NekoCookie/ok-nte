@@ -17,6 +17,7 @@ from ok.util.logger import Logger
 from win32api import GetCursorPos, SetCursorPos
 
 from src.interaction.keyboard_layout import QwertyPhysicalKeyMapper
+from src.lw.interaction_ext import NTEInteractionExtMixin  # [lw]
 
 logger = Logger.get_logger(__name__)
 CHECK_CURSOR_KEY = ["m", "f", "esc"]
@@ -71,7 +72,7 @@ def _cursor_sync_worker(lock, state_box):
         return
 
 
-class NTEInteraction(PostMessageInteraction):
+class NTEInteraction(NTEInteractionExtMixin, PostMessageInteraction):  # [lw] 插入用户扩展基类
     _ACTIVATE_REFRESH_INTERVAL = 60 * 60
 
     def __init__(self, *args, **kwargs):
@@ -86,10 +87,12 @@ class NTEInteraction(PostMessageInteraction):
         self._next_try_activate_at = -1
         self._cursor_sync_lock = threading.Lock()
         self._cursor_sync_state = {"state": None, "thread": None}
+        self.lw_init_focus_stabilizer()  # [lw]
         self.hwnd_window.visible_monitors.append(self)
 
     def on_visible(self, visible):
         self._activate_require = not visible
+        self.lw_observe_focus(visible)  # [lw]
 
     def send_key(self, key, down_time=0.01):
         with self._input_lock:
@@ -163,6 +166,7 @@ class NTEInteraction(PostMessageInteraction):
 
     def click(self, x=-1, y=-1, move_back=False, name=None, down_time=0.01, move=True, key="left"):
         with self._input_lock:
+            self.lw_stabilize_focus()  # [lw]
             self.try_activate()
             if x < 0:
                 x, y = round(self.capture.width * 0.5), round(self.capture.height * 0.5)
@@ -174,6 +178,7 @@ class NTEInteraction(PostMessageInteraction):
                 abs_x, abs_y = self.capture.get_abs_cords(x, y)
                 SetCursorPos((abs_x, abs_y))
                 time.sleep(0.035)
+            self.lw_stabilize_focus()  # [lw]
             click_pos = win32api.MAKELONG(x, y)
             if key == "left":
                 btn_down = win32con.WM_LBUTTONDOWN
