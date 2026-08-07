@@ -58,12 +58,15 @@ class FishCatchingTask(FishCatchingTaskMixin, NTEOneTimeTask, BaseNTETask):  # [
                 self.log_error("点击开始捕鱼后未进入捕鱼场景, 任务结束")
                 break
             if self.should_run_round(count + 1, total):
-                ready = self.wait_until(
-                    self.find_catch_start_button,
-                    time_out=10,
-                    settle_time=0.5,
-                    raise_if_not_found=False,
-                )
+                ready = None
+                for attempt in range(self.CATCH_START_RETRY_LIMIT):
+                    ready = self.wait_for_catch_start(self.CATCH_START_WAIT_SECONDS)
+                    if ready:
+                        break
+                    self.log_warning(
+                        f"捕鱼结束后等待开始界面超时, 重试 {attempt + 1}/"
+                        f"{self.CATCH_START_RETRY_LIMIT}"
+                    )
                 if not ready:
                     self.log_warning("捕鱼结束后未回到开始界面, 停止任务")
                     break

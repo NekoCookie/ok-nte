@@ -3,6 +3,7 @@ from unittest import mock
 
 import cv2
 import numpy as np
+from ok import Box
 
 from src.Labels import Labels
 from src.lw.fish_catch_ext import FishCatchingTaskMixin
@@ -14,15 +15,8 @@ class TestFishCatchingVision(unittest.TestCase):
         self.assertEqual(FishCatchingTask.DEFAULT_ROUNDS, 0)
         self.assertEqual(FishCatchingTaskMixin.FISH_CLICK_INTERVAL, 0.5)
 
-    def test_blind_click_pattern_covers_center_region(self):
-        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
-        task._blind_click_index = 0
-
-        points = [task.next_blind_click_position() for _ in task.BLIND_CLICK_POINTS]
-
-        self.assertEqual(len(points), len(set(points)))
-        self.assertTrue(all(0.35 <= x <= 0.43 and 0.27 <= y <= 0.38 for x, y in points))
-        self.assertEqual(task.next_blind_click_position(), points[0])
+    def test_blind_click_position_matches_reference_box_center(self):
+        self.assertEqual(FishCatchingTaskMixin.BLIND_CLICK_POSITION, (0.490, 0.404))
 
     def test_click_interval_is_configurable_with_conservative_minimum(self):
         task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
@@ -32,6 +26,42 @@ class TestFishCatchingVision(unittest.TestCase):
 
         task.config[task.CONF_CLICK_INTERVAL] = 0
         self.assertEqual(task.fish_click_interval(), 0.05)
+
+    def test_skill_order_is_e_w_q(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        task.read_fish_skill_cooldown = mock.Mock(return_value=0.0)
+        task._fish_skill_order_index = 0
+
+        self.assertEqual(task.next_fish_skill(), "e")
+        self.assertEqual(task.next_fish_skill(), "w")
+        self.assertEqual(task.next_fish_skill(), "q")
+
+    def test_skill_cd_ocr_is_used_before_local_fallback(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        task.box_of_screen = mock.Mock(return_value=Box(0, 0, 500, 500))
+        task.ocr = mock.Mock(return_value=[Box(10, 10, 20, 20, name="1.8")])
+        task.log_debug = mock.Mock()
+
+        self.assertAlmostEqual(task.read_fish_skill_cooldown("e"), 1.8)
+
+    def test_cast_skill_selects_key_then_clicks_reference_center(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        task.send_key = mock.Mock()
+        task.sleep = mock.Mock()
+        task.operate_click = mock.Mock(return_value=True)
+        task._fish_skill_last_cast = {}
+
+        self.assertTrue(task.cast_fish_skill("e"))
+        task.send_key.assert_called_once_with(
+            "e", down_time=0.03, action_name="fish_catch_select_e", interval=0.15
+        )
+        task.operate_click.assert_called_once_with(
+            0.490,
+            0.404,
+            down_time=0.01,
+            action_name="fish_catch_target",
+        )
+        self.assertIn("e", task._fish_skill_last_cast)
 
     def test_detects_separate_neon_fish_shapes(self):
         image = np.zeros((240, 400, 3), dtype=np.uint8)
@@ -56,18 +86,37 @@ class TestFishCatchingVision(unittest.TestCase):
     def test_result_overlay_is_closed_by_clicking_blank_area(self):
         task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
         task.find_one = mock.Mock(return_value="result")
+        task.box_of_screen = mock.Mock(return_value=Box(0, 0, 500, 500))
+        task.ocr = mock.Mock(return_value=[])
         task.operate_click = mock.Mock()
         task.wait_until = mock.Mock()
         task.log_info = mock.Mock()
 
         self.assertTrue(task.close_catch_result())
         task.operate_click.assert_called_once_with(
-            0.50,
-            0.90,
-            action_name="close_fish_catch_result",
+            0.503,
+            0.887,
+            action_name="close_fish_catch_result_fallback",
             interval=1,
         )
         task.wait_until.assert_called_once()
+
+    def test_result_overlay_clicks_close_prompt_when_ocr_finds_it(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        prompt = Box(120, 240, 160, 36, name="close_prompt")
+        task.find_one = mock.Mock(return_value="result")
+        task.box_of_screen = mock.Mock(return_value=Box(0, 0, 500, 500))
+        task.ocr = mock.Mock(return_value=[prompt])
+        task.operate_click = mock.Mock()
+        task.wait_until = mock.Mock()
+        task.log_info = mock.Mock()
+
+        self.assertTrue(task.close_catch_result())
+        task.operate_click.assert_called_once_with(
+            prompt,
+            action_name="close_fish_catch_result",
+            interval=1,
+        )
 
 
 if __name__ == "__main__":
