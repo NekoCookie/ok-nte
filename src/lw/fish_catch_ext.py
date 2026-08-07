@@ -198,6 +198,7 @@ class FishCatchingTaskMixin:
     def run_fish_catch_round(self, timeout: float | None = None):
         timeout = float(timeout or self.FISH_ROUND_TIMEOUT)
         deadline = time.monotonic() + timeout
+        load_deadline = time.monotonic() + min(timeout, 10.0)
         last_target_time = time.monotonic()
         next_ui_check = 0.0
         started = False
@@ -205,14 +206,20 @@ class FishCatchingTaskMixin:
         while time.monotonic() < deadline:
             self.next_frame()
             now = time.monotonic()
+            targets = self.detect_fish_targets()
             if not started:
                 timer = self.read_catch_timer()
                 if timer is not None:
                     started = True
-                elif self.find_catch_start_button():
+                elif targets:
+                    started = True
+                elif now < load_deadline:
+                    self.sleep(0.1)
+                    continue
+                else:
+                    self.log_warning("点击开始捕鱼后等待场景加载超时")
                     return False
 
-            targets = self.detect_fish_targets()
             if targets:
                 started = True
                 last_target_time = now

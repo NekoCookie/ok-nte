@@ -4,9 +4,13 @@ import cv2
 import numpy as np
 
 from src.lw.fish_catch_ext import FishCatchingTaskMixin
+from src.tasks.FishCatchingTask import FishCatchingTask
 
 
 class TestFishCatchingVision(unittest.TestCase):
+    def test_default_rounds_allow_infinite_mode(self):
+        self.assertEqual(FishCatchingTask.DEFAULT_ROUNDS, 0)
+
     def test_detects_separate_neon_fish_shapes(self):
         image = np.zeros((240, 400, 3), dtype=np.uint8)
         image[:] = (170, 130, 80)

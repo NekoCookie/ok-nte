@@ -10,6 +10,7 @@ class FishCatchingTask(FishCatchingTaskMixin, NTEOneTimeTask, BaseNTETask):  # [
     """自动捕鱼小游戏任务, 与自动钓鱼任务独立。  # [lw]"""
 
     CONF_TIMEOUT_SECONDS = "捕鱼单轮超时"
+    DEFAULT_ROUNDS = 0
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -18,7 +19,7 @@ class FishCatchingTask(FishCatchingTaskMixin, NTEOneTimeTask, BaseNTETask):  # [
         self.icon = FluentIcon.SYNC
         self.group_name = "都市闲趣"
         self.group_icon = FluentIcon.GAME
-        self.add_rounds_config(default=1)
+        self.add_rounds_config(default=self.DEFAULT_ROUNDS)
         self.default_config.update({self.CONF_TIMEOUT_SECONDS: self.FISH_ROUND_TIMEOUT})
         self.config_description.update(
             {
@@ -38,14 +39,17 @@ class FishCatchingTask(FishCatchingTaskMixin, NTEOneTimeTask, BaseNTETask):  # [
             raise
 
     def do_run(self):
-        total = self.configured_rounds(default=1)
+        total = self.configured_rounds(default=self.DEFAULT_ROUNDS)
         count = 0
         while self.should_run_round(count + 1, total):
             count += 1
             self.log_info(f"开始第 {self.rounds_info_text(count, total)} 轮捕鱼")
-            self.ensure_catch_prepare()
-            self.click_catch_start()
-            self.run_fish_catch_round(self.config.get(self.CONF_TIMEOUT_SECONDS))
+            prepare_ready = self.ensure_catch_prepare()
+            if prepare_ready:
+                self.click_catch_start()
+            if not self.run_fish_catch_round(self.config.get(self.CONF_TIMEOUT_SECONDS)):
+                self.log_error("点击开始捕鱼后未进入捕鱼场景, 任务结束")
+                break
             if self.should_run_round(count + 1, total):
                 self.wait_until(
                     self.find_catch_start_button,
