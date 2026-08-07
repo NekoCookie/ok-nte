@@ -18,6 +18,7 @@ class FishCatchingTaskMixin:
     START_BUTTON_VISUAL_ROI = (0.72, 0.84, 0.98, 0.93)
     TIMER_ROI = (0.40, 0.025, 0.60, 0.105)
     CATCH_RESULT_CLOSE_TEXT_ROI = (0.25, 0.78, 0.75, 0.94)
+    CATCH_BAG_FULL_TEXT_ROI = (0.20, 0.33, 0.80, 0.48)
     FISH_SKILL_ROIS = {
         "q": (0.025, 0.80, 0.105, 0.96),
         "w": (0.105, 0.80, 0.185, 0.96),
@@ -27,6 +28,7 @@ class FishCatchingTaskMixin:
     FISH_SKILL_COOLDOWNS = {"e": 10.0, "w": 5.0, "q": 1.5}
     START_TEXT_RE = re.compile(r"开始\s*[捕捉抓]鱼|start\s*(?:catch|fishing)", re.IGNORECASE)
     CATCH_RESULT_CLOSE_TEXT_RE = re.compile(r"点\s*击\s*空\s*白\s*区\s*域\s*关\s*闭")
+    CATCH_BAG_FULL_TEXT_RE = re.compile(r"背包没有足够的空间[,，]?请先清理背包")
     TIMER_RE = re.compile(r"(?<!\d)(\d{1,3})(?!\d)")
 
     FISH_HSV_SATURATION = 130
@@ -164,6 +166,15 @@ class FishCatchingTaskMixin:
                     return value
         return None
 
+    def has_catch_bag_full(self) -> bool:
+        box = self.box_of_screen(*self.CATCH_BAG_FULL_TEXT_ROI, name="fish_catch_bag_full")
+        texts = self.ocr(box=box)
+        if not texts:
+            return False
+        texts = sorted(texts, key=lambda text: (text.y, text.x))
+        normalized = "".join(re.sub(r"\s+", "", text.name or "") for text in texts)
+        return bool(self.CATCH_BAG_FULL_TEXT_RE.search(normalized))
+
     def has_catch_result(self) -> bool:
         """Detect the fish-reward overlay shown after a round finishes.  # [lw]"""
         return bool(
@@ -295,6 +306,56 @@ class FishCatchingTaskMixin:
             self.sleep(0.4)
         return None
 
+    def sell_catch_fish(self) -> bool:
+        """Sell the catch using the same fish-hold flow as automatic fishing.  # [lw]"""
+        fish_sell = self.wait_until(
+            lambda: self.find_one(Labels.fish_sell),
+            pre_action=lambda: self.send_key("q", interval=2, action_name="fish_catch_open_sell"),
+            time_out=10,
+            settle_time=0.5,
+            raise_if_not_found=False,
+        )
+        if not fish_sell:
+            self.log_warning("未进入鱼获出售界面")
+            return False
+
+        fish_hold = self.wait_until(
+            lambda: self.find_one(Labels.fish_hold),
+            pre_action=lambda: self.operate_click(0.076, 0.386, interval=2),
+            time_out=10,
+            settle_time=0.5,
+            raise_if_not_found=False,
+        )
+        if not fish_hold:
+            self.log_warning("未进入鱼舱界面")
+            return False
+
+        if not self.find_one(Labels.fish_one_click_sell):
+            self.log_info("鱼舱内没有可出售鱼获")
+            return True
+        sold = self.wait_click_confirm(
+            lambda: self.operate_click(0.556, 0.898, interval=2),
+            raise_if_not_found=False,
+        )
+        if not sold:
+            self.log_warning("一键出售未完成")
+        return bool(sold)
+
+    def handle_catch_bag_full(self) -> bool:
+        """Leave the minigame, sell fish, then return to its start screen.  # [lw]"""
+        self.log_warning("捕鱼检测到背包空间不足, 退出并清理鱼获")
+        self.send_key("esc", action_name="fish_catch_bag_full_escape", interval=0)
+        if not self.wait_for_catch_start(time_out=15):
+            self.log_warning("背包满后未回到开始捕鱼界面")
+            return False
+
+        sold = self.sell_catch_fish()
+        self.send_key("esc", action_name="fish_catch_close_sell", interval=0)
+        returned = self.wait_for_catch_start(time_out=20) is not None
+        if not returned:
+            self.log_warning("清理鱼获后未回到开始捕鱼界面")
+        return sold and returned
+
     def ensure_catch_prepare(self):
         if self.has_catch_result():
             self.close_catch_result()
@@ -361,6 +422,9 @@ class FishCatchingTaskMixin:
 
             if now >= next_ui_check:
                 next_ui_check = now + self.FISH_UI_CHECK_INTERVAL
+                if self.has_catch_bag_full():
+                    self.handle_catch_bag_full()
+                    return True
                 if self.has_catch_result():
                     self.close_catch_result()
                     return True

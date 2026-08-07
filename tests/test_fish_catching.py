@@ -86,6 +86,28 @@ class TestFishCatchingVision(unittest.TestCase):
 
         self.assertTrue(task.has_catch_result())
 
+    def test_bag_full_notice_is_detected_from_ocr(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        task.box_of_screen = mock.Mock(return_value=Box(0, 0, 500, 500))
+        task.ocr = mock.Mock(
+            return_value=[Box(120, 240, 160, 36, name="背包没有足够的空间， 请先清理背包")]
+        )
+
+        self.assertTrue(task.has_catch_bag_full())
+
+    def test_bag_full_recovery_escapes_sells_and_returns_to_start(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        task.send_key = mock.Mock()
+        task.wait_for_catch_start = mock.Mock(
+            side_effect=[Box(0, 0, 10, 10), Box(0, 0, 10, 10)]
+        )
+        task.sell_catch_fish = mock.Mock(return_value=True)
+        task.log_warning = mock.Mock()
+
+        self.assertTrue(task.handle_catch_bag_full())
+        self.assertEqual(task.send_key.call_count, 2)
+        task.sell_catch_fish.assert_called_once_with()
+
     def test_result_overlay_is_closed_by_clicking_blank_area(self):
         task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
         task.find_one = mock.Mock(return_value="result")
