@@ -1,3 +1,4 @@
+import time
 import unittest
 from unittest import mock
 
@@ -19,11 +20,14 @@ class TestFishCatchingVision(unittest.TestCase):
 
     def test_skill_order_is_e_w_q(self):
         task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
-        task.read_fish_skill_cooldown = mock.Mock(return_value=0.0)
-        task._fish_skill_order_index = 0
+        cooldowns = {"e": 0.0, "w": 0.0, "q": 0.0}
+        task.read_fish_skill_cooldown = mock.Mock(side_effect=lambda key: cooldowns[key])
+        task.log_debug = mock.Mock()
 
         self.assertEqual(task.next_fish_skill(), "e")
+        cooldowns["e"] = 10.0
         self.assertEqual(task.next_fish_skill(), "w")
+        cooldowns["w"] = 5.0
         self.assertEqual(task.next_fish_skill(), "q")
 
     def test_skill_cd_ocr_is_used_before_local_fallback(self):
@@ -31,6 +35,7 @@ class TestFishCatchingVision(unittest.TestCase):
         task.box_of_screen = mock.Mock(return_value=Box(0, 0, 500, 500))
         task.ocr = mock.Mock(return_value=[Box(10, 10, 20, 20, name="1.8")])
         task.log_debug = mock.Mock()
+        task._fish_skill_last_cast = {"e": time.monotonic() - 8.2}
 
         self.assertAlmostEqual(task.read_fish_skill_cooldown("e"), 1.8)
 

@@ -197,6 +197,14 @@ class FishCatchingTaskMixin:
         if key not in self.FISH_SKILL_ROIS:
             return 0.0
 
+        last_cast = getattr(self, "_fish_skill_last_cast", {}).get(key)
+        if last_cast is None:
+            # A new fishing round starts with all three actions available.  Do
+            # not let background digits in the icon artwork block the first
+            # E -> W -> Q pass.  # [lw]
+            return 0.0
+
+        ocr_value = None
         try:
             from src.combat.BaseCombatTask import cd_regex, convert_cd
             from src.utils import game_filters as gf
@@ -213,23 +221,23 @@ class FishCatchingTaskMixin:
                 if 0 <= value <= self.FISH_SKILL_COOLDOWNS[key] + 2:
                     values.append(value)
             if values:
-                return min(values)
+                ocr_value = min(values)
         except Exception as exc:
             self.log_debug(f"捕鱼技能 {key} CD OCR failed: {exc}")
 
-        last_cast = getattr(self, "_fish_skill_last_cast", {}).get(key)
-        if last_cast is None:
-            return 0.0
-        return max(0.0, self.FISH_SKILL_COOLDOWNS[key] - (time.monotonic() - last_cast))
+        local_value = max(0.0, self.FISH_SKILL_COOLDOWNS[key] - (time.monotonic() - last_cast))
+        if ocr_value is None:
+            return local_value
+        return max(ocr_value, local_value)
 
     def next_fish_skill(self) -> str | None:
         """Return the next ready key while preserving E -> W -> Q order.  # [lw]"""
-        start = getattr(self, "_fish_skill_order_index", 0)
-        for offset in range(len(self.FISH_SKILL_ORDER)):
-            index = (start + offset) % len(self.FISH_SKILL_ORDER)
-            key = self.FISH_SKILL_ORDER[index]
-            if self.read_fish_skill_cooldown(key) <= 0.1:
-                self._fish_skill_order_index = (index + 1) % len(self.FISH_SKILL_ORDER)
+        cooldowns = {
+            key: self.read_fish_skill_cooldown(key) for key in self.FISH_SKILL_ORDER
+        }
+        for key in self.FISH_SKILL_ORDER:
+            if cooldowns[key] <= 0.1:
+                self.log_debug(f"捕鱼技能优先级选择 {key}, CD={cooldowns[key]:.1f}s")
                 return key
         return None
 
@@ -346,7 +354,6 @@ class FishCatchingTaskMixin:
         timer_missing_since = None
         start_button_since = None
         self._fish_skill_last_cast = {}
-        self._fish_skill_order_index = 0
 
         while time.monotonic() < deadline:
             self.next_frame()
