@@ -5,41 +5,49 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from ok import Box, WaitFailedException
+from ok import Box, CannotFindException, WaitFailedException
 
 from src.lw.dsd_farm_ext import DSDFarmExtMixin
 from src.tasks.DSDFarmTask import DSDFarmTask
 
 
 class _BaseClick:
-    """模拟上游方法: click_traval_button 假成功, 两个传送搜索都有确定性行为。"""
+    """模拟 RU 被保留的 _ru_* 原实现, 两个传送搜索都有确定性行为。"""
 
     def __init__(self):
-        self.base_click_calls = 0
         self.fallback_nearest_calls = 0
         self.fallback_top_calls = 0
 
-    def click_traval_button(self, travel_btn=None, raise_if_not_found=True):
-        self.base_click_calls += 1
-        return True
-
-    def teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10):
+    def _ru_teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10):
         self.fallback_nearest_calls += 1
         return True
 
-    def teleport_to_top_bonfire(self, box, threshold=0.7):
+    def _ru_teleport_to_top_bonfire(self, box, threshold=0.7):
         self.fallback_top_calls += 1
         return True
 
 
 class _ClickStub(DSDFarmExtMixin, _BaseClick):
-    def __init__(self, travel_btn):
+    def __init__(self, travel_btn_sequence):
         super().__init__()
-        self.travel_btn = travel_btn
+        self.travel_btn_results = list(travel_btn_sequence)
         self.warnings = []
+        self.clicked = []
 
     def find_traval_button(self):
-        return self.travel_btn
+        return self.travel_btn_results.pop(0) if self.travel_btn_results else None
+
+    def wait_until(self, condition, time_out=10, raise_if_not_found=False, **kwargs):
+        return condition()
+
+    def operate_click(self, box, **kwargs):
+        self.clicked.append(box)
+
+    def sleep(self, seconds):
+        pass
+
+    def monitor_and_sync_cursor(self, **kwargs):
+        pass
 
     def log_warning_gated(self, msg):
         self.warnings.append(msg)
@@ -47,15 +55,18 @@ class _ClickStub(DSDFarmExtMixin, _BaseClick):
 
 class TestClickTravalButton(unittest.TestCase):
     def test_returns_false_when_travel_button_still_visible(self):
-        task = _ClickStub(Box(0, 0, 10, 10, name="travel"))
+        task = _ClickStub([Box(0, 0, 10, 10, name="travel"), Box(0, 0, 10, 10, name="travel")])
         self.assertFalse(task.click_traval_button())
-        self.assertEqual(task.base_click_calls, 1)
         self.assertEqual(len(task.warnings), 1)
 
     def test_returns_true_when_travel_button_disappeared(self):
-        task = _ClickStub(None)
+        task = _ClickStub([Box(0, 0, 10, 10, name="travel"), None])
         self.assertTrue(task.click_traval_button())
-        self.assertEqual(task.base_click_calls, 1)
+        self.assertEqual(len(task.warnings), 0)
+
+    def test_returns_false_when_travel_button_never_appears(self):
+        task = _ClickStub([])
+        self.assertFalse(task.click_traval_button(raise_if_not_found=False))
         self.assertEqual(len(task.warnings), 0)
 
 
@@ -147,7 +158,6 @@ class _AnchorTeleportStub(DSDFarmExtMixin, _BaseClick):
         pass
 
     def click_traval_button(self, travel_btn=None, raise_if_not_found=True):
-        self.base_click_calls += 1
         return True
 
     def screenshot(self, name):
@@ -194,15 +204,33 @@ class TestTeleportViaAnchor(unittest.TestCase):
 
     def test_nearest_bonfire_wiring_uses_anchor(self):
         task = _WiringStub()
-        result = task.teleport_to_nearest_bonfire()
+        result = task.lw_teleport_to_nearest_bonfire(threshold=0.8, time_out=5)
         self.assertTrue(result)
         self.assertEqual(task.fallback_nearest_calls, 1)
 
     def test_top_bonfire_wiring_uses_anchor(self):
         task = _WiringStub()
-        result = task.teleport_to_top_bonfire(Box(0, 0, 100, 100))
+        result = task.lw_teleport_to_top_bonfire(Box(0, 0, 100, 100), threshold=0.9)
         self.assertTrue(result)
         self.assertEqual(task.fallback_top_calls, 1)
+
+
+class TestRuDelegation(unittest.TestCase):
+    def test_nearest_bonfire_public_method_delegates_to_lw(self):
+        task = object.__new__(DSDFarmTask)
+        calls = []
+        task.lw_teleport_to_nearest_bonfire = lambda **kwargs: (calls.append(kwargs) or "lw")
+        result = task.teleport_to_nearest_bonfire(threshold=0.8, time_out=5)
+        self.assertEqual(result, "lw")
+        self.assertEqual(calls, [{"threshold": 0.8, "time_out": 5}])
+
+    def test_top_bonfire_public_method_delegates_to_lw(self):
+        task = object.__new__(DSDFarmTask)
+        calls = []
+        task.lw_teleport_to_top_bonfire = lambda **kwargs: (calls.append(kwargs) or "lw")
+        result = task.teleport_to_top_bonfire(Box(0, 0, 10, 10), threshold=0.9)
+        self.assertEqual(result, "lw")
+        self.assertEqual(calls, [{"box": Box(0, 0, 10, 10), "threshold": 0.9}])
 
 
 class _WiringStub(DSDFarmExtMixin, _BaseClick):
@@ -381,6 +409,35 @@ class TestEnsureTeleportBounded(unittest.TestCase):
         self.assertFalse(result)
         self.assertEqual(calls[0], "spot")
         self.assertTrue(all(call == "origin" for call in calls[1:]))
+
+    def test_continues_after_fun_raises(self):
+        task = self._task()
+        calls = []
+
+        def fun():
+            calls.append(1)
+            if len(calls) == 1:
+                raise CannotFindException("boom")
+            return False
+
+        result = task.ensure_teleport(fun)
+        self.assertFalse(result)
+        self.assertEqual(len(calls), task.lw_max_teleport_attempts())
+
+    def test_continues_after_ensure_main_raises(self):
+        task = self._task()
+        calls = []
+        fail = [True]
+
+        def ensure_main(**kwargs):
+            if fail[0]:
+                fail[0] = False
+                raise CannotFindException("main unavailable")
+
+        task.ensure_main = ensure_main
+        result = task.ensure_teleport(lambda: (calls.append(1) or False))
+        self.assertFalse(result)
+        self.assertEqual(len(calls), task.lw_max_teleport_attempts())
 
 
 if __name__ == "__main__":

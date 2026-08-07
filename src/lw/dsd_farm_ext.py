@@ -30,6 +30,7 @@ class DSDFarmExtMixin(_TaskProxy):
     # 长挂机时地图状态可能短暂异常: 所有等待/重试都有界, 不无限等待也不无限走位
     LW_MAX_TELEPORT_ATTEMPTS = 4
     LW_INTERAC_RECOVER_WAIT = 30
+    LW_TRAVEL_BUTTON_STUCK_WAIT = 6
     LW_ANCHOR_THRESHOLD = 0.75
     LW_ANCHOR_CALIBRATE_SIZES = (260, 340, 420)
     LW_ANCHOR_FOLDER = os.path.join("screenshots", "dsd_farm_anchors")
@@ -39,25 +40,39 @@ class DSDFarmExtMixin(_TaskProxy):
         return self.LW_MAX_TELEPORT_ATTEMPTS
 
     def click_traval_button(self, travel_btn=None, raise_if_not_found=True):
-        """修正 RU 假成功: 传送按钮仍可见时说明传送没有完成, 返回 False。"""
-        result = super().click_traval_button(
-            travel_btn=travel_btn, raise_if_not_found=raise_if_not_found
-        )
-        if result and self.find_traval_button():
-            self.log_warning_gated("travel button still visible, teleport did not complete")
+        """修正 RU 假成功, 并用更短的卡死等待快速失败, 交给有界重试重新开图。"""
+        if not isinstance(travel_btn, Box):
+            travel_btn = self.wait_until(
+                self.find_traval_button,
+                time_out=10,
+                raise_if_not_found=raise_if_not_found,
+            )
+        if not travel_btn:
             return False
-        return result
+        self.sleep(0.1)
+        result = self.wait_until(
+            lambda: not self.find_traval_button(),
+            pre_action=lambda: self.operate_click(travel_btn, interval=2),
+            time_out=self.LW_TRAVEL_BUTTON_STUCK_WAIT,
+            settle_time=0.5,
+            raise_if_not_found=False,
+        )
+        self.monitor_and_sync_cursor()
+        self.sleep(0.1)
+        if not result:
+            self.log_warning_gated("travel button still visible, teleport did not complete")
+        return bool(result)
 
-    def teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10):
+    def lw_teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10):
         """优先用地图锚点识别目标篝火, 失败退回上游单点搜索(不随机试候选)。"""
-        search = super().teleport_to_nearest_bonfire
+        search = self._ru_teleport_to_nearest_bonfire
         return self._lw_teleport_via_anchor(
             lambda: search(threshold=threshold, time_out=time_out)
         )
 
-    def teleport_to_top_bonfire(self, box, threshold=0.7):
+    def lw_teleport_to_top_bonfire(self, box, threshold=0.7):
         """优先用地图锚点识别目标篝火, 失败退回上游框选搜索。"""
-        search = super().teleport_to_top_bonfire
+        search = self._ru_teleport_to_top_bonfire
         return self._lw_teleport_via_anchor(
             lambda: search(box=box, threshold=threshold)
         )

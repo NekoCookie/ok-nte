@@ -211,9 +211,15 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         attempts = 0  # [lw] 有界重试, 避免传送持续失败时无限走位
         max_attempts = self.lw_max_teleport_attempts()  # [lw]
         while attempts < max_attempts:  # [lw]
-            if fun():
-                return True
-            self.ensure_main()
+            try:  # [lw]
+                if fun():
+                    return True
+            except Exception as e:  # [lw] 单次传送异常(如主界面检测超时)不终止任务
+                self.log_warning_gated(f"teleport attempt failed: {e}")  # [lw]
+            try:  # [lw]
+                self.ensure_main()
+            except Exception as e:  # [lw]
+                self.log_warning_gated(f"ensure main failed during teleport retry: {e}")  # [lw]
             self.sleep(0.5)
             key = "w" if switch else "s"
             self.send_key(key, down_time=3)
@@ -284,6 +290,10 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         self.sleep(1)
 
     def teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10):
+        return self.lw_teleport_to_nearest_bonfire(threshold=threshold, time_out=time_out)  # [lw]
+
+    def _ru_teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10):
+        # [lw] 上游原实现保留为 _ru_*, 供 LW 锚点识别失败时回退
         self.ensure_main()
         self.open_map()
         to_find = [Labels.bonfire_teleport]
@@ -339,6 +349,10 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         return self.click_traval_button(raise_if_not_found=False)
 
     def teleport_to_top_bonfire(self, box: Box, threshold=0.7):
+        return self.lw_teleport_to_top_bonfire(box=box, threshold=threshold)  # [lw]
+
+    def _ru_teleport_to_top_bonfire(self, box: Box, threshold=0.7):
+        # [lw] 上游原实现保留为 _ru_*, 供 LW 锚点识别失败时回退
         self.ensure_main()
         self.open_map()
 
