@@ -7,6 +7,8 @@ import cv2
 import numpy as np
 from ok import Box, WaitFailedException
 
+from src.Labels import Labels
+
 
 class FishCatchingTaskMixin:
     """捕鱼小游戏的独立流程, 不改动 RU 自动钓鱼任务.  # [lw]"""
@@ -29,6 +31,7 @@ class FishCatchingTaskMixin:
     FISH_ROUND_TIMEOUT = 70
     FISH_IDLE_TIMEOUT = 3.0
     FISH_UI_CHECK_INTERVAL = 0.5
+    CATCH_RESULT_CLOSE_POS = (0.50, 0.90)
 
     @staticmethod
     def detect_fish_components(image: np.ndarray | None) -> list[tuple[int, int, int, int]]:
@@ -146,6 +149,28 @@ class FishCatchingTaskMixin:
                     return value
         return None
 
+    def has_catch_result(self) -> bool:
+        """Detect the fish-reward overlay shown after a round finishes.  # [lw]"""
+        return bool(self.find_one(Labels.fish_sucess))
+
+    def close_catch_result(self) -> bool:
+        """Close the reward overlay through its documented blank-area action.  # [lw]"""
+        if not self.has_catch_result():
+            return False
+        self.log_info("检测到捕鱼结算界面, 点击空白区域关闭")
+        self.operate_click(
+            *self.CATCH_RESULT_CLOSE_POS,
+            action_name="close_fish_catch_result",
+            interval=1,
+        )
+        self.wait_until(
+            lambda: not self.has_catch_result(),
+            time_out=8,
+            settle_time=0.2,
+            raise_if_not_found=False,
+        )
+        return True
+
     def ensure_catch_prepare(self):
         if self.find_catch_start_button():
             return True
@@ -206,6 +231,22 @@ class FishCatchingTaskMixin:
         while time.monotonic() < deadline:
             self.next_frame()
             now = time.monotonic()
+
+            if now >= next_ui_check:
+                next_ui_check = now + self.FISH_UI_CHECK_INTERVAL
+                if self.has_catch_result():
+                    self.close_catch_result()
+                    return True
+                timer = self.read_catch_timer()
+                if timer is not None:
+                    started = True
+                elif started and self.find_catch_start_button():
+                    self.log_info("捕鱼场景结束")
+                    return True
+                elif started and now - last_target_time >= self.FISH_IDLE_TIMEOUT:
+                    self.log_warning("连续未检测到鱼, 结束本轮捕鱼")
+                    return True
+
             targets = self.detect_fish_targets()
             if not started:
                 timer = self.read_catch_timer()
@@ -233,18 +274,6 @@ class FishCatchingTaskMixin:
                     self.sleep(self.FISH_CLICK_INTERVAL)
             else:
                 self.sleep(0.05)
-
-            if now >= next_ui_check:
-                next_ui_check = now + self.FISH_UI_CHECK_INTERVAL
-                timer = self.read_catch_timer()
-                if timer is not None:
-                    started = True
-                elif started and self.find_catch_start_button():
-                    self.log_info("捕鱼场景结束")
-                    return True
-                elif started and now - last_target_time >= self.FISH_IDLE_TIMEOUT:
-                    self.log_warning("连续未检测到鱼, 结束本轮捕鱼")
-                    return True
 
         self.log_warning(f"捕鱼场景超过 {timeout:.0f} 秒, 结束本轮")
         return True
