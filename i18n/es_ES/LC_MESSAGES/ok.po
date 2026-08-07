@@ -312,6 +312,12 @@ msgstr "Tiempo de espera de una ronda de captura"
 msgid "单轮捕鱼最长运行时间, 超时后结束本轮"
 msgstr "Tiempo máximo de una ronda de captura; finalizar la ronda al agotarse"
 
+msgid "捕鱼点击间隔"
+msgstr "Intervalo entre clics de captura"
+
+msgid "捕鱼目标之间的点击间隔, 最小 0.05 秒"
+msgstr "Retraso entre clics de captura; mínimo 0.05 segundos"
+
 msgid "角色中心"
 msgstr "Ctr. Pers."
 

@@ -326,6 +326,12 @@ msgstr "Tempo limite da rodada de captura"
 msgid "单轮捕鱼最长运行时间, 超时后结束本轮"
 msgstr "Tempo máximo de uma rodada; encerrar a rodada após o tempo limite"
 
+msgid "捕鱼点击间隔"
+msgstr "Intervalo entre cliques de captura"
+
+msgid "捕鱼目标之间的点击间隔, 最小 0.05 秒"
+msgstr "Atraso entre cliques de captura; mínimo de 0,05 segundo"
+
 msgid "角色中心"
 msgstr "Centro Pers."
 

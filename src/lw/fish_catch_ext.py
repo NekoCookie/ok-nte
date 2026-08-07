@@ -27,11 +27,22 @@ class FishCatchingTaskMixin:
     FISH_MAX_WIDTH = 240
     FISH_MAX_HEIGHT = 110
     FISH_DETECT_CLOSE_KERNEL = 7
-    FISH_CLICK_INTERVAL = 0.2
+    FISH_CLICK_INTERVAL = 0.5
     FISH_ROUND_TIMEOUT = 70
-    FISH_IDLE_TIMEOUT = 3.0
     FISH_UI_CHECK_INTERVAL = 0.5
+    FISH_TIMER_MISSING_TIMEOUT = 2.0
     CATCH_RESULT_CLOSE_POS = (0.50, 0.90)
+    BLIND_CLICK_POINTS = (
+        (0.392, 0.323),
+        (0.370, 0.290),
+        (0.415, 0.290),
+        (0.370, 0.350),
+        (0.415, 0.350),
+        (0.392, 0.275),
+        (0.392, 0.370),
+        (0.358, 0.323),
+        (0.426, 0.323),
+    )
 
     @staticmethod
     def detect_fish_components(image: np.ndarray | None) -> list[tuple[int, int, int, int]]:
@@ -123,12 +134,12 @@ class FishCatchingTaskMixin:
     def find_catch_start_button(self):
         box = self.box_of_screen(*self.START_BUTTON_ROI, name="fish_catch_start")
         texts = self.ocr(box=box, match=self.START_TEXT_RE)
-        return texts[0] if texts else self.find_catch_start_button_visual()
+        if texts:
+            return texts[0]
+        return self.find_one(Labels.fish_start, box=box) or self.find_catch_start_button_visual()
 
     def find_catch_start_button_visual(self):
         """Fallback for the light start button when OCR misses its text."""
-        if self.detect_fish_targets():
-            return None
         button = self.box_of_screen(*self.START_BUTTON_VISUAL_ROI, name="fish_catch_start_visual")
         image = button.crop_frame(self.frame)
         if image is None or image.size == 0:
@@ -151,7 +162,22 @@ class FishCatchingTaskMixin:
 
     def has_catch_result(self) -> bool:
         """Detect the fish-reward overlay shown after a round finishes.  # [lw]"""
-        return bool(self.find_one(Labels.fish_sucess))
+        return bool(self.find_one(Labels.fish_sucess) or self.find_one(Labels.reward_popup))
+
+    def fish_click_interval(self) -> float:
+        """Read the configured interval with a conservative lower bound.  # [lw]"""
+        key = getattr(self, "CONF_CLICK_INTERVAL", "捕鱼点击间隔")
+        try:
+            value = float(self.config.get(key, self.FISH_CLICK_INTERVAL))
+        except (AttributeError, TypeError, ValueError):
+            value = self.FISH_CLICK_INTERVAL
+        return max(0.05, value)
+
+    def next_blind_click_position(self) -> tuple[float, float]:
+        index = getattr(self, "_blind_click_index", 0)
+        position = self.BLIND_CLICK_POINTS[index % len(self.BLIND_CLICK_POINTS)]
+        self._blind_click_index = index + 1
+        return position
 
     def close_catch_result(self) -> bool:
         """Close the reward overlay through its documented blank-area action.  # [lw]"""
@@ -172,10 +198,10 @@ class FishCatchingTaskMixin:
         return True
 
     def ensure_catch_prepare(self):
+        if self.has_catch_result():
+            self.close_catch_result()
         if self.find_catch_start_button():
             return True
-        if self.detect_fish_targets():
-            return False
         self.enter_catch_from_interaction()
         self.wait_until(
             self.find_catch_start_button,
@@ -224,9 +250,11 @@ class FishCatchingTaskMixin:
         timeout = float(timeout or self.FISH_ROUND_TIMEOUT)
         deadline = time.monotonic() + timeout
         load_deadline = time.monotonic() + min(timeout, 10.0)
-        last_target_time = time.monotonic()
         next_ui_check = 0.0
+        timer_missing_since = None
         started = False
+        click_interval = self.fish_click_interval()
+        self._blind_click_index = 0
 
         while time.monotonic() < deadline:
             self.next_frame()
@@ -240,19 +268,24 @@ class FishCatchingTaskMixin:
                 timer = self.read_catch_timer()
                 if timer is not None:
                     started = True
+                    timer_missing_since = None
                 elif started and self.find_catch_start_button():
                     self.log_info("捕鱼场景结束")
                     return True
-                elif started and now - last_target_time >= self.FISH_IDLE_TIMEOUT:
-                    self.log_warning("连续未检测到鱼, 结束本轮捕鱼")
-                    return True
+                elif started:
+                    timer_missing_since = timer_missing_since or now
+                    if now - timer_missing_since >= self.FISH_TIMER_MISSING_TIMEOUT:
+                        self.log_warning("捕鱼计时器消失, 关闭结算并结束本轮")
+                        self.operate_click(
+                            *self.CATCH_RESULT_CLOSE_POS,
+                            action_name="close_fish_catch_result_fallback",
+                            interval=1,
+                        )
+                        return True
 
-            targets = self.detect_fish_targets()
             if not started:
                 timer = self.read_catch_timer()
                 if timer is not None:
-                    started = True
-                elif targets:
                     started = True
                 elif now < load_deadline:
                     self.sleep(0.1)
@@ -261,19 +294,12 @@ class FishCatchingTaskMixin:
                     self.log_warning("点击开始捕鱼后等待场景加载超时")
                     return False
 
-            if targets:
-                started = True
-                last_target_time = now
-                targets.sort(key=lambda target: target.width * target.height, reverse=True)
-                for target in targets:
-                    self.operate_click(
-                        target,
-                        down_time=0.01,
-                        action_name="fish_catch_target",
-                    )
-                    self.sleep(self.FISH_CLICK_INTERVAL)
-            else:
-                self.sleep(0.05)
+            self.operate_click(
+                *self.next_blind_click_position(),
+                down_time=0.01,
+                action_name="fish_catch_target",
+            )
+            self.sleep(click_interval)
 
         self.log_warning(f"捕鱼场景超过 {timeout:.0f} 秒, 结束本轮")
         return True

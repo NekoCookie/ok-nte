@@ -12,6 +12,26 @@ from src.tasks.FishCatchingTask import FishCatchingTask
 class TestFishCatchingVision(unittest.TestCase):
     def test_default_rounds_allow_infinite_mode(self):
         self.assertEqual(FishCatchingTask.DEFAULT_ROUNDS, 0)
+        self.assertEqual(FishCatchingTaskMixin.FISH_CLICK_INTERVAL, 0.5)
+
+    def test_blind_click_pattern_covers_center_region(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        task._blind_click_index = 0
+
+        points = [task.next_blind_click_position() for _ in task.BLIND_CLICK_POINTS]
+
+        self.assertEqual(len(points), len(set(points)))
+        self.assertTrue(all(0.35 <= x <= 0.43 and 0.27 <= y <= 0.38 for x, y in points))
+        self.assertEqual(task.next_blind_click_position(), points[0])
+
+    def test_click_interval_is_configurable_with_conservative_minimum(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        task.CONF_CLICK_INTERVAL = "捕鱼点击间隔"
+        task.config = {task.CONF_CLICK_INTERVAL: 0.8}
+        self.assertEqual(task.fish_click_interval(), 0.8)
+
+        task.config[task.CONF_CLICK_INTERVAL] = 0
+        self.assertEqual(task.fish_click_interval(), 0.05)
 
     def test_detects_separate_neon_fish_shapes(self):
         image = np.zeros((240, 400, 3), dtype=np.uint8)
