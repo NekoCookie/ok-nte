@@ -13,19 +13,9 @@ from src.tasks.FishCatchingTask import FishCatchingTask
 class TestFishCatchingVision(unittest.TestCase):
     def test_default_rounds_allow_infinite_mode(self):
         self.assertEqual(FishCatchingTask.DEFAULT_ROUNDS, 0)
-        self.assertEqual(FishCatchingTaskMixin.FISH_CLICK_INTERVAL, 0.5)
 
     def test_blind_click_position_matches_reference_box_center(self):
         self.assertEqual(FishCatchingTaskMixin.BLIND_CLICK_POSITION, (0.490, 0.404))
-
-    def test_click_interval_is_configurable_with_conservative_minimum(self):
-        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
-        task.CONF_CLICK_INTERVAL = "捕鱼点击间隔"
-        task.config = {task.CONF_CLICK_INTERVAL: 0.8}
-        self.assertEqual(task.fish_click_interval(), 0.8)
-
-        task.config[task.CONF_CLICK_INTERVAL] = 0
-        self.assertEqual(task.fish_click_interval(), 0.05)
 
     def test_skill_order_is_e_w_q(self):
         task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
@@ -83,6 +73,14 @@ class TestFishCatchingVision(unittest.TestCase):
         self.assertTrue(task.has_catch_result())
         task.find_one.assert_called_once_with(Labels.fish_sucess)
 
+    def test_result_overlay_is_detected_from_close_prompt_when_template_is_missing(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        task.find_one = mock.Mock(return_value=None)
+        task.box_of_screen = mock.Mock(return_value=Box(0, 0, 500, 500))
+        task.ocr = mock.Mock(return_value=[Box(120, 240, 160, 36, name="点击 空白区域 关闭")])
+
+        self.assertTrue(task.has_catch_result())
+
     def test_result_overlay_is_closed_by_clicking_blank_area(self):
         task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
         task.find_one = mock.Mock(return_value="result")
@@ -97,13 +95,13 @@ class TestFishCatchingVision(unittest.TestCase):
             0.503,
             0.887,
             action_name="close_fish_catch_result_fallback",
-            interval=1,
+            interval=0,
         )
         task.wait_until.assert_called_once()
 
     def test_result_overlay_clicks_close_prompt_when_ocr_finds_it(self):
         task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
-        prompt = Box(120, 240, 160, 36, name="close_prompt")
+        prompt = Box(120, 240, 160, 36, name="点击空白区域关闭")
         task.find_one = mock.Mock(return_value="result")
         task.box_of_screen = mock.Mock(return_value=Box(0, 0, 500, 500))
         task.ocr = mock.Mock(return_value=[prompt])
@@ -115,8 +113,21 @@ class TestFishCatchingVision(unittest.TestCase):
         task.operate_click.assert_called_once_with(
             prompt,
             action_name="close_fish_catch_result",
-            interval=1,
+            interval=0,
         )
+
+    def test_result_overlay_retries_when_first_close_does_not_clear_overlay(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        task.find_one = mock.Mock(return_value="result")
+        task.find_catch_result_close_prompt = mock.Mock(return_value=None)
+        task.operate_click = mock.Mock()
+        task.wait_until = mock.Mock(side_effect=[False, True])
+        task.sleep = mock.Mock()
+        task.log_info = mock.Mock()
+
+        self.assertTrue(task.close_catch_result())
+        self.assertEqual(task.operate_click.call_count, 2)
+        self.assertEqual(task.wait_until.call_count, 2)
 
 
 if __name__ == "__main__":

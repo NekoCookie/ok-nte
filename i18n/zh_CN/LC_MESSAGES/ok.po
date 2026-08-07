@@ -306,12 +306,6 @@ msgstr ""
 msgid "单轮捕鱼最长运行时间, 超时后结束本轮"
 msgstr ""
 
-msgid "捕鱼点击间隔"
-msgstr ""
-
-msgid "捕鱼目标之间的点击间隔, 最小 0.05 秒"
-msgstr ""
-
 msgid "角色中心"
 msgstr ""
 

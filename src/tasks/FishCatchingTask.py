@@ -10,7 +10,6 @@ class FishCatchingTask(FishCatchingTaskMixin, NTEOneTimeTask, BaseNTETask):  # [
     """自动捕鱼小游戏任务, 与自动钓鱼任务独立。  # [lw]"""
 
     CONF_TIMEOUT_SECONDS = "捕鱼单轮超时"
-    CONF_CLICK_INTERVAL = "捕鱼点击间隔"
     DEFAULT_ROUNDS = 0
 
     def __init__(self, *args, **kwargs):
@@ -24,13 +23,11 @@ class FishCatchingTask(FishCatchingTaskMixin, NTEOneTimeTask, BaseNTETask):  # [
         self.default_config.update(
             {
                 self.CONF_TIMEOUT_SECONDS: self.FISH_ROUND_TIMEOUT,
-                self.CONF_CLICK_INTERVAL: self.FISH_CLICK_INTERVAL,
             }
         )
         self.config_description.update(
             {
                 self.CONF_TIMEOUT_SECONDS: "单轮捕鱼最长运行时间, 超时后结束本轮",
-                self.CONF_CLICK_INTERVAL: "捕鱼目标之间的点击间隔, 最小 0.05 秒",
             }
         )
 
