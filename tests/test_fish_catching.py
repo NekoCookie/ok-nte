@@ -18,6 +18,39 @@ class TestFishCatchingVision(unittest.TestCase):
     def test_blind_click_position_matches_reference_box_center(self):
         self.assertEqual(FishCatchingTaskMixin.BLIND_CLICK_POSITION, (0.490, 0.404))
 
+    def test_catch_inventory_uses_panel_fish_icon_instead_of_q(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        task.find_one = mock.Mock(return_value=True)
+        task.operate_click = mock.Mock(return_value=True)
+        task.send_key = mock.Mock()
+        task.log_warning = mock.Mock()
+        task.log_info = mock.Mock()
+
+        def fake_wait_until(condition, pre_action=None, **kwargs):
+            if pre_action:
+                pre_action()
+            self.assertTrue(condition())
+            return True
+
+        task.wait_until = fake_wait_until
+
+        def fake_wait_click_confirm(action, **kwargs):
+            action()
+            return True
+
+        task.wait_click_confirm = fake_wait_click_confirm
+
+        self.assertTrue(task.sell_catch_fish())
+        task.send_key.assert_not_called()
+        self.assertEqual(
+            task.operate_click.call_args_list[0].args,
+            FishCatchingTaskMixin.CATCH_FISH_INVENTORY_BUTTON_POS,
+        )
+        self.assertEqual(
+            task.operate_click.call_args_list[0].kwargs,
+            {"interval": 2, "action_name": "fish_catch_open_sell"},
+        )
+
     def test_skill_order_is_e_w_q(self):
         task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
         cooldowns = {"e": 0.0, "w": 0.0, "q": 0.0}
@@ -91,6 +124,15 @@ class TestFishCatchingVision(unittest.TestCase):
         task.box_of_screen = mock.Mock(return_value=Box(0, 0, 500, 500))
         task.ocr = mock.Mock(
             return_value=[Box(120, 240, 160, 36, name="背包没有足够的空间， 请先清理背包")]
+        )
+
+        self.assertTrue(task.has_catch_bag_full())
+
+    def test_bag_full_notice_tolerates_missing_punctuation(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        task.box_of_screen = mock.Mock(return_value=Box(0, 0, 500, 500))
+        task.ocr = mock.Mock(
+            return_value=[Box(120, 240, 160, 36, name="背包没有足够的空间请先清理背包")]
         )
 
         self.assertTrue(task.has_catch_bag_full())

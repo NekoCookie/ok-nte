@@ -18,7 +18,7 @@ class FishCatchingTaskMixin:
     START_BUTTON_VISUAL_ROI = (0.72, 0.84, 0.98, 0.93)
     TIMER_ROI = (0.40, 0.025, 0.60, 0.105)
     CATCH_RESULT_CLOSE_TEXT_ROI = (0.25, 0.78, 0.75, 0.94)
-    CATCH_BAG_FULL_TEXT_ROI = (0.20, 0.33, 0.80, 0.48)
+    CATCH_BAG_FULL_TEXT_ROI = (0.10, 0.25, 0.90, 0.60)
     FISH_SKILL_ROIS = {
         "q": (0.025, 0.80, 0.105, 0.96),
         "w": (0.105, 0.80, 0.185, 0.96),
@@ -48,6 +48,9 @@ class FishCatchingTaskMixin:
     CATCH_RESULT_CLOSE_ATTEMPTS = 5
     CATCH_RESULT_CLOSE_RETRY_DELAY = 0.4
     CATCH_RESULT_CLOSE_FALLBACK_POS = (0.503, 0.887)
+    # The catch preparation panel has no keyboard shortcut for the fish
+    # inventory.  Its fish icon is immediately left of the start button.  # [lw]
+    CATCH_FISH_INVENTORY_BUTTON_POS = (0.681, 0.870)
     BLIND_CLICK_POSITION = (0.490, 0.404)
 
     @staticmethod
@@ -173,7 +176,11 @@ class FishCatchingTaskMixin:
             return False
         texts = sorted(texts, key=lambda text: (text.y, text.x))
         normalized = "".join(re.sub(r"\s+", "", text.name or "") for text in texts)
-        return bool(self.CATCH_BAG_FULL_TEXT_RE.search(normalized))
+        if self.CATCH_BAG_FULL_TEXT_RE.search(normalized):
+            return True
+        # OCR may drop punctuation or one character in the long banner.  The
+        # four stable keywords still distinguish it from ordinary UI text.  # [lw]
+        return all(keyword in normalized for keyword in ("背包", "足够", "空间", "清理"))
 
     def has_catch_result(self) -> bool:
         """Detect the fish-reward overlay shown after a round finishes.  # [lw]"""
@@ -310,7 +317,11 @@ class FishCatchingTaskMixin:
         """Sell the catch using the same fish-hold flow as automatic fishing.  # [lw]"""
         fish_sell = self.wait_until(
             lambda: self.find_one(Labels.fish_sell),
-            pre_action=lambda: self.send_key("q", interval=2, action_name="fish_catch_open_sell"),
+            pre_action=lambda: self.operate_click(
+                *self.CATCH_FISH_INVENTORY_BUTTON_POS,
+                interval=2,
+                action_name="fish_catch_open_sell",
+            ),
             time_out=10,
             settle_time=0.5,
             raise_if_not_found=False,
