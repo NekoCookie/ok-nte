@@ -18,6 +18,29 @@ class TestFishCatchingVision(unittest.TestCase):
     def test_blind_click_position_matches_reference_box_center(self):
         self.assertEqual(FishCatchingTaskMixin.BLIND_CLICK_POSITION, (0.490, 0.404))
 
+    def test_start_visual_rejects_market_quick_submit_button(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        icon = mock.Mock()
+        icon.crop_frame.return_value = np.full((20, 20, 3), 230, dtype=np.uint8)
+        button = mock.Mock()
+        button.crop_frame.return_value = np.full((20, 20, 3), 230, dtype=np.uint8)
+        task.box_of_screen = mock.Mock(side_effect=[icon, button])
+        task.frame = np.zeros((20, 20, 3), dtype=np.uint8)
+
+        self.assertIsNone(task.find_catch_start_button_visual())
+        button.crop_frame.assert_not_called()
+
+    def test_start_visual_accepts_catch_panel_fish_icon(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        icon = mock.Mock()
+        icon.crop_frame.return_value = np.zeros((20, 20, 3), dtype=np.uint8)
+        button = mock.Mock()
+        button.crop_frame.return_value = np.full((20, 20, 3), 230, dtype=np.uint8)
+        task.box_of_screen = mock.Mock(side_effect=[icon, button])
+        task.frame = np.zeros((20, 20, 3), dtype=np.uint8)
+
+        self.assertIs(task.find_catch_start_button_visual(), button)
+
     def test_catch_inventory_uses_panel_fish_icon_instead_of_q(self):
         task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
         task.find_one = mock.Mock(return_value=True)

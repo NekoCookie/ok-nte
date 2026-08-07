@@ -19,6 +19,7 @@ class FishCatchingTaskMixin:
     TIMER_ROI = (0.40, 0.025, 0.60, 0.105)
     CATCH_RESULT_CLOSE_TEXT_ROI = (0.25, 0.78, 0.75, 0.94)
     CATCH_BAG_FULL_TEXT_ROI = (0.10, 0.25, 0.90, 0.60)
+    CATCH_FISH_INVENTORY_ICON_ROI = (0.65, 0.80, 0.72, 0.95)
     FISH_SKILL_ROIS = {
         "q": (0.025, 0.80, 0.105, 0.96),
         "w": (0.105, 0.80, 0.185, 0.96),
@@ -149,6 +150,17 @@ class FishCatchingTaskMixin:
 
     def find_catch_start_button_visual(self):
         """Fallback for the light start button when OCR misses its text."""
+        icon = self.box_of_screen(
+            *self.CATCH_FISH_INVENTORY_ICON_ROI,
+            name="fish_catch_inventory_icon",
+        )
+        icon_image = icon.crop_frame(self.frame)
+        if icon_image is None or icon_image.size == 0:
+            return None
+        icon_gray = cv2.cvtColor(icon_image, cv2.COLOR_BGR2GRAY)
+        if float(np.mean(icon_gray < 100)) < 0.55:
+            return None
+
         button = self.box_of_screen(*self.START_BUTTON_VISUAL_ROI, name="fish_catch_start_visual")
         image = button.crop_frame(self.frame)
         if image is None or image.size == 0:
@@ -434,8 +446,10 @@ class FishCatchingTaskMixin:
             if now >= next_ui_check:
                 next_ui_check = now + self.FISH_UI_CHECK_INTERVAL
                 if self.has_catch_bag_full():
-                    self.handle_catch_bag_full()
-                    return True
+                    if self.handle_catch_bag_full():
+                        return True
+                    self.log_warning("捕鱼清理鱼获失败, 停止本轮并等待人工处理")
+                    return False
                 if self.has_catch_result():
                     self.close_catch_result()
                     return True
