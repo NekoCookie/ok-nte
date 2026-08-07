@@ -5,6 +5,7 @@ from qfluentwidgets import FluentIcon
 
 from src.combat.BaseCombatTask import BaseCombatTask
 from src.Labels import Labels
+from src.lw.dsd_farm_ext import DSDFarmExtMixin  # [lw]
 from src.tasks.BaseNTETask import Box
 from src.tasks.NTEOneTimeTask import NTEOneTimeTask
 
@@ -40,7 +41,7 @@ EN_INST = (
 )
 
 
-class DSDFarmTask(NTEOneTimeTask, BaseCombatTask):
+class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插入用户扩展基类
     CONF_LOCATION = "位置"
     CONF_USE_ULT = "使用终结技"
     CONF_DONT_SWITCH = "战斗时不切人"
@@ -103,11 +104,7 @@ class DSDFarmTask(NTEOneTimeTask, BaseCombatTask):
         round_index = 1
         while self.should_run_round(round_index, rounds):
             self.info_set("轮次", self.rounds_info_text(round_index, rounds))
-            self.wait_until(
-                self.find_interac,
-                time_out=10,
-                raise_if_not_found=True,
-            )
+            self.lw_wait_interac(time_out=10)  # [lw] 传送后等待交互提示, 缺失时自动恢复
             self.wait_until(
                 lambda: not self.is_in_team(),
                 pre_action=lambda: self.send_interac(handle_claim=False),
@@ -210,7 +207,9 @@ class DSDFarmTask(NTEOneTimeTask, BaseCombatTask):
             origin_fun = fun
             fun = self.teleport_on_spot
         switch = False
-        while True:
+        attempts = 0  # [lw] 有界重试, 避免传送持续失败时无限走位
+        max_attempts = self.lw_max_teleport_attempts()  # [lw]
+        while attempts < max_attempts:  # [lw]
             if fun():
                 return True
             self.ensure_main()
@@ -218,8 +217,11 @@ class DSDFarmTask(NTEOneTimeTask, BaseCombatTask):
             key = "w" if switch else "s"
             self.send_key(key, down_time=3)
             switch = not switch
+            attempts += 1  # [lw]
             if origin_fun:
                 fun = origin_fun
+        self.log_warning_gated("传送失败超过上限, 交由下一轮恢复")  # [lw]
+        return False  # [lw]
 
     def deside_combat_action(self):
         def action(*args, **kwargs):
