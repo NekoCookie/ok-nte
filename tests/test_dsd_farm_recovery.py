@@ -1,5 +1,9 @@
+import os
+import tempfile
 import unittest
 from types import SimpleNamespace
+
+import numpy as np
 
 from ok import Box, WaitFailedException
 
@@ -8,13 +12,23 @@ from src.tasks.DSDFarmTask import DSDFarmTask
 
 
 class _BaseClick:
-    """模拟上游 click_traval_button 的假成功行为: 无论按钮是否消失都返回 True。"""
+    """模拟上游方法: click_traval_button 假成功, 两个传送搜索都有确定性行为。"""
 
     def __init__(self):
         self.base_click_calls = 0
+        self.fallback_nearest_calls = 0
+        self.fallback_top_calls = 0
 
     def click_traval_button(self, travel_btn=None, raise_if_not_found=True):
         self.base_click_calls += 1
+        return True
+
+    def teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10):
+        self.fallback_nearest_calls += 1
+        return True
+
+    def teleport_to_top_bonfire(self, box, threshold=0.7):
+        self.fallback_top_calls += 1
         return True
 
 
@@ -97,24 +111,125 @@ class TestLwWaitInterac(unittest.TestCase):
         self.assertEqual(task.screenshots, ["dsd_farm_interac_missing"])
 
 
-class _TeleportStub(DSDFarmExtMixin, _BaseClick):
-    def __init__(self, teleports, travel_btn_results):
+class _AnchorTeleportStub(DSDFarmExtMixin, _BaseClick):
+    def __init__(self, tmp_dir, anchor_exists=True, match=None):
         super().__init__()
-        self.teleports = teleports
-        self.travel_btn_results = list(travel_btn_results)
-        self.clicked = []
+        self._anchor_path = os.path.join(tmp_dir, "anchor.png")
+        if anchor_exists:
+            with open(self._anchor_path, "w", encoding="utf-8") as f:
+                f.write("x")
+        self._match = match
         self.ensure_main_calls = 0
         self.open_map_calls = 0
-        self.infos = []
+        self.clicked = []
+        self.fallback_calls = 0
+        self.screenshots = []
         self.warnings = []
+        self.infos = []
+        self._lw_anchor_failed = False
 
-    @property
-    def main_viewport(self):
-        return object()
+    def _lw_anchor_path(self):
+        return self._anchor_path
 
-    @property
-    def default_box(self):
-        return SimpleNamespace(center=Box(0, 0, 1, 1))
+    def _lw_find_bonfire_anchor(self, path):
+        return self._match
+
+    def ensure_main(self, **kwargs):
+        self.ensure_main_calls += 1
+
+    def open_map(self):
+        self.open_map_calls += 1
+
+    def operate_click(self, box, **kwargs):
+        self.clicked.append(box)
+
+    def sleep(self, seconds):
+        pass
+
+    def click_traval_button(self, travel_btn=None, raise_if_not_found=True):
+        self.base_click_calls += 1
+        return True
+
+    def screenshot(self, name):
+        self.screenshots.append(name)
+
+    def log_info(self, msg):
+        self.infos.append(msg)
+
+    def log_warning_gated(self, msg):
+        self.warnings.append(msg)
+
+    def fallback(self):
+        self.fallback_calls += 1
+        return True
+
+
+class TestTeleportViaAnchor(unittest.TestCase):
+    def test_clicks_anchor_when_found(self):
+        match = Box(100, 100, 50, 50, name="bonfire_anchor")
+        with tempfile.TemporaryDirectory() as tmp:
+            task = _AnchorTeleportStub(tmp, match=match)
+            self.assertTrue(task._lw_teleport_via_anchor(task.fallback))
+            self.assertEqual(task.clicked, [match])
+            self.assertEqual(task.fallback_calls, 0)
+            self.assertEqual(task.open_map_calls, 1)
+            self.assertEqual(task.screenshots, [])
+
+    def test_missing_anchor_falls_back_immediately(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            task = _AnchorTeleportStub(tmp, anchor_exists=False)
+            self.assertTrue(task._lw_teleport_via_anchor(task.fallback))
+            self.assertEqual(task.fallback_calls, 1)
+            self.assertEqual(task.open_map_calls, 0)
+            self.assertEqual(task.screenshots, [])
+
+    def test_anchor_not_found_reopens_map_then_falls_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            task = _AnchorTeleportStub(tmp, match=None)
+            self.assertTrue(task._lw_teleport_via_anchor(task.fallback))
+            self.assertEqual(task.open_map_calls, 2)
+            self.assertEqual(task.fallback_calls, 1)
+            self.assertEqual(task.screenshots, ["dsd_farm_anchor_not_found"])
+            self.assertTrue(task._lw_anchor_failed)
+
+    def test_nearest_bonfire_wiring_uses_anchor(self):
+        task = _WiringStub()
+        result = task.teleport_to_nearest_bonfire()
+        self.assertTrue(result)
+        self.assertEqual(task.fallback_nearest_calls, 1)
+
+    def test_top_bonfire_wiring_uses_anchor(self):
+        task = _WiringStub()
+        result = task.teleport_to_top_bonfire(Box(0, 0, 100, 100))
+        self.assertTrue(result)
+        self.assertEqual(task.fallback_top_calls, 1)
+
+
+class _WiringStub(DSDFarmExtMixin, _BaseClick):
+    def __init__(self):
+        super().__init__()
+        self.via_calls = []
+
+    def _lw_teleport_via_anchor(self, fallback):
+        self.via_calls.append(fallback)
+        return fallback()
+
+
+class _CalibStub(DSDFarmExtMixin, _BaseClick):
+    def __init__(self, tmp_dir, icon=None, unique=True):
+        super().__init__()
+        self.tmp_dir = tmp_dir
+        self.icon = icon
+        self.unique = unique
+        self.ensure_main_calls = 0
+        self.open_map_calls = 0
+        self.warnings = []
+        self.infos = []
+        self._lw_anchor_failed = False
+        self.frame = np.zeros((200, 300, 3), dtype=np.uint8)
+
+    def _lw_anchor_path(self):
+        return os.path.join(self.tmp_dir, "anchor.png")
 
     def ensure_main(self, **kwargs):
         self.ensure_main_calls += 1
@@ -123,19 +238,18 @@ class _TeleportStub(DSDFarmExtMixin, _BaseClick):
         self.open_map_calls += 1
 
     def find_feature(self, label, box=None, threshold=0.7):
-        return list(self.teleports)
+        return [self.icon] if self.icon else []
 
-    def wait_until(self, condition, time_out=10, raise_if_not_found=False, **kwargs):
-        return condition()
+    @property
+    def main_viewport(self):
+        return Box(0, 0, 300, 200)
 
-    def operate_click(self, box, **kwargs):
-        self.clicked.append(box)
+    @property
+    def default_box(self):
+        return SimpleNamespace(center=Box(0, 0, 1, 1))
 
-    def sleep(self, seconds):
-        pass
-
-    def find_traval_button(self):
-        return self.travel_btn_results.pop(0) if self.travel_btn_results else None
+    def _lw_anchor_is_unique(self, frame, crop):
+        return self.unique
 
     def log_info(self, msg):
         self.infos.append(msg)
@@ -144,24 +258,71 @@ class _TeleportStub(DSDFarmExtMixin, _BaseClick):
         self.warnings.append(msg)
 
 
-class TestTeleportCandidates(unittest.TestCase):
-    def test_tries_next_candidate_when_no_travel_button(self):
-        first = Box(0, 0, 10, 10, name="cand_1")
-        second = Box(50, 50, 10, 10, name="cand_2")
-        task = _TeleportStub(
-            [second, first], [None, Box(0, 0, 1, 1, name="travel"), None]
-        )
-        self.assertTrue(task.teleport_to_nearest_bonfire())
-        self.assertEqual([box.name for box in task.clicked], ["cand_1", "cand_2"])
-        self.assertEqual(task.base_click_calls, 1)
+class TestAnchorCalibration(unittest.TestCase):
+    def test_skips_when_anchor_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "anchor.png")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("x")
+            task = _CalibStub(tmp, icon=Box(150, 100, 10, 10))
+            task.lw_ensure_bonfire_anchor()
+            self.assertEqual(task.open_map_calls, 0)
 
-    def test_returns_false_when_all_candidates_fail(self):
-        first = Box(0, 0, 10, 10, name="cand_1")
-        second = Box(50, 50, 10, 10, name="cand_2")
-        task = _TeleportStub([second, first], [None, None])
-        self.assertFalse(task.teleport_to_nearest_bonfire())
-        self.assertEqual([box.name for box in task.clicked], ["cand_1", "cand_2"])
-        self.assertEqual(task.base_click_calls, 0)
+    def test_recalibrates_after_anchor_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "anchor.png")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("x")
+            task = _CalibStub(tmp, icon=Box(150, 100, 10, 10))
+            task._lw_anchor_failed = True
+            task.lw_ensure_bonfire_anchor()
+            self.assertEqual(task.open_map_calls, 1)
+            self.assertTrue(os.path.exists(path))
+            self.assertTrue(os.path.exists(path + ".json"))
+            self.assertFalse(task._lw_anchor_failed)
+
+    def test_captures_unique_anchor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            task = _CalibStub(tmp, icon=Box(150, 100, 10, 10))
+            task.lw_ensure_bonfire_anchor()
+            path = os.path.join(tmp, "anchor.png")
+            self.assertTrue(os.path.exists(path))
+            self.assertTrue(os.path.exists(path + ".json"))
+            self.assertEqual(task.open_map_calls, 1)
+            self.assertEqual(task.ensure_main_calls, 2)
+            self.assertFalse(task._lw_anchor_failed)
+
+    def test_warns_when_no_icon(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            task = _CalibStub(tmp, icon=None)
+            task.lw_ensure_bonfire_anchor()
+            self.assertFalse(os.path.exists(os.path.join(tmp, "anchor.png")))
+            self.assertTrue(any("no bonfire icon" in w for w in task.warnings))
+
+
+class _PathStub(DSDFarmExtMixin, _BaseClick):
+    def __init__(self, location):
+        super().__init__()
+        self.CONF_LOCATION = "位置"
+        self.locations = ["火山", "高塔", "残丝"]
+        self._location = location
+
+    @property
+    def config(self):
+        return SimpleNamespace(get=lambda key, default=None: self._location)
+
+
+class TestAnchorPaths(unittest.TestCase):
+    def test_anchor_paths_are_separate_per_location(self):
+        paths = [_PathStub(loc)._lw_anchor_path() for loc in ("火山", "高塔", "残丝")]
+        self.assertEqual(len(set(paths)), 3)
+        self.assertTrue("volcano_bottom_left" in paths[0])
+        self.assertTrue("dragon_tower" in paths[1])
+        self.assertTrue("silken_alley" in paths[2])
+
+    def test_unknown_location_gets_fallback_slug(self):
+        path = _PathStub("未知")._lw_anchor_path()
+        self.assertTrue(path.endswith("bonfire_anchor_unknown.png"))
 
 
 class _LocationStub(DSDFarmExtMixin, _BaseClick):

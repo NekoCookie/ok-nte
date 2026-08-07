@@ -115,6 +115,7 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
             self.operate_click(0.057, 0.218)
             self.sleep(0.5)
             self.ensure_main()
+            self.lw_ensure_bonfire_anchor()  # [lw] 角色在目标篝火旁时校准该地点地图锚点
             if self.do_teleport_on_spot:
                 self.sleep(0.5)
                 self.teleport_on_spot()
