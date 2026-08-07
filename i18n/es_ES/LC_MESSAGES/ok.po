@@ -300,6 +300,18 @@ msgstr "Objetivo automático"
 msgid "自动钓鱼"
 msgstr "Pesca automática"
 
+msgid "自动捕鱼"
+msgstr "Captura automática de peces"
+
+msgid "自动点击捕鱼场景中的彩色鱼"
+msgstr "Hacer clic automáticamente en los peces de colores de la escena de captura"
+
+msgid "捕鱼单轮超时"
+msgstr "Tiempo de espera de una ronda de captura"
+
+msgid "单轮捕鱼最长运行时间, 超时后结束本轮"
+msgstr "Tiempo máximo de una ronda de captura; finalizar la ronda al agotarse"
+
 msgid "角色中心"
 msgstr "Ctr. Pers."
 

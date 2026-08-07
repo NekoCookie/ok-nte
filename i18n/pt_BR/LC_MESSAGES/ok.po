@@ -314,6 +314,18 @@ msgstr "Alvo Automático"
 msgid "自动钓鱼"
 msgstr "Pesca Automática"
 
+msgid "自动捕鱼"
+msgstr "Captura Automática de Peixes"
+
+msgid "自动点击捕鱼场景中的彩色鱼"
+msgstr "Clicar automaticamente nos peixes coloridos da cena de captura"
+
+msgid "捕鱼单轮超时"
+msgstr "Tempo limite da rodada de captura"
+
+msgid "单轮捕鱼最长运行时间, 超时后结束本轮"
+msgstr "Tempo máximo de uma rodada; encerrar a rodada após o tempo limite"
+
 msgid "角色中心"
 msgstr "Centro Pers."
 

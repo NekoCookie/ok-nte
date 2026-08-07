@@ -294,6 +294,18 @@ msgstr ""
 msgid "自动钓鱼"
 msgstr ""
 
+msgid "自动捕鱼"
+msgstr ""
+
+msgid "自动点击捕鱼场景中的彩色鱼"
+msgstr ""
+
+msgid "捕鱼单轮超时"
+msgstr ""
+
+msgid "单轮捕鱼最长运行时间, 超时后结束本轮"
+msgstr ""
+
 msgid "角色中心"
 msgstr ""
 

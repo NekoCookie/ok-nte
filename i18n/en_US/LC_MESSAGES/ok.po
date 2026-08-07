@@ -300,6 +300,18 @@ msgstr "Auto Target"
 msgid "自动钓鱼"
 msgstr "Auto Fishing"
 
+msgid "自动捕鱼"
+msgstr "Auto Fish Catching"
+
+msgid "自动点击捕鱼场景中的彩色鱼"
+msgstr "Automatically click colorful fish in the fish-catching scene"
+
+msgid "捕鱼单轮超时"
+msgstr "Fish-catching round timeout"
+
+msgid "单轮捕鱼最长运行时间, 超时后结束本轮"
+msgstr "Maximum time for one fish-catching round; end the round after timeout"
+
 msgid "角色中心"
 msgstr "Char Ctr"
 

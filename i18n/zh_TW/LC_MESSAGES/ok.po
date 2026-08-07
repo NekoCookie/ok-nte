@@ -300,6 +300,18 @@ msgstr "自動目標"
 msgid "自动钓鱼"
 msgstr "自動釣魚"
 
+msgid "自动捕鱼"
+msgstr "自動捕魚"
+
+msgid "自动点击捕鱼场景中的彩色鱼"
+msgstr "自動點擊捕魚場景中的彩色魚"
+
+msgid "捕鱼单轮超时"
+msgstr "捕魚單輪逾時"
+
+msgid "单轮捕鱼最长运行时间, 超时后结束本轮"
+msgstr "單輪捕魚最長執行時間, 逾時後結束本輪"
+
 msgid "角色中心"
 msgstr "角色中心"
 
