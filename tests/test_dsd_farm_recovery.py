@@ -20,8 +20,11 @@ class _BaseClick:
         self.fallback_nearest_calls = 0
         self.fallback_top_calls = 0
 
-    def _ru_teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10, map_is_open=False):
+    def _ru_teleport_to_nearest_bonfire(
+        self, threshold=0.7, time_out=10, map_is_open=False, target_selector=None
+    ):
         self.fallback_nearest_calls += 1
+        self.fallback_nearest_selector = target_selector
         return True
 
     def _ru_teleport_to_top_bonfire(self, box, threshold=0.7, map_is_open=False):
@@ -235,6 +238,9 @@ class TestTeleportViaAnchor(unittest.TestCase):
         result = task.lw_teleport_to_nearest_bonfire(threshold=0.8, time_out=5)
         self.assertTrue(result)
         self.assertEqual(task.fallback_nearest_calls, 1)
+        left = Box(10, 100, 10, 10)
+        right = Box(20, 90, 10, 10)
+        self.assertEqual(task.fallback_nearest_selector([right, left]), left)
 
     def test_top_bonfire_wiring_uses_anchor(self):
         task = _WiringStub()
@@ -395,6 +401,26 @@ class TestAnchorCalibration(unittest.TestCase):
             task.lw_ensure_bonfire_anchor()
 
             self.assertEqual(task.crop_center, (205, 40))
+
+    def test_volcano_calibration_uses_map_marker_and_removes_it_from_anchor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            task = _CalibStub(tmp, icon=Box(200, 100, 10, 10))
+            task._location = "火山"
+            task.frame[95:110, 40:55] = (253, 221, 116)
+            task.lw_ensure_bonfire_anchor()
+
+            self.assertEqual(task.crop_center, (47, 102))
+
+
+class TestMapMarkerMask(unittest.TestCase):
+    def test_removes_cyan_map_marker_from_anchor_image(self):
+        task = object.__new__(DSDFarmExtMixin)
+        image = np.full((40, 40, 3), 50, dtype=np.uint8)
+        image[10:25, 10:25] = (253, 221, 116)
+
+        cleaned = task._lw_remove_map_player_marker(image)
+
+        self.assertFalse(np.any(task._lw_map_player_marker_mask(cleaned)))
 
 
 class _PathStub(DSDFarmExtMixin, _BaseClick):

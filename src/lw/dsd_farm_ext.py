@@ -33,7 +33,11 @@ class DSDFarmExtMixin(_TaskProxy):
     LW_TRAVEL_BUTTON_STUCK_WAIT = 6
     LW_ANCHOR_THRESHOLD = 0.90
     LW_ANCHOR_PEAK_MARGIN = 0.03
-    LW_ANCHOR_VERSION = 2
+    LW_ANCHOR_VERSION = 3
+    LW_MAP_MARKER_HSV_LOWER = np.array((85, 80, 80), dtype=np.uint8)
+    LW_MAP_MARKER_HSV_UPPER = np.array((110, 255, 255), dtype=np.uint8)
+    LW_MAP_MARKER_MIN_AREA = 20
+    LW_MAP_MARKER_MAX_AREA = 300
     LW_ANCHOR_CALIBRATE_SIZES = (260, 340, 420)
     LW_ANCHOR_FOLDER = os.path.join("screenshots", "dsd_farm_anchors")
 
@@ -77,7 +81,10 @@ class DSDFarmExtMixin(_TaskProxy):
         search = self._ru_teleport_to_nearest_bonfire
         return self._lw_teleport_via_anchor(
             lambda map_is_open=False: search(
-                threshold=threshold, time_out=time_out, map_is_open=map_is_open
+                threshold=threshold,
+                time_out=time_out,
+                map_is_open=map_is_open,
+                target_selector=self._lw_select_volcano_bonfire,
             )
         )
 
@@ -99,22 +106,25 @@ class DSDFarmExtMixin(_TaskProxy):
             self.ensure_main()
             self.open_map()
             frame = self.frame
-            icons = self.find_feature(
-                Labels.bonfire_teleport,
-                box=self._lw_anchor_calibration_box(),
-                threshold=0.7,
-            )
-            if not icons:
+            anchor_frame = self._lw_remove_map_player_marker(frame)
+            calibration_box = self._lw_anchor_calibration_box()
+            icons = self.find_feature(Labels.bonfire_teleport, box=calibration_box, threshold=0.7)
+            marker_center = self._lw_find_map_player_marker(frame, calibration_box)
+            if not icons and marker_center is None:
                 self.log_warning_gated("no bonfire icon for anchor calibration")
                 return
-            icon = self._lw_select_anchor_icon(icons)
-            cx = icon.x + icon.width // 2
-            cy = icon.y + icon.height // 2
+            if marker_center is not None and self._lw_is_volcano_location():
+                cx, cy = marker_center
+                self.log_info("calibrating volcano anchor from current map marker")
+            else:
+                icon = self._lw_select_anchor_icon(icons)
+                cx = icon.x + icon.width // 2
+                cy = icon.y + icon.height // 2
             for size in self.LW_ANCHOR_CALIBRATE_SIZES:
-                crop = self._lw_crop_centered(frame, cx, cy, size)
+                crop = self._lw_crop_centered(anchor_frame, cx, cy, size)
                 if crop is None:
                     continue
-                if not self._lw_anchor_is_unique(frame, crop):
+                if not self._lw_anchor_is_unique(anchor_frame, crop):
                     continue
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 cv2.imwrite(path, crop)
@@ -218,10 +228,17 @@ class DSDFarmExtMixin(_TaskProxy):
 
     def _lw_select_anchor_icon(self, icons):
         """Choose the known target icon instead of the map-center nearest icon."""
-        location = self.config.get(self.CONF_LOCATION, self.locations[0])
-        if location == self.locations[0]:
-            return min(icons, key=lambda icon: icon.center_distance(self.default_box.center))
+        if self._lw_is_volcano_location():
+            return self._lw_select_volcano_bonfire(icons)
         return min(icons, key=lambda icon: icon.y)
+
+    def _lw_is_volcano_location(self):
+        return self.config.get(self.CONF_LOCATION, self.locations[0]) == self.locations[0]
+
+    @staticmethod
+    def _lw_select_volcano_bonfire(icons):
+        """The configured volcano target is the leftmost bonfire on the bottom layer."""
+        return min(icons, key=lambda icon: (icon.x, -icon.y))
 
     def _lw_load_anchor(self, path):
         anchor = cv2.imread(path, cv2.IMREAD_COLOR)
@@ -252,7 +269,7 @@ class DSDFarmExtMixin(_TaskProxy):
             return None
         frame = self.frame
         view_box = self.main_viewport
-        view = view_box.crop_frame(frame)
+        view = self._lw_remove_map_player_marker(view_box.crop_frame(frame))
         if view.shape[0] < anchor.shape[0] or view.shape[1] < anchor.shape[1]:
             return None
         result = cv2.matchTemplate(view, anchor, cv2.TM_CCOEFF_NORMED)
@@ -270,6 +287,43 @@ class DSDFarmExtMixin(_TaskProxy):
             max_val,
             "bonfire_anchor",
         )
+
+    def _lw_find_map_player_marker(self, frame, box):
+        """Locate the cyan map marker that can cover the volcano target icon."""
+        view = box.crop_frame(frame)
+        if view is None or view.size == 0:
+            return None
+        mask = self._lw_map_player_marker_mask(view)
+        _, _, stats, centers = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        candidates = []
+        for x, y, width, height, area in stats[1:]:
+            if not self.LW_MAP_MARKER_MIN_AREA <= area <= self.LW_MAP_MARKER_MAX_AREA:
+                continue
+            if not (8 <= width <= 40 and 8 <= height <= 40):
+                continue
+            candidates.append((x, y, width, height, area))
+        if not candidates:
+            return None
+        center_x, center_y = box.width / 2, box.height / 2
+        x, y, width, height, _ = min(
+            candidates,
+            key=lambda candidate: (candidate[0] + candidate[2] / 2 - center_x) ** 2
+            + (candidate[1] + candidate[3] / 2 - center_y) ** 2,
+        )
+        return int(box.x + x + width / 2), int(box.y + y + height / 2)
+
+    def _lw_remove_map_player_marker(self, image):
+        """Mask the dynamic cyan player marker before persisting or matching an anchor."""
+        if image is None or image.size == 0:
+            return image
+        mask = self._lw_map_player_marker_mask(image)
+        if not np.any(mask):
+            return image
+        return cv2.inpaint(image, mask, 3, cv2.INPAINT_TELEA)
+
+    def _lw_map_player_marker_mask(self, image):
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        return cv2.inRange(hsv, self.LW_MAP_MARKER_HSV_LOWER, self.LW_MAP_MARKER_HSV_UPPER)
 
     def _lw_crop_centered(self, frame, cx, cy, size):
         half = size // 2

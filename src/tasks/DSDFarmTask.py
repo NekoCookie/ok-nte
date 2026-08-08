@@ -298,7 +298,9 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
     def teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10):
         return self.lw_teleport_to_nearest_bonfire(threshold=threshold, time_out=time_out)  # [lw]
 
-    def _ru_teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10, map_is_open=False):
+    def _ru_teleport_to_nearest_bonfire(
+        self, threshold=0.7, time_out=10, map_is_open=False, target_selector=None
+    ):
         # [lw] 上游原实现保留为 _ru_*, 供 LW 锚点识别失败时回退
         if not map_is_open:  # [lw] 锚点失败时已在地图中, 直接复用当前地图
             self.ensure_main()
@@ -314,6 +316,13 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         max_radius = max(self.width, self.height)
 
         def find_teleport():
+            if target_selector is not None:  # [lw] 火山目标是左侧固定篝火, 不是最近篝火
+                teleports = self.find_feature(
+                    Labels.bonfire_teleport,
+                    box=self.main_viewport,
+                    threshold=threshold,
+                )
+                return target_selector(teleports) if teleports else None
             radius = step
             while radius <= max_radius:
                 x = max(0, center_x - radius)
