@@ -74,6 +74,7 @@ def _cursor_sync_worker(lock, state_box):
 
 class NTEInteraction(NTEInteractionExtMixin, PostMessageInteraction):  # [lw] 插入用户扩展基类
     _ACTIVATE_REFRESH_INTERVAL = 60 * 60
+    LW_FOCUS_STABILIZE_RETRIES = 2  # [lw] 焦点切换后允许一次重新激活恢复
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -93,6 +94,15 @@ class NTEInteraction(NTEInteractionExtMixin, PostMessageInteraction):  # [lw] �
     def on_visible(self, visible):
         self._activate_require = not visible
         self.lw_observe_focus(visible)  # [lw]
+
+    def _lw_stabilize_click_focus(self):
+        """Wait for stable focus, reactivating once when a transition persists."""
+        for attempt in range(self.LW_FOCUS_STABILIZE_RETRIES):
+            if self.lw_stabilize_focus():
+                return True
+            if attempt + 1 < self.LW_FOCUS_STABILIZE_RETRIES:
+                self.try_activate()
+        return False
 
     def send_key(self, key, down_time=0.01):
         with self._input_lock:
@@ -166,7 +176,7 @@ class NTEInteraction(NTEInteractionExtMixin, PostMessageInteraction):  # [lw] �
 
     def click(self, x=-1, y=-1, move_back=False, name=None, down_time=0.01, move=True, key="left"):
         with self._input_lock:
-            if not self.lw_stabilize_focus():  # [lw] 不在不稳定焦点状态投递点击
+            if not self._lw_stabilize_click_focus():  # [lw] 不在不稳定焦点状态投递点击
                 logger.warning("skip click while window focus is still changing")
                 return False
             self.try_activate()
@@ -180,7 +190,7 @@ class NTEInteraction(NTEInteractionExtMixin, PostMessageInteraction):  # [lw] �
                 abs_x, abs_y = self.capture.get_abs_cords(x, y)
                 SetCursorPos((abs_x, abs_y))
                 time.sleep(0.035)
-            if not self.lw_stabilize_focus():  # [lw] 移动鼠标后焦点仍不稳定, 取消点击
+            if not self._lw_stabilize_click_focus():  # [lw] 移动鼠标后焦点仍不稳定, 取消点击
                 logger.warning("skip click after focus changed during cursor move")
                 return False
             click_pos = win32api.MAKELONG(x, y)

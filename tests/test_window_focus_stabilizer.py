@@ -60,12 +60,23 @@ class WindowFocusStabilizerTest(unittest.TestCase):
         )
         self.assertGreaterEqual(clock.current, 0.3)
 
-    def test_click_is_cancelled_when_focus_never_settles_before_posting(self):
+    def test_click_retries_focus_after_reactivation_before_posting(self):
         task = object.__new__(NTEInteraction)
         task._input_lock = threading.RLock()
-        task.lw_stabilize_focus = mock.Mock(side_effect=[True, False])
+        task.lw_stabilize_focus = mock.Mock(side_effect=[False, True, True])
         task.try_activate = mock.Mock()
         task.capture = mock.Mock()
+        task.post = mock.Mock()
+
+        self.assertIsNone(task.click(x=1, y=1, move=False))
+        self.assertEqual(task.try_activate.call_count, 2)
+        self.assertEqual(task.post.call_count, 2)
+
+    def test_click_is_cancelled_after_bounded_focus_retries(self):
+        task = object.__new__(NTEInteraction)
+        task._input_lock = threading.RLock()
+        task.lw_stabilize_focus = mock.Mock(return_value=False)
+        task.try_activate = mock.Mock()
         task.post = mock.Mock()
 
         self.assertFalse(task.click(x=1, y=1, move=False))
