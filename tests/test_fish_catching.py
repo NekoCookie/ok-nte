@@ -95,6 +95,20 @@ class TestFishCatchingVision(unittest.TestCase):
 
         self.assertAlmostEqual(task.read_fish_skill_cooldown("e"), 1.8)
 
+    def test_skill_cd_ocr_skips_skills_still_in_local_cooldown(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        now = time.monotonic()
+        task._fish_skill_last_cast = {
+            "e": now - 10.0,
+            "w": now,
+            "q": now,
+        }
+        task.read_fish_skill_cooldown = mock.Mock(return_value=0.0)
+        task.log_debug = mock.Mock()
+
+        self.assertEqual(task.next_fish_skill(), "e")
+        task.read_fish_skill_cooldown.assert_called_once_with("e")
+
     def test_cast_skill_selects_key_then_clicks_reference_center(self):
         task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
         task.send_key = mock.Mock()
@@ -113,6 +127,16 @@ class TestFishCatchingVision(unittest.TestCase):
             action_name="fish_catch_target",
         )
         self.assertIn("e", task._fish_skill_last_cast)
+
+    def test_failed_skill_click_does_not_start_local_cooldown(self):
+        task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)
+        task.send_key = mock.Mock()
+        task.sleep = mock.Mock()
+        task.operate_click = mock.Mock(return_value=False)
+        task._fish_skill_last_cast = {}
+
+        self.assertFalse(task.cast_fish_skill("e"))
+        self.assertEqual(task._fish_skill_last_cast, {})
 
     def test_detects_separate_neon_fish_shapes(self):
         image = np.zeros((240, 400, 3), dtype=np.uint8)

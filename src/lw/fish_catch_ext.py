@@ -227,12 +227,14 @@ class FishCatchingTaskMixin:
         if key not in self.FISH_SKILL_ROIS:
             return 0.0
 
-        last_cast = getattr(self, "_fish_skill_last_cast", {}).get(key)
-        if last_cast is None:
+        local_value = self.local_fish_skill_cooldown(key)
+        if local_value is None:
             # A new fishing round starts with all three actions available.  Do
             # not let background digits in the icon artwork block the first
             # E -> W -> Q pass.  # [lw]
             return 0.0
+        if local_value > 0.1:
+            return local_value
 
         ocr_value = None
         try:
@@ -255,15 +257,24 @@ class FishCatchingTaskMixin:
         except Exception as exc:
             self.log_debug(f"捕鱼技能 {key} CD OCR failed: {exc}")
 
-        local_value = max(0.0, self.FISH_SKILL_COOLDOWNS[key] - (time.monotonic() - last_cast))
         if ocr_value is None:
             return local_value
         return max(ocr_value, local_value)
 
+    def local_fish_skill_cooldown(self, key: str) -> float | None:
+        """Return the local cooldown estimate, or None before the first cast."""
+        last_cast = getattr(self, "_fish_skill_last_cast", {}).get(key)
+        if last_cast is None:
+            return None
+        return max(0.0, self.FISH_SKILL_COOLDOWNS[key] - (time.monotonic() - last_cast))
+
     def next_fish_skill(self) -> str | None:
         """Return the next ready key while preserving E -> W -> Q order.  # [lw]"""
         cooldowns = {
-            key: self.read_fish_skill_cooldown(key) for key in self.FISH_SKILL_ORDER
+            key: self.read_fish_skill_cooldown(key)
+            for key in self.FISH_SKILL_ORDER
+            if self.local_fish_skill_cooldown(key) is None
+            or self.local_fish_skill_cooldown(key) <= 0.1
         }
         for key in self.FISH_SKILL_ORDER:
             if cooldowns[key] <= 0.1:
@@ -280,10 +291,12 @@ class FishCatchingTaskMixin:
             down_time=0.01,
             action_name="fish_catch_target",
         )
-        if not hasattr(self, "_fish_skill_last_cast"):
-            self._fish_skill_last_cast = {}
-        self._fish_skill_last_cast[key] = time.monotonic()
-        return bool(result is not False)
+        succeeded = result is not False
+        if succeeded:
+            if not hasattr(self, "_fish_skill_last_cast"):
+                self._fish_skill_last_cast = {}
+            self._fish_skill_last_cast[key] = time.monotonic()
+        return succeeded
 
     def close_catch_result(self) -> bool:
         """Close the reward overlay through its documented blank-area action.  # [lw]"""
