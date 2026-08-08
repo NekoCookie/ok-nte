@@ -14,4 +14,5 @@ class NTEInteractionExtMixin:
         self._focus_stabilizer.observe(visible)
 
     def lw_stabilize_focus(self):
-        self._focus_stabilizer.stable()
+        """Return whether input may be posted after the foreground has settled."""
+        return self._focus_stabilizer.stable()

@@ -166,7 +166,9 @@ class NTEInteraction(NTEInteractionExtMixin, PostMessageInteraction):  # [lw] �
 
     def click(self, x=-1, y=-1, move_back=False, name=None, down_time=0.01, move=True, key="left"):
         with self._input_lock:
-            self.lw_stabilize_focus()  # [lw]
+            if not self.lw_stabilize_focus():  # [lw] 不在不稳定焦点状态投递点击
+                logger.warning("skip click while window focus is still changing")
+                return False
             self.try_activate()
             if x < 0:
                 x, y = round(self.capture.width * 0.5), round(self.capture.height * 0.5)
@@ -178,7 +180,9 @@ class NTEInteraction(NTEInteractionExtMixin, PostMessageInteraction):  # [lw] �
                 abs_x, abs_y = self.capture.get_abs_cords(x, y)
                 SetCursorPos((abs_x, abs_y))
                 time.sleep(0.035)
-            self.lw_stabilize_focus()  # [lw]
+            if not self.lw_stabilize_focus():  # [lw] 移动鼠标后焦点仍不稳定, 取消点击
+                logger.warning("skip click after focus changed during cursor move")
+                return False
             click_pos = win32api.MAKELONG(x, y)
             if key == "left":
                 btn_down = win32con.WM_LBUTTONDOWN
