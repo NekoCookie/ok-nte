@@ -31,7 +31,9 @@ class DSDFarmExtMixin(_TaskProxy):
     LW_MAX_TELEPORT_ATTEMPTS = 4
     LW_INTERAC_RECOVER_WAIT = 30
     LW_TRAVEL_BUTTON_STUCK_WAIT = 6
-    LW_ANCHOR_THRESHOLD = 0.75
+    LW_ANCHOR_THRESHOLD = 0.90
+    LW_ANCHOR_PEAK_MARGIN = 0.03
+    LW_ANCHOR_VERSION = 2
     LW_ANCHOR_CALIBRATE_SIZES = (260, 340, 420)
     LW_ANCHOR_FOLDER = os.path.join("screenshots", "dsd_farm_anchors")
 
@@ -91,19 +93,21 @@ class DSDFarmExtMixin(_TaskProxy):
     def lw_ensure_bonfire_anchor(self):
         """角色在目标篝火旁时校准该地点的地图锚点(仅首次或上次识别失败时执行)。"""
         path = self._lw_anchor_path()
-        if os.path.exists(path) and not getattr(self, "_lw_anchor_failed", False):
+        if self._lw_anchor_is_current(path) and not getattr(self, "_lw_anchor_failed", False):
             return
         try:
             self.ensure_main()
             self.open_map()
             frame = self.frame
             icons = self.find_feature(
-                Labels.bonfire_teleport, box=self.main_viewport, threshold=0.7
+                Labels.bonfire_teleport,
+                box=self._lw_anchor_calibration_box(),
+                threshold=0.7,
             )
             if not icons:
                 self.log_warning_gated("no bonfire icon for anchor calibration")
                 return
-            icon = min(icons, key=lambda tp: tp.center_distance(self.default_box.center))
+            icon = self._lw_select_anchor_icon(icons)
             cx = icon.x + icon.width // 2
             cy = icon.y + icon.height // 2
             for size in self.LW_ANCHOR_CALIBRATE_SIZES:
@@ -115,7 +119,14 @@ class DSDFarmExtMixin(_TaskProxy):
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 cv2.imwrite(path, crop)
                 with open(path + ".json", "w", encoding="utf-8") as meta_file:
-                    json.dump({"width": frame.shape[1], "height": frame.shape[0]}, meta_file)
+                    json.dump(
+                        {
+                            "version": self.LW_ANCHOR_VERSION,
+                            "width": frame.shape[1],
+                            "height": frame.shape[0],
+                        },
+                        meta_file,
+                    )
                 self._lw_anchor_failed = False
                 self.log_info(f"bonfire anchor calibrated: {path} size={size}")
                 return
@@ -185,6 +196,33 @@ class DSDFarmExtMixin(_TaskProxy):
         slug = slugs.get(location, "unknown")
         return os.path.join(self.LW_ANCHOR_FOLDER, f"bonfire_anchor_{slug}.png")
 
+    def _lw_anchor_is_current(self, path):
+        """Require versioned metadata so old, weakly selected anchors are rebuilt."""
+        if not os.path.exists(path):
+            return False
+        try:
+            with open(path + ".json", encoding="utf-8") as meta_file:
+                meta = json.load(meta_file)
+            return meta.get("version") == self.LW_ANCHOR_VERSION
+        except (OSError, AttributeError, TypeError, ValueError, json.JSONDecodeError):
+            return False
+
+    def _lw_anchor_calibration_box(self):
+        """Use the same location-specific map region as the deterministic fallback."""
+        location = self.config.get(self.CONF_LOCATION, self.locations[0])
+        if location == self.locations[1]:
+            return self.box_of_screen(0.498, 0.102, 0.931, 0.827)
+        if location == self.locations[2]:
+            return self.box_of_screen(0.410, 0.234, 0.560, 0.556)
+        return self.main_viewport
+
+    def _lw_select_anchor_icon(self, icons):
+        """Choose the known target icon instead of the map-center nearest icon."""
+        location = self.config.get(self.CONF_LOCATION, self.locations[0])
+        if location == self.locations[0]:
+            return min(icons, key=lambda icon: icon.center_distance(self.default_box.center))
+        return min(icons, key=lambda icon: icon.y)
+
     def _lw_load_anchor(self, path):
         anchor = cv2.imread(path, cv2.IMREAD_COLOR)
         if anchor is None:
@@ -221,6 +259,9 @@ class DSDFarmExtMixin(_TaskProxy):
         _, max_val, _, max_loc = cv2.minMaxLoc(result)
         if max_val < self.LW_ANCHOR_THRESHOLD:
             return None
+        if not self._lw_anchor_match_is_unique(result, anchor.shape):
+            self.log_warning_gated("bonfire anchor match is ambiguous")
+            return None
         return Box(
             view_box.x + max_loc[0],
             view_box.y + max_loc[1],
@@ -249,14 +290,19 @@ class DSDFarmExtMixin(_TaskProxy):
             return False
         result = cv2.matchTemplate(view, crop, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, _ = cv2.minMaxLoc(result)
-        if max_val < 0.9:
+        if max_val < self.LW_ANCHOR_THRESHOLD:
             return False
-        ys, xs = np.where(result >= max_val - 0.03)
+        return self._lw_anchor_match_is_unique(result, crop.shape)
+
+    def _lw_anchor_match_is_unique(self, result, anchor_shape):
+        """Reject similarly strong matches at separate map locations."""
+        max_val = float(np.max(result))
+        ys, xs = np.where(result >= max_val - self.LW_ANCHOR_PEAK_MARGIN)
         peaks = []
         for x, y in zip(xs, ys):
             if all(
-                abs(int(x) - px) > crop.shape[1] * 0.6
-                or abs(int(y) - py) > crop.shape[0] * 0.6
+                abs(int(x) - px) > anchor_shape[1] * 0.6
+                or abs(int(y) - py) > anchor_shape[0] * 0.6
                 for px, py in peaks
             ):
                 peaks.append((int(x), int(y)))

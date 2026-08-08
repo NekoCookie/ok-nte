@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -215,6 +216,20 @@ class TestTeleportViaAnchor(unittest.TestCase):
             self.assertEqual(task.open_map_calls, 1)
             self.assertEqual(task.fallback_map_states, [True, False])
 
+    def test_rejects_ambiguous_anchor_matches(self):
+        anchor = np.arange(12 * 12 * 3, dtype=np.uint8).reshape(12, 12, 3)
+        frame = np.zeros((160, 160, 3), dtype=np.uint8)
+        frame[20:32, 20:32] = anchor
+        frame[100:112, 100:112] = anchor
+        task = object.__new__(DSDFarmExtMixin)
+        task.frame = frame
+        task.main_viewport = Box(0, 0, 160, 160)
+        task._lw_load_anchor = lambda path: anchor
+        task.log_warning_gated = mock.Mock()
+
+        self.assertIsNone(task._lw_find_bonfire_anchor("anchor.png"))
+        task.log_warning_gated.assert_called_once_with("bonfire anchor match is ambiguous")
+
     def test_nearest_bonfire_wiring_uses_anchor(self):
         task = _WiringStub()
         result = task.lw_teleport_to_nearest_bonfire(threshold=0.8, time_out=5)
@@ -257,10 +272,10 @@ class _WiringStub(DSDFarmExtMixin, _BaseClick):
 
 
 class _CalibStub(DSDFarmExtMixin, _BaseClick):
-    def __init__(self, tmp_dir, icon=None, unique=True):
+    def __init__(self, tmp_dir, icon=None, icons=None, unique=True):
         super().__init__()
         self.tmp_dir = tmp_dir
-        self.icon = icon
+        self.icons = list(icons) if icons is not None else ([icon] if icon else [])
         self.unique = unique
         self.ensure_main_calls = 0
         self.open_map_calls = 0
@@ -268,6 +283,10 @@ class _CalibStub(DSDFarmExtMixin, _BaseClick):
         self.infos = []
         self._lw_anchor_failed = False
         self.frame = np.zeros((200, 300, 3), dtype=np.uint8)
+        self.CONF_LOCATION = "位置"
+        self.locations = ["火山", "高塔", "残丝"]
+        self._location = "高塔"
+        self.crop_center = None
 
     def _lw_anchor_path(self):
         return os.path.join(self.tmp_dir, "anchor.png")
@@ -279,7 +298,14 @@ class _CalibStub(DSDFarmExtMixin, _BaseClick):
         self.open_map_calls += 1
 
     def find_feature(self, label, box=None, threshold=0.7):
-        return [self.icon] if self.icon else []
+        return self.icons
+
+    @property
+    def config(self):
+        return SimpleNamespace(get=lambda key, default=None: self._location)
+
+    def box_of_screen(self, x1, y1, x2, y2):
+        return Box(x1 * 300, y1 * 200, (x2 - x1) * 300, (y2 - y1) * 200)
 
     @property
     def main_viewport(self):
@@ -291,6 +317,10 @@ class _CalibStub(DSDFarmExtMixin, _BaseClick):
 
     def _lw_anchor_is_unique(self, frame, crop):
         return self.unique
+
+    def _lw_crop_centered(self, frame, cx, cy, size):
+        self.crop_center = (cx, cy)
+        return np.zeros((size, size, 3), dtype=np.uint8)
 
     def log_info(self, msg):
         self.infos.append(msg)
@@ -306,8 +336,25 @@ class TestAnchorCalibration(unittest.TestCase):
             with open(path, "w", encoding="utf-8") as f:
                 f.write("x")
             task = _CalibStub(tmp, icon=Box(150, 100, 10, 10))
+            with open(path + ".json", "w", encoding="utf-8") as f:
+                json.dump({"version": task.LW_ANCHOR_VERSION}, f)
             task.lw_ensure_bonfire_anchor()
             self.assertEqual(task.open_map_calls, 0)
+
+    def test_rebuilds_legacy_anchor_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "anchor.png")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("x")
+            with open(path + ".json", "w", encoding="utf-8") as f:
+                json.dump({"width": 2560, "height": 1440}, f)
+            task = _CalibStub(tmp, icon=Box(150, 100, 10, 10))
+
+            task.lw_ensure_bonfire_anchor()
+
+            self.assertEqual(task.open_map_calls, 1)
+            with open(path + ".json", encoding="utf-8") as f:
+                self.assertEqual(json.load(f)["version"], task.LW_ANCHOR_VERSION)
 
     def test_recalibrates_after_anchor_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -339,6 +386,15 @@ class TestAnchorCalibration(unittest.TestCase):
             task.lw_ensure_bonfire_anchor()
             self.assertFalse(os.path.exists(os.path.join(tmp, "anchor.png")))
             self.assertTrue(any("no bonfire icon" in w for w in task.warnings))
+
+    def test_dragon_tower_calibration_uses_top_icon_in_target_region(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            top_icon = Box(200, 35, 10, 10)
+            lower_icon = Box(120, 120, 10, 10)
+            task = _CalibStub(tmp, icons=[lower_icon, top_icon])
+            task.lw_ensure_bonfire_anchor()
+
+            self.assertEqual(task.crop_center, (205, 40))
 
 
 class _PathStub(DSDFarmExtMixin, _BaseClick):
