@@ -115,7 +115,6 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
             self.operate_click(0.057, 0.218)
             self.sleep(0.5)
             self.ensure_main()
-            self.lw_ensure_bonfire_anchor()  # [lw] 角色在目标篝火旁时校准该地点地图锚点
             if self.do_teleport_on_spot:
                 self.sleep(0.5)
                 self.teleport_on_spot()
@@ -299,12 +298,11 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         return self.lw_teleport_to_nearest_bonfire(threshold=threshold, time_out=time_out)  # [lw]
 
     def _ru_teleport_to_nearest_bonfire(
-        self, threshold=0.7, time_out=10, map_is_open=False, target_selector=None
+        self, threshold=0.7, time_out=10, target_selector=None
     ):
-        # [lw] 上游原实现保留为 _ru_*, 供 LW 锚点识别失败时回退
-        if not map_is_open:  # [lw] 锚点失败时已在地图中, 直接复用当前地图
-            self.ensure_main()
-            self.open_map()
+        # [lw] 目标篝火通过确定性 target_selector 选择, 不使用临时锚点
+        self.ensure_main()
+        self.open_map()
         to_find = [Labels.bonfire_teleport]
         template_boxes = [self.get_box_by_name(label) for label in to_find]
         max_template_size = max(
@@ -367,11 +365,10 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
     def teleport_to_top_bonfire(self, box: Box, threshold=0.7):
         return self.lw_teleport_to_top_bonfire(box=box, threshold=threshold)  # [lw]
 
-    def _ru_teleport_to_top_bonfire(self, box: Box, threshold=0.7, map_is_open=False):
-        # [lw] 上游原实现保留为 _ru_*, 供 LW 锚点识别失败时回退
-        if not map_is_open:  # [lw] 锚点失败时已在地图中, 直接复用当前地图
-            self.ensure_main()
-            self.open_map()
+    def _ru_teleport_to_top_bonfire(self, box: Box, threshold=0.7):
+        # [lw] 使用地点固定区域的确定性选点, 不使用临时锚点
+        self.ensure_main()
+        self.open_map()
 
         teleports = self.find_feature(Labels.bonfire_teleport, box=box, threshold=threshold)
         if not teleports:
