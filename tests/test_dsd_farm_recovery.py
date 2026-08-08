@@ -233,14 +233,21 @@ class TestTeleportViaAnchor(unittest.TestCase):
         self.assertIsNone(task._lw_find_bonfire_anchor("anchor.png"))
         task.log_warning_gated.assert_called_once_with("bonfire anchor match is ambiguous")
 
-    def test_nearest_bonfire_wiring_uses_anchor(self):
-        task = _WiringStub()
+    def test_nearest_bonfire_wiring_uses_anchor_for_non_volcano(self):
+        task = _WiringStub(location="高塔")
         result = task.lw_teleport_to_nearest_bonfire(threshold=0.8, time_out=5)
         self.assertTrue(result)
         self.assertEqual(task.fallback_nearest_calls, 1)
         left = Box(10, 100, 10, 10)
         right = Box(20, 90, 10, 10)
         self.assertEqual(task.fallback_nearest_selector([right, left]), left)
+
+    def test_nearest_bonfire_bypasses_anchor_for_volcano(self):
+        task = _WiringStub(location="火山")
+        task._lw_teleport_via_anchor = mock.Mock(side_effect=AssertionError("anchor used"))
+
+        self.assertTrue(task.lw_teleport_to_nearest_bonfire())
+        self.assertEqual(task.fallback_nearest_calls, 1)
 
     def test_top_bonfire_wiring_uses_anchor(self):
         task = _WiringStub()
@@ -268,9 +275,16 @@ class TestRuDelegation(unittest.TestCase):
 
 
 class _WiringStub(DSDFarmExtMixin, _BaseClick):
-    def __init__(self):
+    def __init__(self, location="高塔"):
         super().__init__()
         self.via_calls = []
+        self.CONF_LOCATION = "位置"
+        self.locations = ["火山", "高塔", "残丝"]
+        self._location = location
+
+    @property
+    def config(self):
+        return SimpleNamespace(get=lambda key, default=None: self._location)
 
     def _lw_teleport_via_anchor(self, fallback):
         self.via_calls.append(fallback)
@@ -402,27 +416,15 @@ class TestAnchorCalibration(unittest.TestCase):
 
             self.assertEqual(task.crop_center, (205, 40))
 
-    def test_volcano_calibration_uses_map_marker_and_removes_it_from_anchor(self):
+    def test_volcano_anchor_calibration_is_disabled(self):
         with tempfile.TemporaryDirectory() as tmp:
             task = _CalibStub(tmp, icon=Box(200, 100, 10, 10))
             task._location = "火山"
-            task.frame[95:110, 40:55] = (253, 221, 116)
+
             task.lw_ensure_bonfire_anchor()
 
-            self.assertEqual(task.crop_center, (47, 102))
-
-
-class TestMapMarkerMask(unittest.TestCase):
-    def test_removes_cyan_map_marker_from_anchor_image(self):
-        task = object.__new__(DSDFarmExtMixin)
-        image = np.full((40, 40, 3), 50, dtype=np.uint8)
-        image[10:25, 10:25] = (253, 221, 116)
-
-        cleaned = task._lw_remove_map_player_marker(image)
-
-        self.assertFalse(np.any(task._lw_map_player_marker_mask(cleaned)))
-
-
+            self.assertEqual(task.open_map_calls, 0)
+            self.assertFalse(os.path.exists(os.path.join(tmp, "anchor.png")))
 class _PathStub(DSDFarmExtMixin, _BaseClick):
     def __init__(self, location):
         super().__init__()
