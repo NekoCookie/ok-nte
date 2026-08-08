@@ -2,10 +2,11 @@ import os
 import tempfile
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 import numpy as np
 
-from ok import Box, CannotFindException, WaitFailedException
+from ok import Box, CannotFindException, TaskDisabledException, WaitFailedException
 
 from src.lw.dsd_farm_ext import DSDFarmExtMixin
 from src.tasks.DSDFarmTask import DSDFarmTask
@@ -410,6 +411,13 @@ class TestEnsureTeleportBounded(unittest.TestCase):
         result = task.ensure_teleport(lambda: (calls.append(1) or False))
         self.assertFalse(result)
         self.assertEqual(len(calls), task.lw_max_teleport_attempts())
+
+    def test_stops_task_after_teleport_recovery_is_exhausted(self):
+        task = self._task()
+        task.log_error = mock.Mock()
+        with self.assertRaises(TaskDisabledException):
+            task.lw_ensure_teleport_or_stop(lambda: False)
+        task.log_error.assert_called_once()
 
     def test_keeps_team_dead_fallback_order(self):
         task = self._task()

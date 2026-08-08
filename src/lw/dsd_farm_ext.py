@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import cv2
 import numpy as np
 
-from ok import Box, WaitFailedException
+from ok import Box, TaskDisabledException, WaitFailedException
 
 from src.Labels import Labels
 
@@ -38,6 +38,13 @@ class DSDFarmExtMixin(_TaskProxy):
     def lw_max_teleport_attempts(self):
         """RU ensure_teleport 的有界重试上限。"""
         return self.LW_MAX_TELEPORT_ATTEMPTS
+
+    def lw_ensure_teleport_or_stop(self, fun):
+        """Stop the farming task when bounded teleport recovery is exhausted."""
+        if self.ensure_teleport(fun):
+            return True
+        self.log_error("传送回目标篝火失败, 已停止九百九十九夜挂机")
+        raise TaskDisabledException()
 
     def click_traval_button(self, travel_btn=None, raise_if_not_found=True):
         """修正 RU 假成功, 并用更短的卡死等待快速失败, 交给有界重试重新开图。"""
@@ -143,12 +150,12 @@ class DSDFarmExtMixin(_TaskProxy):
         """按当前配置位置重新执行一次有界传送回篝火。"""
         location = self.config.get(self.CONF_LOCATION, None)
         if location == self.locations[0]:
-            return self.ensure_teleport(lambda: self.teleport_to_nearest_bonfire())
+            return self.lw_ensure_teleport_or_stop(lambda: self.teleport_to_nearest_bonfire())
         if location == self.locations[1]:
             box = self.box_of_screen(0.498, 0.102, 0.931, 0.827)
-            return self.ensure_teleport(lambda: self.teleport_to_top_bonfire(box))
+            return self.lw_ensure_teleport_or_stop(lambda: self.teleport_to_top_bonfire(box))
         box = self.box_of_screen(0.410, 0.234, 0.560, 0.556)
-        return self.ensure_teleport(lambda: self.teleport_to_top_bonfire(box))
+        return self.lw_ensure_teleport_or_stop(lambda: self.teleport_to_top_bonfire(box))
 
     def _lw_teleport_via_anchor(self, fallback):
         """优先用地图锚点定位正确篝火; 失败时在当前地图内回退到确定性搜索。"""

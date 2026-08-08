@@ -153,7 +153,9 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         if self.walk_until_combat(run=True, delay=1):
             self.deside_combat_action()
         self.sleep(0.5)
-        self.ensure_teleport(lambda: self.teleport_to_nearest_bonfire())
+        self.lw_ensure_teleport_or_stop(  # [lw] 失败后停止, 不在错误位置继续跑图
+            lambda: self.teleport_to_nearest_bonfire()
+        )
 
     def location_1(self):
         self.send_key_down("w")
@@ -183,7 +185,9 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
             self.deside_combat_action()
         self.sleep(0.5)
         box = self.box_of_screen(0.498, 0.102, 0.931, 0.827)
-        self.ensure_teleport(lambda: self.teleport_to_top_bonfire(box))
+        self.lw_ensure_teleport_or_stop(  # [lw] 失败后停止, 不在错误位置继续跑图
+            lambda: self.teleport_to_top_bonfire(box)
+        )
 
     def location_2(self):
         self.send_key_down("w")
@@ -200,7 +204,9 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         self.sleep(0.5)
         box = self.box_of_screen(0.410, 0.234, 0.560, 0.556)
         self.do_teleport_on_spot = True
-        self.ensure_teleport(lambda: self.teleport_to_top_bonfire(box))
+        self.lw_ensure_teleport_or_stop(  # [lw] 失败后停止, 不在错误位置继续跑图
+            lambda: self.teleport_to_top_bonfire(box)
+        )
 
     def ensure_teleport(self, fun):
         origin_fun = None
