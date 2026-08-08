@@ -67,14 +67,18 @@ class DSDFarmExtMixin(_TaskProxy):
         """优先用地图锚点识别目标篝火, 失败退回上游单点搜索(不随机试候选)。"""
         search = self._ru_teleport_to_nearest_bonfire
         return self._lw_teleport_via_anchor(
-            lambda: search(threshold=threshold, time_out=time_out)
+            lambda map_is_open=False: search(
+                threshold=threshold, time_out=time_out, map_is_open=map_is_open
+            )
         )
 
     def lw_teleport_to_top_bonfire(self, box, threshold=0.7):
         """优先用地图锚点识别目标篝火, 失败退回上游框选搜索。"""
         search = self._ru_teleport_to_top_bonfire
         return self._lw_teleport_via_anchor(
-            lambda: search(box=box, threshold=threshold)
+            lambda map_is_open=False: search(
+                box=box, threshold=threshold, map_is_open=map_is_open
+            )
         )
 
     def lw_ensure_bonfire_anchor(self):
@@ -147,23 +151,18 @@ class DSDFarmExtMixin(_TaskProxy):
         return self.ensure_teleport(lambda: self.teleport_to_top_bonfire(box))
 
     def _lw_teleport_via_anchor(self, fallback):
-        """优先用地图锚点定位正确篝火; 锚点缺失或未匹配时退回原有确定性搜索。"""
+        """优先用地图锚点定位正确篝火; 失败时在当前地图内回退到确定性搜索。"""
         path = self._lw_anchor_path()
-        if not os.path.exists(path):
+        if not os.path.exists(path) or getattr(self, "_lw_anchor_failed", False):
             return fallback()
         self.ensure_main()
         self.open_map()
         match = self._lw_find_bonfire_anchor(path)
         if match is None:
-            # 地图可能没有渲染完或没有回中, 重新开一次再识别
-            self.ensure_main()
-            self.open_map()
-            match = self._lw_find_bonfire_anchor(path)
-        if match is None:
             self._lw_anchor_failed = True
             self.screenshot("dsd_farm_anchor_not_found")
-            self.log_warning_gated("bonfire anchor not found on map, fallback to boxed search")
-            return fallback()
+            self.log_warning_gated("bonfire anchor not found on map, fallback without reopening map")
+            return fallback(map_is_open=True)
         self.log_info(f"found bonfire anchor {match}")
         self.operate_click(match, action_name="click_bonfire_anchor")
         self.sleep(0.5)

@@ -18,11 +18,11 @@ class _BaseClick:
         self.fallback_nearest_calls = 0
         self.fallback_top_calls = 0
 
-    def _ru_teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10):
+    def _ru_teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10, map_is_open=False):
         self.fallback_nearest_calls += 1
         return True
 
-    def _ru_teleport_to_top_bonfire(self, box, threshold=0.7):
+    def _ru_teleport_to_top_bonfire(self, box, threshold=0.7, map_is_open=False):
         self.fallback_top_calls += 1
         return True
 
@@ -134,6 +134,7 @@ class _AnchorTeleportStub(DSDFarmExtMixin, _BaseClick):
         self.open_map_calls = 0
         self.clicked = []
         self.fallback_calls = 0
+        self.fallback_map_states = []
         self.screenshots = []
         self.warnings = []
         self.infos = []
@@ -169,8 +170,9 @@ class _AnchorTeleportStub(DSDFarmExtMixin, _BaseClick):
     def log_warning_gated(self, msg):
         self.warnings.append(msg)
 
-    def fallback(self):
+    def fallback(self, map_is_open=False):
         self.fallback_calls += 1
+        self.fallback_map_states.append(map_is_open)
         return True
 
 
@@ -190,17 +192,27 @@ class TestTeleportViaAnchor(unittest.TestCase):
             task = _AnchorTeleportStub(tmp, anchor_exists=False)
             self.assertTrue(task._lw_teleport_via_anchor(task.fallback))
             self.assertEqual(task.fallback_calls, 1)
+            self.assertEqual(task.fallback_map_states, [False])
             self.assertEqual(task.open_map_calls, 0)
             self.assertEqual(task.screenshots, [])
 
-    def test_anchor_not_found_reopens_map_then_falls_back(self):
+    def test_anchor_not_found_falls_back_without_reopening_map(self):
         with tempfile.TemporaryDirectory() as tmp:
             task = _AnchorTeleportStub(tmp, match=None)
             self.assertTrue(task._lw_teleport_via_anchor(task.fallback))
-            self.assertEqual(task.open_map_calls, 2)
+            self.assertEqual(task.open_map_calls, 1)
             self.assertEqual(task.fallback_calls, 1)
+            self.assertEqual(task.fallback_map_states, [True])
             self.assertEqual(task.screenshots, ["dsd_farm_anchor_not_found"])
             self.assertTrue(task._lw_anchor_failed)
+
+    def test_failed_anchor_is_bypassed_on_next_teleport_attempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            task = _AnchorTeleportStub(tmp, match=None)
+            self.assertTrue(task._lw_teleport_via_anchor(task.fallback))
+            self.assertTrue(task._lw_teleport_via_anchor(task.fallback))
+            self.assertEqual(task.open_map_calls, 1)
+            self.assertEqual(task.fallback_map_states, [True, False])
 
     def test_nearest_bonfire_wiring_uses_anchor(self):
         task = _WiringStub()

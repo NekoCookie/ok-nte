@@ -292,10 +292,11 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
     def teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10):
         return self.lw_teleport_to_nearest_bonfire(threshold=threshold, time_out=time_out)  # [lw]
 
-    def _ru_teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10):
+    def _ru_teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10, map_is_open=False):
         # [lw] 上游原实现保留为 _ru_*, 供 LW 锚点识别失败时回退
-        self.ensure_main()
-        self.open_map()
+        if not map_is_open:  # [lw] 锚点失败时已在地图中, 直接复用当前地图
+            self.ensure_main()
+            self.open_map()
         to_find = [Labels.bonfire_teleport]
         template_boxes = [self.get_box_by_name(label) for label in to_find]
         max_template_size = max(
@@ -351,10 +352,11 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
     def teleport_to_top_bonfire(self, box: Box, threshold=0.7):
         return self.lw_teleport_to_top_bonfire(box=box, threshold=threshold)  # [lw]
 
-    def _ru_teleport_to_top_bonfire(self, box: Box, threshold=0.7):
+    def _ru_teleport_to_top_bonfire(self, box: Box, threshold=0.7, map_is_open=False):
         # [lw] 上游原实现保留为 _ru_*, 供 LW 锚点识别失败时回退
-        self.ensure_main()
-        self.open_map()
+        if not map_is_open:  # [lw] 锚点失败时已在地图中, 直接复用当前地图
+            self.ensure_main()
+            self.open_map()
 
         teleports = self.find_feature(Labels.bonfire_teleport, box=box, threshold=threshold)
         if not teleports:
