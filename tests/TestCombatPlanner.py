@@ -55,6 +55,7 @@ class FakeChar:
         elapsed=0,
         combat_start_priority=0,
         cycle_full=False,
+        role=None,
     ):
         self.index = index
         self.name = name
@@ -74,6 +75,7 @@ class FakeChar:
         self._elapsed = elapsed
         self._combat_start_priority = combat_start_priority
         self._cycle_full = cycle_full
+        self._role = role
         self.is_dead = False
         self.has_intro = False
         self.waited = 0
@@ -86,11 +88,12 @@ class FakeChar:
         return isinstance(other, FakeChar) and self.index == other.index
 
     def describe_role(self):
-        role = (
-            Role.MAIN_DPS
-            if self._field_preference == FieldPreference.MAIN_DPS
-            else Role.SUB_DPS
-        )
+        role = self._role
+        if role is None:
+            role = {
+                FieldPreference.MAIN_DPS: Role.MAIN_DPS,
+                FieldPreference.SUPPORT: Role.SUPPORT,
+            }.get(self._field_preference, Role.SUB_DPS)
         return RoleProfile(
             role=role,
             field_preference=self._field_preference,
@@ -472,6 +475,21 @@ class TestCombatPlanner(unittest.TestCase):
 
         self.assertEqual(decision.target, support)
         self.assertIn("preemptive field claim", decision.reason)
+
+    def test_combat_start_keeps_current_support_with_another_support_claim(self):
+        current = FakeChar(0, "current support", field_preference=FieldPreference.SUPPORT)
+        other_support = FakeChar(
+            1,
+            "other support",
+            field_preference=FieldPreference.SUPPORT,
+            claims=[FieldClaim.preemptive("opening buff ready")],
+        )
+        planner = self._planner([current, other_support])
+
+        decision = planner.decide_combat_start_char(current)
+
+        self.assertEqual(decision.target, current)
+        self.assertEqual(decision.reason, "no combat start target")
 
     def test_explicit_combat_start_priority_preempts_opening_support_claim(self):
         current = FakeChar(0, "current")

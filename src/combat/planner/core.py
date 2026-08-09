@@ -246,14 +246,16 @@ class CombatPlanner:
         if not candidates and current_char is not None:
             # [lw] 开场画面由 CombatExtMixin 先稳定；这里只复用 plan 的通用前置诉求，
             # 辅助执行完后仍走普通 decide_switch，不保存任何硬编码返回目标。
-            context = self.context_for(current_char, {})
-            preemptive = self._preemptive_field_claim_decision(
-                current_char,
-                context,
-                has_intro=False,
-            )
-            if preemptive is not None:
-                return preemptive
+            # 当前角色已经是辅助时, 开场保持当前角色, 不因队伍中另一个辅助的资源 claim 切走。
+            if current_char.describe_role().role != Role.SUPPORT:
+                context = self.context_for(current_char, {})
+                preemptive = self._preemptive_field_claim_decision(
+                    current_char,
+                    context,
+                    has_intro=False,
+                )
+                if preemptive is not None:
+                    return preemptive
 
         if not candidates:
             return SwitchDecision(
