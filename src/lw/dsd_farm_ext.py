@@ -3,6 +3,7 @@
 # - click_traval_button: 修正上游"传送按钮未消失仍返回成功"的假成功判定
 # - lw_wait_interac: 传送后交互提示缺失时, 先回主界面等加载, 仍失败再传送一次
 #   (接线: DSDFarmTask.ensure_teleport 有界重试 + do_run 两个一行钩子)
+import time
 from typing import TYPE_CHECKING
 
 from ok import Box, TaskDisabledException, WaitFailedException
@@ -22,6 +23,32 @@ class DSDFarmExtMixin(_TaskProxy):
     LW_MAX_TELEPORT_ATTEMPTS = 4
     LW_INTERAC_RECOVER_WAIT = 30
     LW_TRAVEL_BUTTON_STUCK_WAIT = 6
+    LW_INPUT_PAUSE_POLL_INTERVAL = 0.05
+
+    def _lw_held_keys(self):
+        keys = getattr(self, "_lw_held_key_set", None)
+        if keys is None:
+            keys = set()
+            self._lw_held_key_set = keys
+        return keys
+
+    def lw_release_held_keys(self):
+        """Release keys held by 999 before waiting in either pause layer."""
+        keys = self._lw_held_keys()
+        if not keys:
+            return
+        interaction = self.executor.interaction
+        for key in tuple(keys):
+            interaction.send_key_up(key)
+
+    def lw_restore_held_keys(self):
+        """Restore keys released temporarily while 999 was paused."""
+        keys = self._lw_held_keys()
+        if not keys:
+            return
+        interaction = self.executor.interaction
+        for key in tuple(keys):
+            interaction.send_key_down(key)
     def lw_max_teleport_attempts(self):
         """RU ensure_teleport 的有界重试上限。"""
         return self.LW_MAX_TELEPORT_ATTEMPTS
@@ -32,6 +59,58 @@ class DSDFarmExtMixin(_TaskProxy):
             return True
         self.log_error("传送回目标篝火失败, 已停止九百九十九夜挂机")
         raise TaskDisabledException()
+
+    def lw_input_paused(self):
+        """Return whether either the current task or the global executor is paused."""
+        return self.paused or self.executor.paused
+
+    def lw_wait_until_input_allowed(self):
+        """Wait for both pause layers to clear, or stop immediately when 999 is disabled."""
+        paused = False
+        while True:
+            try:
+                self.executor.check_enabled(check_pause=False)
+            except TaskDisabledException:
+                self.lw_release_held_keys()
+                raise
+            if not self.lw_input_paused():
+                if paused:
+                    self.lw_restore_held_keys()
+                return
+            if not paused:
+                self.lw_release_held_keys()
+                paused = True
+            time.sleep(self.LW_INPUT_PAUSE_POLL_INTERVAL)
+
+    def lw_perform_input(self, action, *args, **kwargs):
+        """Run one input action only while 999 and the global executor are both active."""
+        self.lw_wait_until_input_allowed()
+        return action(*args, **kwargs)
+
+    def lw_hold_key_cancellable(self, key, duration):
+        """Hold a recovery key, releasing it whenever either pause layer is entered."""
+        interaction = self.executor.interaction
+        remaining = duration
+        key_down = False
+        try:
+            while remaining > 0:
+                self.executor.check_enabled(check_pause=False)
+                if self.lw_input_paused():
+                    if key_down:
+                        interaction.send_key_up(key)
+                        key_down = False
+                    self.lw_wait_until_input_allowed()
+                    continue
+                if not key_down:
+                    interaction.send_key_down(key)
+                    key_down = True
+                wait_time = min(remaining, self.LW_INPUT_PAUSE_POLL_INTERVAL)
+                start = time.monotonic()
+                time.sleep(wait_time)
+                remaining -= time.monotonic() - start
+        finally:
+            if key_down:
+                interaction.send_key_up(key)
 
     def click_traval_button(self, travel_btn=None, raise_if_not_found=True):
         """修正 RU 假成功, 并用更短的卡死等待快速失败, 交给有界重试重新开图。"""
@@ -46,7 +125,9 @@ class DSDFarmExtMixin(_TaskProxy):
         self.sleep(0.1)
         result = self.wait_until(
             lambda: not self.find_traval_button(),
-            pre_action=lambda: self.operate_click(travel_btn, interval=2),
+            pre_action=lambda: self.lw_perform_input(
+                self.operate_click, travel_btn, interval=2
+            ),
             time_out=self.LW_TRAVEL_BUTTON_STUCK_WAIT,
             settle_time=0.5,
             raise_if_not_found=False,

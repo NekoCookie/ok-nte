@@ -107,12 +107,14 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
             self.lw_wait_interac(time_out=10)  # [lw] 传送后等待交互提示, 缺失时自动恢复
             self.wait_until(
                 lambda: not self.is_in_team(),
-                pre_action=lambda: self.send_interac(handle_claim=False),
+                pre_action=lambda: self.lw_perform_input(  # [lw]
+                    self.send_interac, handle_claim=False
+                ),
                 time_out=10,
                 raise_if_not_found=True,
             )
             self.sleep(2)
-            self.operate_click(0.057, 0.218)
+            self.lw_perform_input(self.operate_click, 0.057, 0.218)  # [lw]
             self.sleep(0.5)
             self.ensure_main()
             if self.do_teleport_on_spot:
@@ -124,9 +126,29 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
             round_index += 1
 
     def sleep_check(self):
+        if self.lw_input_paused():  # [lw] 任务或全局暂停时不执行任何恢复输入
+            self.lw_release_held_keys()
+            return
         super().sleep_check()
         if self.check_monthly_card():
             self.handle_monthly_card()
+
+    def next_frame(self):
+        self.lw_wait_until_input_allowed()  # [lw] 999 局部暂停时不继续跑图取帧
+        return super().next_frame()
+
+    def send_key_down(self, key, after_sleep=0):
+        self.lw_wait_until_input_allowed()  # [lw]
+        self._lw_held_keys().add(key)
+        try:
+            return super().send_key_down(key, after_sleep=after_sleep)
+        except TaskDisabledException:  # [lw] 发送失败时确保不会遗留按住的键
+            self.lw_release_held_keys()
+            raise
+
+    def send_key_up(self, key, after_sleep=0):
+        self._lw_held_keys().discard(key)
+        return super().send_key_up(key, after_sleep=after_sleep)
 
     def deside_map_zoom(self):
         location = self.config.get(self.CONF_LOCATION, None)
@@ -219,15 +241,19 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
             try:  # [lw]
                 if fun():
                     return True
+            except TaskDisabledException:  # [lw] 停止请求必须立即结束, 不进入恢复动作
+                raise
             except Exception as e:  # [lw] 单次传送异常(如主界面检测超时)不终止任务
                 self.log_warning_gated(f"teleport attempt failed: {e}")  # [lw]
             try:  # [lw]
                 self.ensure_main()
+            except TaskDisabledException:  # [lw] 不吞掉停止请求
+                raise
             except Exception as e:  # [lw]
                 self.log_warning_gated(f"ensure main failed during teleport retry: {e}")  # [lw]
             self.sleep(0.5)
             key = "w" if switch else "s"
-            self.send_key(key, down_time=3)
+            self.lw_hold_key_cancellable(key, duration=3)  # [lw]
             switch = not switch
             attempts += 1  # [lw]
             if origin_fun:
@@ -289,7 +315,7 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         self.wait_until(
             lambda: self.find_one(Labels.map_zoom_in),
             time_out=30,
-            pre_action=lambda: self.send_key("m", interval=2),
+            pre_action=lambda: self.lw_perform_input(self.send_key, "m", interval=2),  # [lw]
             raise_if_not_found=True,
         )
         self.sleep(1)
@@ -335,7 +361,9 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
 
         teleport = self.wait_until(find_teleport, time_out=time_out, raise_if_not_found=True)
         self.log_info(f"found nearest map teleport {teleport}")
-        self.operate_click(teleport, action_name="click_nearest_map_teleport")
+        self.lw_perform_input(  # [lw]
+            self.operate_click, teleport, action_name="click_nearest_map_teleport"
+        )
         self.sleep(0.5)
         return self.click_traval_button(raise_if_not_found=False)
     
@@ -358,7 +386,9 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         else:
             teleport = teleports[-1]
 
-        self.operate_click(teleport, action_name="click_map_teleport")
+        self.lw_perform_input(  # [lw]
+            self.operate_click, teleport, action_name="click_map_teleport"
+        )
         self.sleep(0.5)
         return self.click_traval_button(raise_if_not_found=False)
 
@@ -377,13 +407,17 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         self.log_info(f"found map teleports {teleports}")
 
         teleport = min(teleports, key=lambda teleport: teleport.y)
-        self.operate_click(teleport, action_name="click_map_teleport")
+        self.lw_perform_input(  # [lw]
+            self.operate_click, teleport, action_name="click_map_teleport"
+        )
         self.sleep(0.5)
         return self.click_traval_button(raise_if_not_found=False)
 
     def teleport_on_spot(self):
         self.ensure_main()
         self.open_map()
-        self.operate_click(0.5, 0.5, action_name="click_map_teleport")
+        self.lw_perform_input(  # [lw]
+            self.operate_click, 0.5, 0.5, action_name="click_map_teleport"
+        )
         self.sleep(0.5)
         return self.click_traval_button(raise_if_not_found=False)

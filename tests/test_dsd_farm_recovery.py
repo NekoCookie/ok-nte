@@ -4,6 +4,7 @@ from unittest import mock
 
 from ok import Box, CannotFindException, TaskDisabledException, WaitFailedException
 
+from src.lw import dsd_farm_ext
 from src.lw.dsd_farm_ext import DSDFarmExtMixin
 from src.tasks.DSDFarmTask import DSDFarmTask
 
@@ -33,11 +34,15 @@ class _ClickStub(DSDFarmExtMixin, _BaseClick):
         self.travel_btn_results = list(travel_btn_sequence)
         self.warnings = []
         self.clicked = []
+        self.paused = False
+        self.executor = SimpleNamespace(check_enabled=lambda **kwargs: None, paused=False)
 
     def find_traval_button(self):
         return self.travel_btn_results.pop(0) if self.travel_btn_results else None
 
     def wait_until(self, condition, time_out=10, raise_if_not_found=False, **kwargs):
+        if pre_action := kwargs.get("pre_action"):
+            pre_action()
         return condition()
 
     def operate_click(self, box, **kwargs):
@@ -193,7 +198,7 @@ class TestEnsureTeleportBounded(unittest.TestCase):
         task.team_dead = False
         task.ensure_main = lambda **kwargs: None
         task.sleep = lambda *args, **kwargs: None
-        task.send_key = lambda *args, **kwargs: None
+        task.lw_hold_key_cancellable = lambda *args, **kwargs: None
         task.log_warning_gated = lambda *args, **kwargs: None
         return task
 
@@ -250,6 +255,107 @@ class TestEnsureTeleportBounded(unittest.TestCase):
         result = task.ensure_teleport(lambda: (calls.append(1) or False))
         self.assertFalse(result)
         self.assertEqual(len(calls), task.lw_max_teleport_attempts())
+
+    def test_propagates_stop_from_teleport_without_recovery_actions(self):
+        task = self._task()
+        task.ensure_main = mock.Mock()
+
+        with self.assertRaises(TaskDisabledException):
+            task.ensure_teleport(lambda: (_ for _ in ()).throw(TaskDisabledException()))
+
+        task.ensure_main.assert_not_called()
+
+    def test_propagates_stop_from_ensure_main_without_movement(self):
+        task = self._task()
+        task.ensure_main = mock.Mock(side_effect=TaskDisabledException())
+        task.lw_hold_key_cancellable = mock.Mock()
+
+        with self.assertRaises(TaskDisabledException):
+            task.ensure_teleport(lambda: False)
+
+        task.lw_hold_key_cancellable.assert_not_called()
+
+
+class TestCancellableInput(unittest.TestCase):
+    def test_does_not_run_input_after_stop(self):
+        task = object.__new__(DSDFarmExtMixin)
+        action = mock.Mock()
+        task.paused = False
+        task.executor = SimpleNamespace(
+            check_enabled=mock.Mock(side_effect=TaskDisabledException()), paused=False
+        )
+
+        with self.assertRaises(TaskDisabledException):
+            task.lw_perform_input(action)
+
+        action.assert_not_called()
+
+    def test_releases_recovery_key_when_stop_interrupts_hold(self):
+        task = object.__new__(DSDFarmExtMixin)
+        interaction = mock.Mock()
+        task.paused = False
+        task.executor = SimpleNamespace(
+            check_enabled=mock.Mock(side_effect=[None, TaskDisabledException()]),
+            interaction=interaction,
+            paused=False,
+        )
+
+        with mock.patch.object(dsd_farm_ext.time, "sleep"):
+            with self.assertRaises(TaskDisabledException):
+                task.lw_hold_key_cancellable("w", duration=3)
+
+        interaction.send_key_down.assert_called_once_with("w")
+        interaction.send_key_up.assert_called_once_with("w")
+
+    def test_waits_for_task_resume_before_sending_input(self):
+        task = object.__new__(DSDFarmExtMixin)
+        action = mock.Mock()
+        task.paused = True
+        task.executor = SimpleNamespace(check_enabled=mock.Mock(), paused=False)
+
+        def resume_task(_):
+            task.paused = False
+
+        with mock.patch.object(dsd_farm_ext.time, "sleep", side_effect=resume_task):
+            task.lw_perform_input(action)
+
+        action.assert_called_once()
+
+    def test_releases_recovery_key_when_task_pauses(self):
+        task = object.__new__(DSDFarmExtMixin)
+        interaction = mock.Mock()
+        task.paused = False
+        task.executor = SimpleNamespace(
+            check_enabled=mock.Mock(side_effect=[None, None, None, TaskDisabledException()]),
+            interaction=interaction,
+            paused=False,
+        )
+
+        sleep_calls = 0
+
+        def change_pause_state(_):
+            nonlocal sleep_calls
+            sleep_calls += 1
+            task.paused = sleep_calls == 1
+
+        with mock.patch.object(dsd_farm_ext.time, "sleep", side_effect=change_pause_state):
+            with self.assertRaises(TaskDisabledException):
+                task.lw_hold_key_cancellable("w", duration=3)
+
+        interaction.send_key_down.assert_called_once_with("w")
+        interaction.send_key_up.assert_called_once_with("w")
+
+    def test_detects_task_and_global_pause_independently(self):
+        task = object.__new__(DSDFarmExtMixin)
+        task.executor = SimpleNamespace(paused=False)
+
+        task.paused = False
+        self.assertFalse(task.lw_input_paused())
+        task.paused = True
+        self.assertTrue(task.lw_input_paused())
+        task.paused = False
+        task.executor.paused = True
+        self.assertTrue(task.lw_input_paused())
 
 
 if __name__ == "__main__":
