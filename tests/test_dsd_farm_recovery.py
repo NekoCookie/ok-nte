@@ -75,6 +75,58 @@ class TestClickTravalButton(unittest.TestCase):
         self.assertEqual(len(task.warnings), 0)
 
 
+class _RefreshMonsterStub(DSDFarmExtMixin, _BaseClick):
+    def __init__(self, confirm_results):
+        super().__init__()
+        self.confirm_results = list(confirm_results)
+        self.clicked = []
+        self.box_args = []
+        self.logs = []
+        self.paused = False
+        self.executor = SimpleNamespace(check_enabled=lambda **kwargs: None, paused=False)
+
+    def box_of_screen(self, *args, **kwargs):
+        self.box_args.append((args, kwargs))
+        return Box(0, 0, 100, 100, name="refresh_confirm_area")
+
+    def find_confirm(self, box):
+        return self.confirm_results.pop(0) if self.confirm_results else None
+
+    def wait_until(self, condition, **kwargs):
+        if pre_action := kwargs.get("pre_action"):
+            pre_action()
+        return condition()
+
+    def operate_click(self, *args, **kwargs):
+        self.clicked.append((args, kwargs))
+
+    def sleep(self, seconds):
+        pass
+
+    def log_info(self, message):
+        self.logs.append(message)
+
+
+class TestRefreshMonsterConfirmation(unittest.TestCase):
+    def test_clicks_detected_confirmation_after_refresh(self):
+        confirm = Box(50, 50, 20, 10, name="confirm")
+        task = _RefreshMonsterStub([confirm, None])
+
+        self.assertTrue(task.lw_refresh_monsters())
+        self.assertEqual(task.clicked[0][0], (0.057, 0.218))
+        self.assertEqual(task.clicked[0][1]["action_name"], "dsd_refresh_monsters")
+        self.assertEqual(task.clicked[1][0], (confirm,))
+        self.assertEqual(task.clicked[1][1]["action_name"], "dsd_confirm_refresh_monsters")
+        self.assertEqual(task.logs, ["refresh monster confirmation detected"])
+
+    def test_keeps_running_when_confirmation_is_not_shown(self):
+        task = _RefreshMonsterStub([])
+
+        self.assertFalse(task.lw_refresh_monsters())
+        self.assertEqual(len(task.clicked), 1)
+        self.assertEqual(task.logs, [])
+
+
 class _InteracStub(DSDFarmExtMixin, _BaseClick):
     def __init__(self, interac_results):
         super().__init__()

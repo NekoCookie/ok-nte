@@ -114,8 +114,7 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
                 raise_if_not_found=True,
             )
             self.sleep(2)
-            self.lw_perform_input(self.operate_click, 0.057, 0.218)  # [lw]
-            self.sleep(0.5)
+            self.lw_refresh_monsters()  # [lw] 更新后刷新会出现确认弹窗
             self.ensure_main()
             if self.do_teleport_on_spot:
                 self.sleep(0.5)
