@@ -10,16 +10,18 @@ from src import text_white_color
 from src.Labels import Labels
 from src.tasks.AnomalyTask import AnomalyTask
 from src.tasks.BaseNTETask import BaseNTETask
-from src.tasks.CoffeeTask import CoffeeTask
-from src.tasks.GiftTask import GiftTask
-from src.tasks.mixin.CinemaDateMixin import CinemaDateMixin
+from src.tasks.daily.CinemaDateTask import CinemaDateTask
+from src.tasks.daily.CoffeeTask import CoffeeTask
+from src.tasks.daily.FountainTask import FountainTask
+from src.tasks.daily.FurnitureTask import FurnitureTask
+from src.tasks.daily.GiftTask import GiftTask
 from src.tasks.NTEOneTimeTask import NTEOneTimeTask
 from src.utils import image_utils as iu
 
 WorkingTaskT = TypeVar("WorkingTaskT", bound=BaseNTETask)
 
 
-class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
+class DailyTask(NTEOneTimeTask, BaseNTETask):
     """日常任务执行器"""
 
     # --- 配置项键名 ---
@@ -33,6 +35,7 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
     CONF_CLAIM_BP = "领取环期任务奖励"
     CONF_COFFEE_TASK = "一咖舍任务"
     CONF_CINEMA_DATE = "影院约会"
+    CONF_FOUNTAIN_SIGN = "喷泉签到"
     CONF_FURNITURE = "异象家具"
     CONF_GIFT = "羁遇赠礼"
 
@@ -40,7 +43,6 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
     DAILY_STAMINA_TARGET = "目标消耗体力"
 
     # --- 一咖舍任务选项 ---
-    COFFEE_MODE_NONE = "不执行"
     COFFEE_MODE_CLAIM_AND_RESTOCK = "领取/补货一咖舍"
     COFFEE_MODE_AUTO = "运行一咖舍自动化"
 
@@ -59,9 +61,10 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
             {
                 self.CONF_TASK: self.TASK[1],
                 self.DAILY_STAMINA_TARGET: 180,
-                self.CONF_COFFEE_TASK: self.COFFEE_MODE_NONE,
+                self.CONF_COFFEE_TASK: self.TASK_NONE,
                 self.CONF_CINEMA_DATE: False,
                 self.CINEMA_DATE_TARGET: "",
+                self.CONF_FOUNTAIN_SIGN: self.TASK_NONE,
                 self.CONF_FURNITURE: False,
                 self.CONF_GIFT: False,
             }
@@ -71,7 +74,7 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
                 self.CONF_COFFEE_TASK: "选择日常任务中的一咖舍处理方式",
             }
         )
-        coffee_options = [self.COFFEE_MODE_NONE, self.COFFEE_MODE_CLAIM_AND_RESTOCK]
+        coffee_options = [self.TASK_NONE, self.COFFEE_MODE_CLAIM_AND_RESTOCK]
         # 一咖舍自动化页面 OCR 仅匹配简体中文; 在非 zh_CN 下不向用户暴露自动化选项.
         if self.get_app_locale() == "zh_CN":
             coffee_options.append(self.COFFEE_MODE_AUTO)
@@ -83,7 +86,7 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
                     "sub_configs": {
                         self.TASK[1]: [
                             AnomalyTask.CONF_TASK_TYPE,
-                            AnomalyTask.CONF_AUTO_CYCLE_SUB_TASK,
+                            AnomalyTask.CONF_CYCLEB_TASK_MODE,
                             self.DAILY_STAMINA_TARGET,
                         ],
                     },
@@ -99,6 +102,14 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
                         ]
                     },
                 },
+                self.CONF_FOUNTAIN_SIGN: {
+                    "type": "drop_down",
+                    "options": [
+                        self.TASK_NONE,
+                        FountainTask.SIGN_MODE_SIGN,
+                        FountainTask.SIGN_MODE_COIN,
+                    ],
+                },
             }
         )
 
@@ -109,7 +120,6 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
         super().run()
         try:
             self.do_run()
-            self.lw_daily_account_cycle()  # [lw] 切换账号任务开了轮换开关时: 换号再跑一轮
         except TaskDisabledException:
             pass
         except Exception as e:
@@ -124,7 +134,6 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
         # [lw] 顺序调整: 做任务类(约会/家具/送礼)提到领奖类(活跃度/环期)之前,
         # 防止送礼等触发的环期周任务在领奖之后才完成导致当天漏领
         coffee_mode = [self.COFFEE_MODE_CLAIM_AND_RESTOCK, self.COFFEE_MODE_AUTO]
-
         tasks: List[Tuple[str, bool, Callable]] = [
             (
                 self.CONF_CLAIM_MAIL,
@@ -139,12 +148,17 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
             (
                 self.CONF_CINEMA_DATE,
                 self._task_enabled(self.CONF_CINEMA_DATE, False),
-                lambda: self.run_cinema_date(self.config.get(self.CINEMA_DATE_TARGET, "")),
+                self.run_cinema_task,
+            ),
+            (
+                self.CONF_FOUNTAIN_SIGN,
+                self._task_enabled(self.CONF_FOUNTAIN_SIGN, self.TASK_NONE, self.TASK_NONE),
+                self.run_fountain_sign_task,
             ),
             (
                 self.CONF_FURNITURE,
                 self._task_enabled(self.CONF_FURNITURE, False),
-                self.claim_anomaly_furniture,
+                self.run_furniture_task,
             ),
             (
                 self.CONF_GIFT,
@@ -177,8 +191,13 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
         self._print_result()
         self.log_info("结束执行日常任务", notify=True)
 
-    def _task_enabled(self, key, default):
-        return bool(self.config.get(key, default))
+    def _task_enabled(self, key, default, not_equal=None):
+        value = self.config.get(key, default)
+        if isinstance(value, bool):
+            return value
+        elif not_equal and value != not_equal:
+            return True
+        return False
 
     def execute_task(self, key, enabled, func):
         """执行单个子任务。
@@ -331,7 +350,7 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
         if task_name == AnomalyTask.NAME:
             with self.set_working_task(AnomalyTask) as task:
                 if ret := task.do_run(self.config, stamina_target=must_use):
-                    task.shift_idx(self)
+                    task.shift_id(self)
 
         return ret
 
@@ -516,189 +535,20 @@ class DailyTask(NTEOneTimeTask, CinemaDateMixin, BaseNTETask):
         self.operate_click(0.600, 0.656)  # 确认
         return True
 
-    def claim_anomaly_furniture(self):
-        """领取异象家具奖励"""
-
-        self.log_info("正在领取异象家具奖励")
-
-        def open_house_panel():
-            def action():
-                self.openF5panel()
-                self.operate_click(0.255, 0.468)
-                self.sleep(0.5)
-                return self.wait_panel(Labels.f5_house_panel)
-
-            if self.find_one(Labels.f5_house_panel):
-                return True
-            result = self.retry_on_action(action, self.ensure_main)
-            if not result:
-                self.log_error("无法找到房产面板")
-                return False
-            self.sleep(1)
-            return True
-
-        def check_house_lock(ratio_y):
-            box = self.box_of_screen(0.050, ratio_y - 0.1, width=0.054, height=0.079, hcenter=True)
-            return self.find_one(Labels.f5_house_lock, box=box)
-
-        house_box = self.box_of_screen(0.507, 0.476, 0.956, 0.795, hcenter=True)
-
-        shown = 4
-        ratio_x = 0.079
-        ratio_y = 0.308
-        gap = 0.183
-        scroll_per_item = 6
-
-        def claim_furniture(furniture):
-            scroll = True
-            scroll_times = 0
-            i = 0
-            is_initial = True
-            if not open_house_panel():
-                return False
-
-            # 寻找目标家具
-            while scroll or i < shown:
-                self.next_frame()
-                if scroll:
-                    target_y = ratio_y
-                else:
-                    target_y = ratio_y + gap * i
-                    i += 1
-
-                # 检查房子是否解锁
-                if check_house_lock(target_y):
-                    self.sleep(0.25)
-                else:
-                    if not is_initial:
-                        box = self.get_box_by_name(Labels.box_house_preview_snapshot)
-                        snapshot = box.crop_frame(self.frame)
-                        for _ in range(10):
-                            self.operate_click(ratio_x, target_y)
-                            self.sleep(0.25)
-                            if not self.find_one(template=snapshot, box=box):
-                                break
-                            self.sleep(0.25)
-                    is_initial = False
-                    if self.find_sift_feature(furniture, box=house_box):
-                        break
-
-                # 滚动并检查是否成功滚动
-                if scroll:
-                    scroll_times += 1
-                    box = self.get_box_by_name(Labels.box_house_list_snapshot)
-                    snapshot = box.crop_frame(self.frame)
-                    self.operate(
-                        lambda: (
-                            self.scroll_relative(ratio_x, ratio_y, -scroll_per_item),
-                            self.sleep(0.25),
-                        ),
-                        block=True,
-                    )
-                    y_offset = self.height * 0.1
-                    search_box = box.copy(y_offset=-y_offset, height_offset=y_offset)
-                    scroll = not self.find_one(
-                        "snapshot", template=snapshot, box=search_box, threshold=0.9
-                    )
-            else:
-                self.log_info(f"not found furniture {furniture}")
-                self.operate(
-                    lambda: (
-                        self.scroll_relative(
-                            ratio_x, ratio_y, scroll_per_item * (scroll_times + 2)
-                        ),
-                        self.sleep(0.25),
-                    ),
-                    block=True,
-                )
-                return False
-
-            # 传送至目标房子
-            self.wait_until(
-                lambda: not self.find_one(Labels.f5_house_panel),
-                pre_action=lambda: self.operate_click(0.891, 0.951, after_sleep=1),
-            )
-            self.click_traval_button()
-            self.wait_in_team(time_out=120, settle_time=1)
-
-            # 打开异象家具
-            def action_1():
-                try:
-                    self.send_key_down("lalt")
-                    self.sleep(0.25)
-                    self.operate_click(0.465, 0.056)
-                finally:
-                    self.send_key_up("lalt")
-                self.sleep(2)
-                if not self.is_in_team():
-                    return True
-
-            self.retry_on_action(action_1, attempt=10, raise_if_failed=True)
-            box_left = self.box_of_screen(0.024, 0.181, 0.278, 0.775, hcenter=True)
-            self.wait_until(
-                lambda: self.find_sift_feature(furniture, box=box_left), raise_if_not_found=True
-            )
-            self.sleep(0.5)
-            box_right = self.box_of_screen(0.738, 0.236, 0.805, 0.959, hcenter=True)
-
-            # 点击异象家具
-            def action_2():
-                box = self.find_sift_feature(furniture, box=box_left)
-                if box:
-                    self.operate_click(box)
-                    self.sleep(0.5)
-                    self.operate_click(0.924, 0.174)
-                    self.sleep(0.5)
-                    if self.find_sift_feature(furniture, box=box_right):
-                        return True
-
-            self.retry_on_action(action_2, attempt=10, raise_if_failed=True)
-
-            # 二次确认异象家具
-            self.wait_until(
-                lambda: self.find_sift_feature(furniture, box=box_right), raise_if_not_found=True
-            )
-
-            # 领取目标家具
-            self.sleep(0.5)
-            self.operate(
-                lambda: (
-                    self.click(0.938, 0.283, move=True),
-                    self.sleep(0.1),
-                    self.click(0.938, 0.303, move=True),
-                ),
-                block=True,
-            )
-            self.sleep(0.5)
-            self.ensure_main()
-            return True
-
-        furniture_results = {}
-        for furniture in [
-            Labels.anomaly_fluff,
-            Labels.anomaly_hamster_ball,
-            Labels.anomaly_wooden_crate,
-        ]:
-            try:
-                claimed = claim_furniture(furniture)
-            except TaskDisabledException:
-                raise
-            except Exception as e:
-                self.log_error(f"领取异象家具失败: {furniture}", e)
-                claimed = False
-
-            furniture_results[furniture] = claimed
-            result = "成功" if claimed else "失败"
-            self.log_info(f"异象家具 {furniture} 领取{result}")
-
-        all_claimed = all(furniture_results.values())
-        if all_claimed:
-            self.log_info("异象家具奖励全部领取成功")
-        else:
-            self.log_error("异象家具奖励未能全部领取成功")
-        return all_claimed
+    def run_fountain_sign_task(self):
+        sign_mode = self.config.get(self.CONF_FOUNTAIN_SIGN)
+        with self.set_working_task(FountainTask) as task:
+            return task.do_run(sign_mode)
 
     def run_gift_task(self):
         with self.set_working_task(GiftTask) as task:
             summary = task.run_gifts()
         return len(summary["failed"]) == 0
+
+    def run_furniture_task(self):
+        with self.set_working_task(FurnitureTask) as task:
+            return task.do_run()
+
+    def run_cinema_task(self):
+        with self.set_working_task(CinemaDateTask) as task:
+            return task.do_run(self.config.get(self.CINEMA_DATE_TARGET, ""))

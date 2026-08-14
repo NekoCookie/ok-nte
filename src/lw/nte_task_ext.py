@@ -1,8 +1,8 @@
 # [lw] BaseNTETask 的用户扩展:
 # - find_confirm 用 OCR 认字挑真确认键, 防游戏更新调换确认/取消位置或配色
 #   (接线: BaseNTETask.find_confirm 一行委托到这里)
-# - lw_daily_account_cycle: DailyTask 跑完自动换号再跑一轮的钩子
-#   (接线: DailyTask.run 一行调用)
+# - lw_daily_account_cycle: DailyRoutineTask 跑完自动换号再跑一轮的钩子
+#   (接线: DailyRoutineTask.run 一行调用)
 import re
 from typing import TYPE_CHECKING
 
@@ -41,14 +41,19 @@ class NTETaskExtMixin(_TaskProxy):
             return confirm_pink_color
         return default_color
 
-    def lw_find_confirm(self, box=None, threshold=0.7):
+    def lw_find_confirm(self, box=None, threshold=0.7, mask_function=None):
         if not isinstance(box, Box):
             box = self.main_viewport
         candidates = []
         # 确认/取消可能是同一款式(如全白), 每个模板要收集多个匹配而非单个最佳,
         # 否则真确认键根本进不了候选
         for label in (Labels.confirm_btn_1, Labels.confirm_btn_2):
-            boxes = self.find_feature(label, box=box, threshold=threshold)
+            boxes = self.find_feature(
+                label,
+                box=box,
+                threshold=threshold,
+                mask_function=mask_function,
+            )
             if boxes:
                 candidates.extend(boxes)
         if not candidates:
@@ -79,7 +84,7 @@ class NTETaskExtMixin(_TaskProxy):
         return unknown[0]
 
     def lw_daily_account_cycle(self):
-        """DailyTask 收尾钩子: "切换账号"任务开了随日常轮换开关时, 自动换号再跑一轮日常。
+        """DailyRoutineTask 收尾钩子: "切换账号"任务开了随日常轮换开关时, 自动换号再跑一轮日常。
 
         只在 DailyTask.run 的 do_run 正常结束后调用一次; 第二轮直接调 do_run,
         不再经过钩子, 天然不会无限循环。换号目标固定"另一个账号"(不读目标UID配置)。

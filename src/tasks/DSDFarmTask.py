@@ -67,7 +67,7 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
                 self.CONF_USE_ULT: True,
                 self.CONF_DONT_SWITCH: False,
                 self.CONF_MAX_COMBAT_TIME: 1200,
-                self.CONF_WAIT_FULL_DURATION: False
+                self.CONF_WAIT_FULL_DURATION: False,
             }
         )
 
@@ -98,12 +98,9 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
 
     def do_run(self):
         self.do_teleport_on_spot = False
-        self.use_ultimate = self.config.get(self.CONF_USE_ULT, True)
         self.deside_map_zoom()
-        rounds = self.configured_rounds(default=0)
-        round_index = 1
-        while self.should_run_round(round_index, rounds):
-            self.info_set("轮次", self.rounds_info_text(round_index, rounds))
+        self.start_rounds()
+        while self.begin_round():
             self.lw_wait_interac(time_out=10)  # [lw] 传送后等待交互提示, 缺失时自动恢复
             self.wait_until(
                 lambda: not self.is_in_team(),
@@ -114,7 +111,7 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
                 raise_if_not_found=True,
             )
             self.sleep(2)
-            self.lw_refresh_monsters()  # [lw] 更新后刷新会出现确认弹窗
+            self.refresh_monster()
             self.ensure_main()
             if self.do_teleport_on_spot:
                 self.sleep(0.5)
@@ -122,7 +119,8 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
                 self.ensure_main()
             self.deside_action()
             self.next_frame()
-            round_index += 1
+            self.add_success()
+        self.finish_rounds()
 
     def sleep_check(self):
         if self.lw_input_paused():  # [lw] 任务或全局暂停时不执行任何恢复输入
@@ -148,6 +146,28 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
     def send_key_up(self, key, after_sleep=0):
         self._lw_held_keys().discard(key)
         return super().send_key_up(key, after_sleep=after_sleep)
+
+    def refresh_monster(self):
+        box = self.box_of_screen(0.470, 0.869, 0.534, 0.928)
+        if not self.run_and_check_changed(
+            lambda: self.operate_click(0.057, 0.218),
+            snap_box=box,
+            check_box=box.scale(1.1, 1.1),
+            after_sleep=0.5,
+        ):
+            return
+
+        def click_no_remind():
+            box = self.wait_until(
+                lambda: self.find_one(Labels.no_remind_today, horizontal_variance=0.1), time_out=3
+            )
+            self.operate_click(box, after_sleep=0.5)
+
+        self.wait_click_confirm(
+            range=(0.650, 0.611, 0.707, 0.708),
+            on_found=click_no_remind,
+            time_out=3,
+        )
 
     def deside_map_zoom(self):
         location = self.config.get(self.CONF_LOCATION, None)
@@ -261,44 +281,28 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         return False  # [lw]
 
     def deside_combat_action(self):
-        def action(*args, **kwargs):
-            self.click()
-            self.sleep(0.1)
-
         with self.skip_sleep_checks() as skip:
             skip.all = False
-            try:
-                dont_switch = self.config.get(self.CONF_DONT_SWITCH, False)
-                max_combat_time = self.config.get(self.CONF_MAX_COMBAT_TIME, 1200)
+            max_combat_time = self.config.get(self.CONF_MAX_COMBAT_TIME, 1200)
 
-                if dont_switch:
-                    old_switch = self.switch_next_char
-                    old_switch_start = self.switch_to_combat_start_char
-                    old_switch_other = self.switch_other_char
-                    self.switch_next_char = action
-                    self.switch_to_combat_start_char = action
-                    self.switch_other_char = lambda *args, **kwargs: True
-
-                start_combat = time.time()
-                self.combat_once(max_combat_time=max_combat_time)
-                self.team_dead = False
-                while not self.is_in_team():
-                    self.team_dead = True
-                    self.operate_click(0.501, 0.777, after_sleep=0.5)
-                    self.send_key("esc", after_sleep=2)
-                    self.next_frame()
-                if self.team_dead:
-                    return
-                if self.config.get(self.CONF_WAIT_FULL_DURATION):
-                    remaining_time = max_combat_time - (time.time() - start_combat)
-                    if remaining_time > 0:
-                        self.log_info(f"战斗提前结束，原地等待 {remaining_time:.1f} 秒以补齐时长上限。")
-                        self.sleep(remaining_time)
-            finally:
-                if dont_switch:
-                    self.switch_next_char = old_switch
-                    self.switch_to_combat_start_char = old_switch_start
-                    self.switch_other_char = old_switch_other
+            session = self.combat_session
+            session.switch_enabled = not self.config.get(self.CONF_DONT_SWITCH, False)
+            session.use_ultimate = self.config.get(self.CONF_USE_ULT, True)
+            start_combat = time.time()
+            self.combat_once(max_combat_time=max_combat_time)
+            self.team_dead = False
+            while not self.is_in_team():
+                self.team_dead = True
+                self.operate_click(0.501, 0.777, after_sleep=0.5)
+                self.send_key("esc", after_sleep=2)
+                self.next_frame()
+            if self.team_dead:
+                return
+            if self.config.get(self.CONF_WAIT_FULL_DURATION):
+                remaining_time = max_combat_time - (time.time() - start_combat)
+                if remaining_time > 0:
+                    self.log_info(f"战斗提前结束，原地等待 {remaining_time:.1f} 秒以补齐时长上限。")
+                    self.sleep(remaining_time)
 
     def map_zoom(self, zoom="max"):
         self.ensure_main()
@@ -365,7 +369,7 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         )
         self.sleep(0.5)
         return self.click_traval_button(raise_if_not_found=False)
-    
+
     def teleport_to_bonfire(self, box: Box = None, threshold=0.7, order=1):
         self.ensure_main()
         self.open_map()

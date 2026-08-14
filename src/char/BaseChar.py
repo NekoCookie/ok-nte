@@ -41,9 +41,18 @@ class Element(StrEnum):
 class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
     """角色基类，定义了游戏角色的通用属性和行为。"""
 
+    Element = Element
     INTRO_MOTION_FREEZE_DURATION = 1.5
+    en_name = ""
+    cn_name = ""
+    element = Element.DEFAULT
 
-    def __init__(self, task, index, char_id="", confidence=1):
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.en_name = cls.__dict__.get("en_name", "") or cls.__name__
+        cls.cn_name = cls.__dict__.get("cn_name", "") or cls.en_name
+
+    def __init__(self, task, index: int, char_id="", confidence=1):
         """初始化角色基础属性。
 
         Args:
@@ -53,10 +62,8 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         """
         self.task: "BaseCombatTask" = task
         self.char_name = "default"
-        self.combo_name = "default"
         self.char_id = char_id
-        self.combo_id = ""
-        self.builtin = False
+        self.impl_id = ""
         self.index = index
         self.last_switch_time = -1
         self.last_ultimate_time = -1
@@ -70,7 +77,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         self.confidence = confidence
         self.logger = Logger.get_logger(self.name)
         self.cycle_start_time = 0.0
-        self.element = Element.DEFAULT
+        self.element = type(self).element
         self.planner_handles_arc = False
         self.is_dead = False
 
@@ -105,6 +112,18 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         """
         return f"{self.__class__.__name__}"
 
+    @property
+    def ufn_name(self) -> str:
+        """获取用户友好的角色名称。
+
+        优先使用用户为当前角色实例配置的名称; 未初始化或未知时回退到角色元数据。
+        """
+        char_name = str(self.char_name).strip()
+        if char_name and char_name not in {"default", "unknown"}:
+            return char_name
+        _name = type(self).cn_name if self.task.is_chinese() else type(self).en_name
+        return _name or self.name
+
     def __eq__(self, other):
         """比较两个角色对象是否相同 (基于名称和索引)。"""
         if isinstance(other, BaseChar):
@@ -114,6 +133,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
     def perform(self):
         """执行当前角色的主要战斗行动序列。"""
         self.last_perform = time.time()
+        self.task.record_first_engage(self)
         if self.has_intro:
             self.add_intro_motion_freeze(self.last_perform)
             self.wait_intro()
@@ -292,10 +312,11 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             name: 动作名。默认 `"{角色名}_ultimate"`，用于日志和高级精确匹配。
             tags: 动作标签。默认 `{Planner.ActionTag.ULTIMATE_ACTION}`。
             reason: 切人/执行日志理由。
-            can_execute: 额外硬限制；slot reservation 由 planner 统一检查。
+            can_execute: 额外限制; 终结技不可用时禁止执行。
 
         Behavior:
             - 自动设置 `slot=Planner.ActionSlot.ULTIMATE`。
+            - `can_execute` 默认包含 `self.ultimate_available()`。
             - `priority_ready` 自动使用 `self.ultimate_available()`。
             - `execute` 调用 `self.click_ultimate()`。
             - planner 会自动用 `slot=ULTIMATE` 检查 reservation。
@@ -310,7 +331,9 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             execute=lambda context: self.click_ultimate(),
             name=name,
             reason=reason,
-            can_execute=can_execute,
+            can_execute=lambda context: (
+                self.ultimate_available() and (can_execute is None or can_execute(context))
+            ),
             priority_ready=lambda _: self.ultimate_available(),
         )
 
@@ -329,10 +352,11 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             tags: 动作标签。默认 `{Planner.ActionTag.SKILL_ACTION}`。
             reason: 切人/执行日志理由。
             down_time: 传给 `click_skill(down_time=...)` 的按下时间。
-            can_execute: 额外硬限制；slot reservation 由 planner 统一检查。
+            can_execute: 额外限制; 技能不可用时禁止执行。
 
         Behavior:
             - 自动设置 `slot=Planner.ActionSlot.SKILL`。
+            - `can_execute` 默认包含 `self.skill_available()`。
             - `priority_ready` 自动使用 `self.skill_available()`。
             - `execute` 调用 `self.click_skill(...)`。
             - planner 会自动用 `slot=SKILL` 检查 reservation。
@@ -347,7 +371,9 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             execute=lambda context: self.click_skill(down_time=down_time),
             name=name,
             reason=reason,
-            can_execute=can_execute,
+            can_execute=lambda context: (
+                self.skill_available() and (can_execute is None or can_execute(context))
+            ),
             priority_ready=lambda _: self.skill_available(),
         )
 
@@ -382,7 +408,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         Note:
             只要 `slot` 不为 None，`CombatPlanner` 会自动检查 reservation。
             开发者传入的 `can_execute` 只表达额外机制限制，不需要重复写
-            `context.can_execute_action(...)`。
+            `context.is_slot_available(...)`。
         """
 
         if not isinstance(tags, set):
@@ -507,8 +533,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             if status != "continue":
                 result["status"] = status
                 return result
-
-            if available():
+            else:
                 self.logger.debug(f"{action_type} available click/send")
                 action_time = time.time()
                 sent = send_action()
@@ -518,7 +543,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
                 if sent is not False:
                     result["clicked"] = True
                     result["action_time"] = action_time
-
+            self.sleep(0.01, sleep_check=False)
             self.task.next_frame()  # [lw]
             # [lw] 有动画动作按键后，目标/队伍 UI 会先于 animation 标志消失；此处做完整
             # 战斗检查会把所有角色的大招演出误判成脱战。动画生命周期由本动作自己的
@@ -563,6 +588,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
                     return "continue"
             self.logger.debug(f"{action_type} not available break")
             return "released" if result["clicked"] else "unavailable"
+        self.sleep(0.01)
         result["animation_pending_start"] = 0
         return "continue"
 
@@ -576,7 +602,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         Returns:
             bool: 如果成功释放则返回 True。
         """
-        if not self.task.use_ultimate:
+        if not self.task.combat_session.use_ultimate:
             return False
 
         if self.ultimate_available():
@@ -650,23 +676,23 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             self.click_with_interval()  # [lw] 等待期平A填充, 不死等
             self.sleep(0.1)
 
-    def _wait_ultimate_unfreeze(self, start):
+    def _wait_ultimate_unfreeze(self, start, click=True):
         self.logger.info("waiting for ultimate unfrozen")
         self.task.wait_until(
             lambda: self.has_cd("ultimate"),
-            post_action=self._click_during_ultimate_unfreeze,  # [lw] 结算期只填充点击，不做脱战检测
+            post_action=lambda: click and self._click_during_ultimate_unfreeze(),  # [lw]
             time_out=2,
         )
         box_ultimate = self.task.get_box_by_name(Labels.box_ultimate)
         snapshot = box_ultimate.crop_frame(self.task.frame)
-        processed_snapshot = gf.isolate_cd_to_black(snapshot)
+        processed_snapshot = gf.isolate_text_to_black(snapshot)
 
         def condition():
             if not self.task.find_one(
                 Labels.box_ultimate,
                 template=processed_snapshot,
                 box=box_ultimate,
-                frame_processor=gf.isolate_cd_to_black,
+                frame_processor=gf.isolate_text_to_black,
                 threshold=0.7,
             ):
                 self.logger.info("ultimate unfreeze cause cd changed")
@@ -678,7 +704,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         self.task.wait_until(
             condition,
             time_out=self.ULTIMATE_UNFREEZE_TIMEOUT,  # [lw] 原10s, 识别失效时空等太久
-            post_action=self._click_during_ultimate_unfreeze,  # [lw] 结算期只填充点击
+            post_action=lambda: click and self._click_during_ultimate_unfreeze(),  # [lw]
         )
         duration = time.time() - start
         self.add_freeze_duration(start, duration, cause="大招时停")  # [lw] cause=
@@ -778,8 +804,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         return animated
 
     def click_arc(self):
-        self.send_arc_key()
-        return True
+        return self.send_arc_key()
 
     def send_skill_key(self, after_sleep=0, interval=-1, down_time=0.01, action_name=None):
         """发送技能按键。
@@ -806,7 +831,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             interval (float, optional): 按键按下和释放的间隔。默认为 -1 (使用默认值)。
             down_time (float, optional): 按键按下的持续时间。默认为 0.01。
         """
-        self.send_key(
+        return self.send_key(
             self.get_arc_key(), interval=interval, down_time=down_time, after_sleep=after_sleep
         )
 
@@ -880,7 +905,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         return self.available("skill", check_color=check_color)
 
     def available(self, box, check_color=True, check_cd=True):
-        if box == "ultimate" and not self.task.use_ultimate:
+        if box == "ultimate" and not self.task.combat_session.use_ultimate:
             return False
         if self.is_current_char:
             return self.task.available(box, check_color=check_color, check_cd=check_cd)
@@ -1034,8 +1059,13 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         return outro
 
     def is_first_engage(self):
-        """判断角色是否为触发战斗时的登场角色。"""
-        result = 0 <= self.last_perform - self.task.combat_start < 0.1
-        if result:
-            self.logger.info("first engage")
-        return result
+        """判断角色是否为本场第一个实际执行战斗逻辑的角色。"""
+        return self.task.is_first_engage(self)
+
+    def consume_first_engage(self):
+        """消费本场首次登场标记, 同一场战斗仅会成功一次。"""
+        return self.task.consume_first_engage(self)
+
+    def now(self):
+        """Gets the current system monotonic time."""
+        return time.monotonic()

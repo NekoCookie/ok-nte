@@ -1,5 +1,7 @@
 # Combat Planner 开发指南
 
+> **提示**：角色的具体代码实现可在 [`src/char`](../../src/char) 目录中找到。
+
 Planner 是队伍大脑。角色只声明一个 `CombatPlan`：
 
 - `actions`：planner 可见的动作目录，用于切人评分、route/request/reservation 匹配。
@@ -9,7 +11,7 @@ Planner 是队伍大脑。角色只声明一个 `CombatPlan`：
 公开导入入口固定使用：
 
 ```python
-from src.combat.planner import ActionSlot, CombatContext, FieldClaim, Planner
+from src.combat.planner import ActionSlot, CombatContext, FieldClaim, Planner, RoleProfile
 ```
 
 `src.combat.planner` 只导出正式开发 API。角色代码不要直接导入
@@ -22,8 +24,8 @@ from src.combat.planner import ActionSlot, CombatContext, FieldClaim, Planner
 ```python
 def describe_role(self):
     return RoleProfile(
-        role=Role.SUB_DPS,
-        field_preference=FieldPreference.SUB_DPS,
+        role=Planner.Role.SUB_DPS,
+        field_preference=Planner.FieldPreference.SUB_DPS,
         max_field_time=1.5,
     )
 
@@ -34,7 +36,8 @@ def combat_plan(self, context: CombatContext):
     )
 ```
 
-复杂动作顺序用同一个 plan 里的 action 变量写 entry flow，不要重复声明：
+复杂动作顺序用同一个 plan 里的 action 变量写 entry flow。一个 action 在一次 entry 中只能
+执行一次；有限次的额外执行使用 `repeat_for_entry()`：
 
 ```python
 def combat_plan(self, context: CombatContext):
@@ -48,7 +51,7 @@ def combat_plan(self, context: CombatContext):
 
         ultimate_result = yield ultimate
         if ultimate_result:
-            self.perform_in_ult(context)
+            yield skill.repeat_for_entry()
 
     return self.plan(skill, ultimate, entry=entry)
 ```
@@ -109,8 +112,20 @@ def combat_plan(self, context):
 - `can_execute: Callable[[CombatContext], bool] | None`：planner 层硬限制。
 - `priority_ready: Callable[[CombatContext], bool] | None`：只用于切人评分。
 
-如果 action 设置了 `slot`，planner 会自动通过 `context.can_execute_action(...)`
-检查 reservation。开发者传入的 `can_execute` 只需要表达额外机制限制。
+`action.repeat_for_entry()` 返回一个可在同一次 entry 中再次 `yield` 的动作副本。
+它保留原 action 的执行、slot、标签和 `can_execute` 限制，并为每次调用自动生成独立
+的 entry 去重结果。因此它适合 `Q -> E -> 再尝试一次 E` 这类有限 entry flow；副本通常
+只在 entry flow 中 yield，不应加入 `CombatPlan.actions`。
+
+每次 `yield` 都会计入单次 entry 的动作上限。不要在需要持续运行的长时间循环中 yield
+它；此类循环应在调用已有动作 helper 前，先通过
+`context.is_action_allowed(self, action)` 检查完整 action 权限。这样循环保持由角色代码
+控制，同时仍遵守 planner 的 `can_execute` 和 reservation 规则。
+
+如果 action 设置了 `slot`，planner 会自动通过 `context.is_slot_available(...)`
+检查 reservation。开发者传入的 `can_execute` 只需要表达额外机制限制。需要在 entry
+flow 外预查询完整 action 时，使用 `context.is_action_allowed(self, action)`；它同时检查
+`can_execute` 和 slot reservation。普通或有限 entry 动作仍直接 `yield action`。
 
 `execute` 返回规则：
 
@@ -161,10 +176,34 @@ action 代表该角色参赛。tag 不控制普通入场流程；普通入场由
 ```python
 FollowupStep.for_action(zero, ActionSlot.SKILL)
 ActionReservation.for_action(nanally, ActionSlot.SKILL)
-context.can_execute_action(self, slot=ActionSlot.SKILL)
+context.is_slot_available(self, ActionSlot.SKILL)
 ```
 
 ## BaseChar Helper
+
+### 开战会话与首次登场
+
+`BaseCombatTask.begin_combat_session()` 是战斗正式开始时的统一入口。它会创建公开的
+`task.combat_session`, 调用首切决策并记录实际首发角色; `CombatPlanner` 只负责决定首切
+目标, 不执行输入或管理会话。`CombatSession.combat_start` 是本场战斗进入时刻;
+`use_ultimate` 与 `switch_enabled` 是本场固定的战斗策略。
+
+`BaseChar.perform()` 开始时会记录本场第一个实际执行战斗逻辑的角色。角色逻辑可用：
+
+```python
+if self.is_first_engage():
+    # 本场首次实际登场的角色
+    ...
+
+if self.consume_first_engage():
+    # 全场仅成功一次
+    ...
+```
+
+`is_first_engage()` 在本场战斗内稳定; `consume_first_engage()` 全场仅返回一次 `True`。
+两者都不依赖首切耗时或时间窗口。`task.combat_session` 在首次读取时会创建默认会话;
+任务若需要禁止首切和后续切人, 应在调用 `begin_combat_session()` 前设置
+`task.combat_session.switch_enabled = False`, 不要在运行期替换切人方法。
 
 ### click_ultimate_action
 
@@ -180,6 +219,7 @@ self.click_ultimate_action(
 - 自动设置 `slot=ActionSlot.ULTIMATE`。
 - 默认 `tags={ActionTag.ULTIMATE_ACTION}`。
 - 默认 `name=f"{角色名}_ultimate"`。
+- `can_execute` 默认包含 `self.ultimate_available()`；传入的额外条件会与之合并。
 - `priority_ready` 自动使用 `self.ultimate_available()`。
 - `execute` 调用 `self.click_ultimate()`。
 
@@ -198,6 +238,7 @@ self.click_skill_action(
 - 自动设置 `slot=ActionSlot.SKILL`。
 - 默认 `tags={ActionTag.SKILL_ACTION}`。
 - 默认 `name=f"{角色名}_skill"`。
+- `can_execute` 默认包含 `self.skill_available()`；传入的额外条件会与之合并。
 - `priority_ready` 自动使用 `self.skill_available()`。
 - `execute` 调用 `self.click_skill(down_time=down_time)`。
 
@@ -282,17 +323,23 @@ def combat_plan(self, context):
 
 - `context.request_route(...)`：固定顺序协作路线。
 - `context.request_switch(...)`：请求下一次普通调度切给某角色。
+- `context.request_role(...)`：请求下一次普通调度切给某个队伍定位的角色；多个
+  匹配角色时按普通切人评分选择。它不指定动作，也不打断当前 entry flow。
 - `context.reserve_actions(...)`：保留队友动作。
 - `context.request_tags(...)`：请求一定数量的 tag 动作。
+
+`request_role(Planner.Role.SUPPORT)` 请求的是角色的静态队伍定位；
+`request_tags({Planner.ActionTag.SUPPORT})` 请求的是任意支援类动作。前者适合
+“让任一辅助角色进场”，后者适合“让任一队友完成一次治疗/增益动作”。
+
+```python
+context.request_role(Planner.Role.SUPPORT, reason="need a support role")
+```
 
 ## 行为摘要
 
 - 切人评分与普通 entry 执行分离。
-- 决策顺序是 strict route、入场/环合请求、preemptive claim、自动环合反应、
-  switch request、普通评分。
-- 开场显式 `combat_start_priority` 仍最高；没有显式开场目标时，已确认资源的
-  preemptive claim 可以先铺设，完成后重新进入普通 planner 决策。
-- 普通评分使用 `actions` 中最高分 ready action，再叠加普通 `FieldClaim`、request 和 role 分。
+- 评分使用 `actions` 中最高分 ready action，再叠加 `FieldClaim`、request 和站场偏好分。
 - 当前角色普通入场执行由 `entry` 控制；未写 entry 时按 `actions` 顺序执行。
 - `priority_ready=False` 只降低切人吸引力，不是硬阻止。
 - `can_execute=False` 是硬阻止；被阻止的 entry action 会得到失败 result，不会真实执行。

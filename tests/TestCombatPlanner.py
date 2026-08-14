@@ -1,7 +1,9 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from src.char.BaseChar import BaseChar
+from src.char.Nanally import Nanally
 from src.combat.planner import (
     NEVER_EXPIRES,
     ActionIntent,
@@ -64,6 +66,7 @@ class FakeChar:
         self.last_switch_time = -1
         self.is_current_char = False
         self._field_preference = field_preference
+        self._role = role
         self._tags = set(tags or {ActionTag.DAMAGE})
         self._plan_items = plan_items
         self._policies = policies
@@ -117,22 +120,25 @@ class FakeChar:
             slot = ActionSlot.SKILL
         elif ActionTag.ULTIMATE_ACTION in self._tags:
             slot = ActionSlot.ULTIMATE
-        return self._plan_from_plan_items([
-            ActionIntent(
-                name=f"{self.name}_action",
-                tags=set(self._tags),
-                execute=lambda _: ActionResult(
+        return self._plan_from_plan_items(
+            [
+                ActionIntent(
                     name=f"{self.name}_action",
-                    success=True,
                     tags=set(self._tags),
+                    execute=lambda _: ActionResult(
+                        name=f"{self.name}_action",
+                        success=True,
+                        tags=set(self._tags),
+                        slot=slot,
+                    ),
                     slot=slot,
-                ),
-                slot=slot,
-                reason=f"{self.name} available",
-                can_execute=self._can_execute,
-                priority_ready=self._priority_ready,
-            )
-        ] + list(claims))
+                    reason=f"{self.name} available",
+                    can_execute=self._can_execute,
+                    priority_ready=self._priority_ready,
+                )
+            ]
+            + list(claims)
+        )
 
     def _plan_from_plan_items(self, plan_items):
         actions = []
@@ -256,12 +262,12 @@ class TestCombatPlanner(unittest.TestCase):
         def combat_plan(_):
             return CombatPlan(
                 actions=[
-                ActionIntent(
-                    name="publish_test_request",
-                    tags={ActionTag.DEFAULT_ACTION},
-                    execute=execute,
-                    reason="publish test request",
-                )
+                    ActionIntent(
+                        name="publish_test_request",
+                        tags={ActionTag.DEFAULT_ACTION},
+                        execute=execute,
+                        reason="publish test request",
+                    )
                 ]
             )
 
@@ -1146,12 +1152,14 @@ class TestCombatPlanner(unittest.TestCase):
                     name="first",
                     tags={ActionTag.SKILL_ACTION},
                     slot=ActionSlot.SKILL,
-                    execute=lambda _: calls.append("first")
-                    or ActionResult(
-                        name="first",
-                        success=True,
-                        tags={ActionTag.DEFAULT_ACTION},
-                        slot=ActionSlot.SKILL,
+                    execute=lambda _: (
+                        calls.append("first")
+                        or ActionResult(
+                            name="first",
+                            success=True,
+                            tags={ActionTag.DEFAULT_ACTION},
+                            slot=ActionSlot.SKILL,
+                        )
                     ),
                 ),
                 self._action(
@@ -1252,6 +1260,121 @@ class TestCombatPlanner(unittest.TestCase):
         self.assertEqual(char.ultimate_clicked, 1)
         self.assertEqual(result.name, "api_char_ultimate")
 
+    def test_entry_flow_repeat_for_entry_runs_action_again(self):
+        task = FakeTask()
+
+        def plan(source, context):
+            skill = source.click_skill_action(name="skill")
+            ultimate = source.click_ultimate_action(name="ultimate")
+
+            def entry():
+                yield skill
+                ultimate_result = yield ultimate
+                if ultimate_result:
+                    yield skill.repeat_for_entry()
+
+            return CombatPlan([skill, ultimate], entry=entry)
+
+        char = PublicApiChar(task, 0, "api_char", plan)
+        task.chars = [char]
+        planner = CombatPlanner(task)
+        planner.reset([char])
+
+        result = planner.perform_current_char(char)
+
+        self.assertEqual(char.skill_clicked, 2)
+        self.assertEqual(char.ultimate_clicked, 1)
+        self.assertEqual(result.name, "skill")
+
+    def test_repeat_for_entry_retries_action_after_failure(self):
+        task = FakeTask()
+        attempts = []
+
+        def plan(source, context):
+            skill = ActionIntent(
+                name="skill",
+                tags={ActionTag.SKILL_ACTION},
+                slot=ActionSlot.SKILL,
+                execute=lambda _: attempts.append("skill") or len(attempts) == 2,
+            )
+            ultimate = source.click_ultimate_action(name="ultimate")
+
+            def entry():
+                ultimate_result = yield ultimate
+                while ultimate_result:
+                    skill_result = yield skill.repeat_for_entry()
+                    if skill_result:
+                        return
+
+            return CombatPlan([skill, ultimate], entry=entry)
+
+        char = PublicApiChar(task, 0, "api_char", plan)
+        task.chars = [char]
+        planner = CombatPlanner(task)
+        planner.reset([char])
+
+        result = planner.perform_current_char(char)
+
+        self.assertEqual(attempts, ["skill", "skill"])
+        self.assertEqual(char.ultimate_clicked, 1)
+        self.assertTrue(result.success)
+
+    def test_nanally_ultimate_loop_retries_skill_without_yielding_entry_actions(self):
+        task = FakeTask()
+        nanally = Nanally(task, 0, char_id="nanally")
+        context = type(
+            "AllowedContext",
+            (),
+            {"is_action_allowed": lambda _, char, action: True},
+        )()
+        skill = ActionIntent(name="skill", tags=set(), execute=lambda _: True)
+        skill_results = iter([False, True])
+        normal_attacks = []
+        nanally.skill_available = lambda: True
+        nanally.click_skill = lambda: next(skill_results)
+        nanally.normal_attack = lambda: normal_attacks.append("normal")
+        nanally.sleep = lambda _: None
+
+        with patch("src.char.Nanally.time.time", side_effect=[0, 0, 0.2, 6]):
+            result = nanally.perform_in_ult(context, skill)
+
+        self.assertTrue(result)
+        self.assertEqual(normal_attacks, ["normal", "normal"])
+
+    def test_entry_flow_yielded_action_respects_slot_reservation(self):
+        task = FakeTask()
+        source = FakeChar(0, "source")
+
+        def plan(source, context):
+            skill = source.click_skill_action(name="skill")
+            ultimate = source.click_ultimate_action(name="ultimate")
+
+            def entry():
+                ultimate_result = yield ultimate
+                if ultimate_result:
+                    yield skill.repeat_for_entry()
+
+            return CombatPlan([skill, ultimate], entry=entry)
+
+        char = PublicApiChar(task, 1, "api_char", plan)
+        task.chars = [source, char]
+        planner = CombatPlanner(task)
+        planner.reset([source, char])
+        self._publish(
+            planner,
+            source,
+            lambda context: context.reserve_actions(
+                [ActionReservation.for_action(char, ActionSlot.SKILL)],
+                reason="hold ultimate skill",
+                until=NEVER_EXPIRES,
+            ),
+        )
+        result = planner.perform_current_char(char)
+
+        self.assertEqual(char.ultimate_clicked, 1)
+        self.assertEqual(char.skill_clicked, 0)
+        self.assertFalse(result.success)
+
     def test_action_result_bool_reflects_success(self):
         task = FakeTask()
         action = ActionIntent(
@@ -1308,6 +1431,41 @@ class TestCombatPlanner(unittest.TestCase):
 
         self.assertEqual(target.skill_clicked, 1)
         self.assertEqual(result.name, "target_skill")
+
+    def test_context_is_action_allowed_checks_can_execute_and_reservation(self):
+        enabled = {"value": False}
+        task = FakeTask()
+        source = PublicApiChar(task, 0, "source", lambda source, _: source.plan())
+        target = PublicApiChar(
+            task,
+            1,
+            "target",
+            lambda source, _: source.plan(
+                source.click_skill_action(can_execute=lambda _: enabled["value"])
+            ),
+        )
+        task.chars = [source, target]
+        planner = CombatPlanner(task)
+        planner.reset([source, target])
+        context = planner.context_for(target)
+        action = target.combat_plan(context).actions[0]
+
+        self.assertFalse(context.is_action_allowed(target, action))
+
+        enabled["value"] = True
+        self.assertTrue(context.is_action_allowed(target, action))
+
+        self._publish(
+            planner,
+            source,
+            lambda source_context: source_context.reserve_actions(
+                [ActionReservation.for_action(target, ActionSlot.SKILL)],
+                reason="hold target skill",
+                until=NEVER_EXPIRES,
+            ),
+        )
+
+        self.assertFalse(context.is_action_allowed(target, action))
 
     def test_planner_action_slot_respects_reservation(self):
         expired = {"value": False}
@@ -1723,7 +1881,7 @@ class TestCombatPlanner(unittest.TestCase):
         planner = self._planner([source, target])
         context = planner.context_for(source)
 
-        self.assertFalse(context.can_execute_action(target, slot=ActionSlot.SKILL))
+        self.assertFalse(context.is_slot_available(target, ActionSlot.SKILL))
 
     def test_combat_plan_published_requests_are_ignored(self):
         target = FakeChar(1, "target")
@@ -1744,7 +1902,7 @@ class TestCombatPlanner(unittest.TestCase):
         planner.decide_switch(source)
         context = planner.context_for(source)
 
-        self.assertTrue(context.can_execute_action(target, slot=ActionSlot.SKILL))
+        self.assertTrue(context.is_slot_available(target, ActionSlot.SKILL))
 
     def test_reserve_actions_blocks_until_condition_releases(self):
         source = FakeChar(0, "source")
@@ -1762,12 +1920,12 @@ class TestCombatPlanner(unittest.TestCase):
         )
         context = planner.context_for(source)
 
-        self.assertFalse(context.can_execute_action(nanally, slot=ActionSlot.SKILL))
+        self.assertFalse(context.is_slot_available(nanally, ActionSlot.SKILL))
 
         expired["value"] = True
         planner.state.prune()
 
-        self.assertTrue(context.can_execute_action(nanally, slot=ActionSlot.SKILL))
+        self.assertTrue(context.is_slot_available(nanally, ActionSlot.SKILL))
 
     def test_reserve_actions_requires_explicit_lifetime(self):
         source = FakeChar(0, "source")
@@ -1818,7 +1976,7 @@ class TestCombatPlanner(unittest.TestCase):
         planner.state.prune()
         context = planner.context_for(source)
 
-        self.assertFalse(context.can_execute_action(nanally, slot=ActionSlot.SKILL))
+        self.assertFalse(context.is_slot_available(nanally, ActionSlot.SKILL))
 
     def test_reset_closes_request_handles(self):
         source = FakeChar(0, "source")
@@ -1868,12 +2026,12 @@ class TestCombatPlanner(unittest.TestCase):
         self._publish(planner, hotori, publish)
         context = planner.context_for(hotori)
 
-        self.assertFalse(context.can_execute_action(nanally, slot=ActionSlot.SKILL))
+        self.assertFalse(context.is_slot_available(nanally, ActionSlot.SKILL))
 
         planner.perform_current_char(zero)
 
         self.assertEqual(planner.state.locked_route, None)
-        self.assertTrue(context.can_execute_action(nanally, slot=ActionSlot.SKILL))
+        self.assertTrue(context.is_slot_available(nanally, ActionSlot.SKILL))
 
     def test_reservation_can_release_when_route_is_expired(self):
         hotori = FakeChar(0, "hotori", field_preference=FieldPreference.SETUP_ONLY)
@@ -1897,13 +2055,13 @@ class TestCombatPlanner(unittest.TestCase):
         self._publish(planner, hotori, publish)
         context = planner.context_for(hotori)
 
-        self.assertFalse(context.can_execute_action(nanally, slot=ActionSlot.SKILL))
+        self.assertFalse(context.is_slot_available(nanally, ActionSlot.SKILL))
 
         expired["value"] = True
         planner.state.prune()
 
         self.assertIsNone(planner.state.locked_route)
-        self.assertTrue(context.can_execute_action(nanally, slot=ActionSlot.SKILL))
+        self.assertTrue(context.is_slot_available(nanally, ActionSlot.SKILL))
 
     def test_reservation_can_release_when_route_is_closed(self):
         hotori = FakeChar(0, "hotori", field_preference=FieldPreference.SETUP_ONLY)
@@ -1932,12 +2090,12 @@ class TestCombatPlanner(unittest.TestCase):
 
         self.assertTrue(handles["route"].is_fulfilled)
         self.assertFalse(handles["route"].is_closed)
-        self.assertFalse(context.can_execute_action(nanally, slot=ActionSlot.SKILL))
+        self.assertFalse(context.is_slot_available(nanally, ActionSlot.SKILL))
 
         planner.perform_current_char(hotori)
 
         self.assertTrue(handles["route"].is_closed)
-        self.assertTrue(context.can_execute_action(nanally, slot=ActionSlot.SKILL))
+        self.assertTrue(context.is_slot_available(nanally, ActionSlot.SKILL))
 
     def test_route_expiration_can_happen_after_fulfillment(self):
         hotori = FakeChar(0, "hotori", field_preference=FieldPreference.SETUP_ONLY)
@@ -1970,7 +2128,7 @@ class TestCombatPlanner(unittest.TestCase):
 
         self.assertTrue(handles["route"].is_fulfilled)
         self.assertFalse(handles["route"].is_expired)
-        self.assertFalse(context.can_execute_action(nanally, slot=ActionSlot.SKILL))
+        self.assertFalse(context.is_slot_available(nanally, ActionSlot.SKILL))
         self.assertEqual(calls, ["fulfilled"])
 
         handles["route"].on_expired(lambda: calls.append("late_expired"))
@@ -1980,7 +2138,7 @@ class TestCombatPlanner(unittest.TestCase):
 
         self.assertTrue(handles["route"].is_fulfilled)
         self.assertTrue(handles["route"].is_expired)
-        self.assertTrue(context.can_execute_action(nanally, slot=ActionSlot.SKILL))
+        self.assertTrue(context.is_slot_available(nanally, ActionSlot.SKILL))
         self.assertEqual(calls, ["fulfilled", "expired", "late_expired"])
 
     def test_route_handle_calls_fulfilled_callback(self):
@@ -2102,12 +2260,12 @@ class TestCombatPlanner(unittest.TestCase):
         planner.perform_current_char(zero)
 
         self.assertIsNone(planner.state.locked_route)
-        self.assertFalse(context.can_execute_action(nanally, slot=ActionSlot.SKILL))
+        self.assertFalse(context.is_slot_available(nanally, ActionSlot.SKILL))
 
         expired["value"] = True
         planner.state.prune()
 
-        self.assertTrue(context.can_execute_action(nanally, slot=ActionSlot.SKILL))
+        self.assertTrue(context.is_slot_available(nanally, ActionSlot.SKILL))
 
     def test_request_route_can_request_entry_reaction(self):
         zero = FakeChar(0, "zero", cycle_full=True)
@@ -2155,6 +2313,52 @@ class TestCombatPlanner(unittest.TestCase):
         self.assertEqual(decision.target, zero)
         self.assertIsNone(decision.expected_entry)
         self.assertIn("switch request", decision.reason)
+
+    def test_request_role_prefers_matching_role_without_forcing_action(self):
+        source = FakeChar(0, "source")
+        support = self._support(1, "support")
+        dps = self._main_dps(2, "dps")
+        planner = self._planner([source, support, dps])
+        self._publish(
+            planner,
+            source,
+            lambda context: context.request_role(Role.SUPPORT, reason="need a support role"),
+        )
+
+        decision = planner.decide_switch(source)
+
+        self.assertEqual(decision.target, support)
+        self.assertIsNone(decision.expected_entry)
+        self.assertIn("switch request", decision.reason)
+
+        planner.record_switch(support)
+
+        self.assertFalse(planner.context_for(source).has_active_request())
+
+    def test_request_role_uses_normal_scoring_between_matching_roles(self):
+        source = FakeChar(0, "source")
+        low_priority_support = FakeChar(
+            1,
+            "low priority support",
+            role=Role.SUPPORT,
+            tags={ActionTag.DEFAULT_ACTION},
+        )
+        high_priority_support = FakeChar(
+            2,
+            "high priority support",
+            role=Role.SUPPORT,
+            tags={ActionTag.ULTIMATE_ACTION},
+        )
+        planner = self._planner([source, low_priority_support, high_priority_support])
+        self._publish(
+            planner,
+            source,
+            lambda context: context.request_role(Role.SUPPORT, reason="need any support role"),
+        )
+
+        decision = planner.decide_switch(source)
+
+        self.assertEqual(decision.target, high_priority_support)
 
     def test_request_switch_does_not_stop_current_entry_flow(self):
         calls = []
@@ -2310,10 +2514,9 @@ class TestCombatPlanner(unittest.TestCase):
         target = FakeChar(
             1,
             "target",
-            switch_in_guard=lambda context, from_char, has_intro: calls.append(
-                (context.current_char, from_char, has_intro)
-            )
-            or SwitchInGuard.allow(),
+            switch_in_guard=lambda context, from_char, has_intro: (
+                calls.append((context.current_char, from_char, has_intro)) or SwitchInGuard.allow()
+            ),
         )
         planner = self._planner([current, target])
 

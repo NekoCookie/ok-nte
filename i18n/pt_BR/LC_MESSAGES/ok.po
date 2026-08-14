@@ -264,10 +264,10 @@ msgid "关联特征"
 msgstr "Vincular característica"
 
 msgid ""
-"此为内建 Python 脚本，不可在此修改。\n"
+"此为 Python 脚本，不可在此修改。\n"
 "请在对应的源文件中直接修改代码。"
 msgstr ""
-"Este é um script Python interno e não pode ser modificado aqui.\n"
+"Este script Python não pode ser modificado aqui.\n"
 "Modifique o código diretamente no arquivo de origem correspondente."
 
 msgid "没有可用扫描结果"
@@ -376,15 +376,6 @@ msgstr "Tamanho da equipe inferior a 2"
 msgid "队伍管理"
 msgstr "Gestão de Equipe"
 
-msgid "领取活跃度奖励"
-msgstr "Receber Recompensas de Atividade"
-
-msgid "领取环期任务奖励"
-msgstr "Receber Recompensas de Tarefas Periódicas"
-
-msgid "领取邮件"
-msgstr "Receber Correio"
-
 msgid "使用ESC"
 msgstr "Usar ESC"
 
@@ -479,9 +470,6 @@ msgstr "Índice do Console"
 
 msgid "经验与甲硬币"
 msgstr "EXP e Moedas Besouro"
-
-msgid "自动循环项目"
-msgstr "Itens de Ciclo Automático"
 
 msgid "自动进行异象界域任务"
 msgstr "Realizar automaticamente tarefas da Zona de Anomalias"
@@ -609,9 +597,6 @@ msgstr ""
 msgid "自动登录游戏"
 msgstr "Login automático"
 
-msgid "领取/补货一咖舍"
-msgstr "Resgatar/reabastecer café"
-
 msgid "一咖舍任务"
 msgstr "Tarefas do café"
 
@@ -662,20 +647,6 @@ msgstr "Digite ou selecione um personagem"
 
 msgid "自动战斗任务不可用"
 msgstr "A tarefa de combate automático não está disponível"
-
-msgid ""
-"※ 关联角色特征后，软件将能自动识别角色并使用绑定的出招表；未关联时，将使用通用脚本。\n"
-"游戏内换人/换队自动适配，无需手动调整"
-msgstr ""
-"※ Depois de vincular recursos do personagem, o software poderá identificar personagens automaticamente e usar a tabela de combos vinculada; sem vínculo, usará o script genérico.\n"
-"Trocas de personagem/equipe no jogo se adaptam automaticamente, sem ajuste manual"
-
-msgid ""
-"※ {fixed_team}会优先使用已填写槽位；未填写的槽位仍会自动识别。\n"
-"如果游戏内切换队伍，已填写槽位需要在软件里手动修改。"
-msgstr ""
-"※ {fixed_team} prioriza os espaços preenchidos; espaços vazios ainda usarão o reconhecimento automático.\n"
-"Se você trocar de equipe no jogo, atualize manualmente os espaços preenchidos no software."
 
 msgid "<span style=\"color: #2ecc71;\">● 自动识别：已启用</span>"
 msgstr ""
@@ -962,3 +933,105 @@ msgstr "Diagnósticos de detecção de combate automático"
 
 msgid "持续检测诊断 Lv, 锁定目标标记(白色菱形)和红色血条; 请手动停止以查看完整报告"
 msgstr "Diagnostica continuamente a detecção de Lv, marcador de alvo fixado (losango branco) e barra de vida vermelha; por favor, pare manualmente para visualizar o relatório completo."
+
+msgid "喷泉签到"
+msgstr "Check-in da Fonte"
+
+msgid "防止 NTE 移动鼠标"
+msgstr "Evitar que o NTE mova o cursor"
+
+msgid "后台运行时，在 NTE 将鼠标移动到屏幕中心后，自动恢复鼠标位置。"
+msgstr "Ao rodar em segundo plano, restaura automaticamente a posição do cursor após o NTE movê-lo para o centro da tela."
+
+msgid ""
+"关联角色特征后，即可自动识别角色并使用绑定的出招表；游戏内换人/换队无需手动调整。\n"
+"未关联时，将使用通用脚本。"
+msgstr "Após vincular os recursos do personagem, ele será identificado automaticamente e usará a tabela de combos vinculada; trocas de personagem/equipe no jogo não exigem ajuste manual.\nSem vínculo, o script genérico será usado."
+
+msgid ""
+"{fixed_team}会优先使用已填写槽位；未填写的槽位仍会自动识别。\n"
+"如果游戏内切换队伍，已填写槽位需要在软件里手动修改。"
+msgstr "{fixed_team} priorizará os slots preenchidos; os slots não preenchidos ainda serão reconhecidos automaticamente.\nSe você alternar de equipe no jogo, os slots preenchidos precisarão ser alterados manualmente no software."
+
+msgid "循环模式"
+msgstr "Modo de Ciclo"
+
+msgid "循环序列"
+msgstr "Sequência de Ciclo"
+
+msgid "自动循环序号/目标"
+msgstr "Ciclo automático índice/alvo"
+
+msgid "自定义循环"
+msgstr "Ciclo Personalizado"
+
+msgid "副本类型"
+msgstr "Tipo de Masmorra"
+
+msgid "签到方式"
+msgstr "Modo de check-in"
+
+msgid "签到"
+msgstr "Check-in"
+
+msgid "捞币"
+msgstr "Pegar moedas"
+
+msgid ""
+"导入数据会完整覆盖当前用户资料.\n"
+"导出数据会导出完整用户资料."
+msgstr "A importação de dados substituirá completamente os perfis de usuário atuais.\nA exportação de dados exportará perfis de usuário completos."
+
+msgid "资料管理"
+msgstr "Gerenciamento de Dados"
+
+msgid "关闭"
+msgstr "Fechar"
+
+msgid "[外置代码]"
+msgstr "[Código externo]"
+
+msgid "打开外置代码目录"
+msgstr "Abrir pasta de código externo"
+
+msgid "手动添加或修改 Python 代码后, 需点击 [{refresh}] 按钮以生效。<br>关于编写角色出招表的指南, 请参考 <a href='{doc_url}'>文档</a>。"
+msgstr "Após adicionar ou modificar manualmente o código Python, clique no botão [{refresh}] para que as alterações entrem em vigor.<br>Para obter um guia sobre como escrever tabelas de combos de personagens, consulte a <a href='{doc_url}'>documentação</a>."
+
+msgid "日常领取"
+msgstr "Resgate Diário"
+
+msgid "领取每日邮件和奖励"
+msgstr "Resgatar correios e recompensas diárias"
+
+msgid "模式"
+msgstr "Modo"
+
+msgid "邮件"
+msgstr "Correio"
+
+msgid "活跃度奖励"
+msgstr "Recompensas de Atividade"
+
+msgid "环期任务奖励"
+msgstr "Recompensas de Tarefa de Período"
+
+msgid "一咖舍"
+msgstr "Cafeteria"
+
+msgid "领取/补货"
+msgstr "Resgatar/Reabastecer"
+
+msgid "全选"
+msgstr "Selecionar Tudo"
+
+msgid "取消全选"
+msgstr "Deselecionar Tudo"
+
+msgid "全部折叠"
+msgstr "Recolher Tudo"
+
+msgid "全部展开"
+msgstr "Expandir Tudo"
+
+msgid "重置配置"
+msgstr "Redefinir conf."

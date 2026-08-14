@@ -8,6 +8,7 @@ from .requests import (
     RequestLifetime,
     _Request,
     _ReservationRequest,
+    _RoleRequest,
     _RouteRequest,
     _SwitchRequest,
     _TagRequest,
@@ -17,12 +18,14 @@ from .requests import (
 from .state import CombatState, _PlanSnapshot
 from .types import (
     NEVER_EXPIRES,
+    ActionIntent,
     ActionReservation,
     ActionResult,
     ActionSlot,
     ActionTag,
     FollowupStep,
     RequestHandle,
+    Role,
 )
 
 if TYPE_CHECKING:
@@ -93,21 +96,23 @@ class CombatContext:
         action = ActionResult(name=action_name, tags=set(tags or set()), slot=slot)
         return step.wants(char, action)
 
-    def can_execute_action(
+    def is_slot_available(
         self,
         char: "BaseChar",
+        slot: ActionSlot | None = None,
         action_name: str = "",
         tags: set[ActionTag] | None = None,
-        slot: ActionSlot | None = None,
     ) -> bool:
-        """查询 planner 是否允许指定角色动作执行。
+        """查询 planner 是否允许指定角色的原始动作执行。
+
+        只检查 strict route 和 reservation; 不检查 `ActionIntent.can_execute`。
 
         Args:
             char: 准备执行动作的角色。
-            action_name: 动作名；用于高级精确匹配。
-            tags: 动作标签集合；用于 tag request 或特殊匹配。
             slot: 动作槽位。设置了 slot 的 `ActionIntent` 会由 planner 自动检查，
                 手写长动作时才需要主动调用。
+            action_name: 动作名；用于高级精确匹配。
+            tags: 动作标签集合；用于 tag request 或特殊匹配。
 
         Returns:
             True 表示 planner 没有 reservation 阻止此动作，或当前 strict route
@@ -125,6 +130,25 @@ class CombatContext:
             if request_reserves_action(active_request, char, action):
                 return False
         return True
+
+    def is_action_allowed(self, char: "BaseChar", action: ActionIntent) -> bool:
+        """返回 planner 是否允许指定角色执行完整 action 声明。
+
+        同时检查 action 自身的 `can_execute` 限制和 slot reservation。角色代码
+        需要在 entry flow 外预查询动作时可以使用此方法; 普通执行仍应直接
+        `yield action`，由 planner 在执行前统一检查。
+        """
+
+        if not action.is_allowed(self):
+            return False
+        if action.slot is None:
+            return True
+        return self.is_slot_available(
+            char,
+            slot=action.slot,
+            action_name=action.name,
+            tags=set(action.tags),
+        )
 
     def request_route(
         self,
@@ -245,6 +269,44 @@ class CombatContext:
             until=until,
             on_finish=on_finish,
             target_index=target.index,
+        )
+        self._publish_request(request)
+        return request.handle
+
+    def request_role(
+        self,
+        role: Role,
+        reason: str = "",
+        until: RequestDeadline | None = None,
+        on_finish: Callable[[], None] | None = None,
+    ) -> RequestHandle | None:
+        """请求下一次普通调度切给指定队伍定位的角色。
+
+        这是纯切人请求, 不要求目标执行特定 action, 也不会打断当前角色的动作链。
+        有多个存活角色声明该定位时, planner 会按普通切人评分从中选择目标;
+        strict route、entry reaction 和环合反应仍拥有更高优先级。
+
+        Args:
+            role: 目标角色在 `RoleProfile.role` 中声明的队伍定位。
+            reason: 日志和调试用理由; 为空时会自动生成默认理由。
+            until: 过期条件。为 None 时不会因时间/机制条件过期; 返回 True 时
+                request 以 EXPIRED 结束。
+            on_finish: 请求首次出现 FULFILLED 或 EXPIRED 信号时调用一次。切到
+                任一匹配定位的角色, 或该角色已在场时是 FULFILLED; 没有可切入的
+                匹配角色或 until 触发时是 EXPIRED。
+
+        Returns:
+            `RequestHandle`, 可用于查询 role request 最终状态。
+        """
+
+        if role is None:
+            return None
+        request = _RoleRequest(
+            reason=reason or f"{self.current_char} requests role {role}",
+            _source=self.current_char.index,
+            until=until,
+            on_finish=on_finish,
+            role=role,
         )
         self._publish_request(request)
         return request.handle

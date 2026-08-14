@@ -3,11 +3,21 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable, List
 
-from ok import BaseTask, Box, CannotFindException, Logger, WaitFailedException, og, safe_get
+from ok import (
+    BaseTask,
+    Box,
+    CannotFindException,
+    Logger,
+    WaitFailedException,
+    og,
+    safe_get,
+)
 
+from src import text_black_color
 from src.Labels import Labels
 from src.lw.nte_task_ext import NTETaskExtMixin  # [lw]
 from src.scene.NTEScene import NTEScene
@@ -15,6 +25,7 @@ from src.scene.ScreenPosition import ScreenPosition
 from src.tasks.mixin.CharUIMixin import CharUIMixin
 from src.tasks.mixin.MovementMixin import MovementMixin
 from src.tasks.mixin.OgMixin import OgMixin
+from src.tasks.mixin.SceneFlowMixin import SceneFlowMixin
 from src.tasks.mixin.VisionMixin import VisionMixin
 from src.utils import image_utils as iu
 from src.utils import vision_utils as vu
@@ -30,10 +41,62 @@ MSG_MAIN_DETECTION_FAILED = (
 MSG_WORLD_DETECTION_FAILED = "大世界检测失败: 请检查游戏内 UI 透明度是否已设置为 1.0。"
 
 
-class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMixin, LogGateMixin, BaseTask):  # type: ignore  # [lw] 插入用户扩展基类
+@dataclass
+class RoundState:
+    total: int = 0
+    index: int = 0
+    success_count: int = 0
+    failed_count: int = 0
+
+    def reset(self, total: int):
+        self.total = total
+        self.index = 0
+        self.success_count = 0
+        self.failed_count = 0
+
+    @property
+    def completed_count(self) -> int:
+        return self.success_count + self.failed_count
+
+    @property
+    def has_active_round(self) -> bool:
+        return self.index > self.completed_count
+
+    @property
+    def has_remaining_rounds(self) -> bool:
+        return self.has_active_round or self.total == 0 or self.completed_count < self.total
+
+    @property
+    def total_text(self) -> str:
+        return "∞" if self.total == 0 else str(self.total)
+
+    @property
+    def info_text(self) -> str:
+        return f"{self.index} / {self.total_text}"
+
+    def begin_next_round(self) -> bool:
+        if self.has_active_round or not self.has_remaining_rounds:
+            return False
+        self.index += 1
+        return True
+
+
+class BaseNTETask(
+    NTETaskExtMixin,
+    SceneFlowMixin,
+    CharUIMixin,
+    MovementMixin,
+    VisionMixin,
+    OgMixin,
+    LogGateMixin,
+    BaseTask,
+):  # [lw] NTETaskExtMixin provides user confirmation handling
     CONF_ROUNDS = "循环次数"
     CONF_CLAIM_REWARD_COUNT = "领取奖励次数"
-    INFINITE_ROUNDS_TEXT = "∞"
+    INFO_ROUND = "轮次"
+    INFO_SUCCESS_COUNT = "成功次数"
+    INFO_FAILED_COUNT = "失败次数"
+    INFO_FAILED_REASON = "失败原因"
     DEFAULT_MOVE = False
 
     def __init__(self, *args, **kwargs):
@@ -47,7 +110,8 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
         self.next_monthly_card_start = 0
         self._last_interval_action_time = {}
         self._action_interval_lock = threading.Lock()
-        self._init_log_gate()
+        self._round_state = RoundState()
+        self.scene_flow.interrupt(self.check_monthly_card, self.handle_monthly_card)
 
     def configured_rounds(self, default=0) -> int:
         """读取统一的循环次数配置: 0 表示无限运行。"""
@@ -59,19 +123,78 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
         except (TypeError, ValueError):
             return max(0, int(default))
 
-    @staticmethod
-    def should_run_round(round_index: int, rounds: int) -> bool:
-        return rounds == 0 or round_index <= rounds
-
-    def rounds_total_text(self, rounds: int) -> str:
-        return self.INFINITE_ROUNDS_TEXT if rounds == 0 else str(rounds)
-
-    def rounds_info_text(self, round_index: int, rounds: int) -> str:
-        return f"{round_index} / {self.rounds_total_text(rounds)}"
-
     def add_rounds_config(self, default=0):
         self.default_config.update({self.CONF_ROUNDS: default})
         self.config_description.update({self.CONF_ROUNDS: "设置为0则一直运行"})
+
+    def start_rounds(self):
+        """初始化统一轮次状态，并输出任务开始信息。"""
+        self._round_state.reset(self.configured_rounds())
+        self.info_set(self.INFO_ROUND, "")
+        self.info_set(self.INFO_SUCCESS_COUNT, 0)
+        self.info_set(self.INFO_FAILED_COUNT, 0)
+        self.info_set(self.INFO_FAILED_REASON, None)
+        self.log_info(f"开始{self.name}，共 {self._round_state.total_text} 轮")
+
+    def begin_round(self) -> bool:
+        """开始下一轮，并在运行中同步最新循环次数配置。"""
+        state = self._round_state
+        previous_total = state.total
+        state.total = self.configured_rounds()
+        if state.has_active_round:
+            if state.total != previous_total:
+                self.info_set(self.INFO_ROUND, state.info_text)
+            return True
+        if not state.begin_next_round():
+            return False
+        self.info_set(self.INFO_ROUND, state.info_text)
+        self.log_round_info("开始")
+        return True
+
+    def has_remaining_rounds(self) -> bool:
+        """判断当前轮次完成后是否仍可继续运行。"""
+        self._round_state.total = self.configured_rounds()
+        return self._round_state.has_remaining_rounds
+
+    @property
+    def current_round(self) -> int:
+        return self._round_state.index
+
+    def add_success(self, count: int = 1) -> int:
+        """记录已完成的成功轮次，并返回累计成功数。"""
+        state = self._round_state
+        state.success_count += count
+        self.info_set(self.INFO_SUCCESS_COUNT, state.success_count)
+        return state.success_count
+
+    def add_failed(self, reason: str | None = None, count: int = 1) -> int:
+        """记录失败轮次，必要时更新失败原因并输出轮次错误日志。"""
+        state = self._round_state
+        state.failed_count += count
+        self.info_set(self.INFO_FAILED_COUNT, state.failed_count)
+        if reason:
+            self.info_set(self.INFO_FAILED_REASON, reason)
+            self.log_round_info(f"失败：{reason}", error=True)
+        else:
+            self.log_round_info("失败", error=True)
+        return state.failed_count
+
+    def log_round_info(self, message: str, *, error: bool = False):
+        """输出带当前轮次前缀的日志，供轮次任务和其子流程统一使用。"""
+        round_index = self._round_state.index
+        prefix = f"第 {round_index} 轮: " if round_index else ""
+        if error:
+            self.log_error(f"{prefix}{message}")
+        else:
+            self.log_info(f"{prefix}{message}")
+
+    def finish_rounds(self, *, notify: bool = True):
+        """输出统一的轮次汇总日志。"""
+        state = self._round_state
+        self.log_info(
+            f"{self.name}结束，成功 {state.success_count}/{state.total_text}",
+            notify=notify,
+        )
 
     def add_claim_reward_count_config(self, default=0):
         self.default_config.update({self.CONF_CLAIM_REWARD_COUNT: default})
@@ -192,7 +315,7 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
         self.sleep(after_sleep)
         return result
 
-    def send_key(self, key, down_time=0.02, interval=-1, after_sleep=0, action_name=None) -> Any:
+    def send_key(self, key, down_time=0.02, interval=-1, after_sleep=0, action_name=None) -> bool:
         if action_name is not None:
             if not self._check_action_interval(action_name, interval):
                 return False
@@ -463,7 +586,14 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
         box = box.copy(y_offset=y, width_offset=w, height_offset=-y)
         return self.find_one(Labels.teleport, box=box)
 
-    def click_nearest_map_teleport(self, threshold=0.7, time_out=5):
+    def _execute_map_teleport(self, find_func, zoom="mid", time_out=5):
+        """
+        通用的地图传送核心逻辑
+        :param find_func: 查找传送点的具体策略函数
+        :param time_out: 查找超时时间
+        :param action_name: 动作名称（用于日志和点击操作）
+        """
+        # 1. 确保在主界面并打开地图
         self.ensure_main()
         self.wait_until(
             lambda: self.find_one(Labels.map_city_tycoon_activities),
@@ -471,6 +601,41 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
             pre_action=lambda: self.send_key("m", interval=2),
             raise_if_not_found=True,
         )
+
+        if zoom is not None:
+            self.sleep(0.5)
+            if isinstance(zoom, str):
+                if zoom == "max":
+                    self.operate_click(0.050, 0.372)
+                elif zoom == "mid":
+                    self.operate_click(0.050, 0.525)
+                elif zoom == "min":
+                    self.operate_click(0.050, 0.680)
+            elif callable(zoom):
+                zoom()
+            self.sleep(0.5)
+
+        # 2. 执行传入的自定义查找策略
+        teleport = self.wait_until(find_func, time_out=time_out, raise_if_not_found=True)
+        self.log_info(f"found map teleport {teleport}")
+
+        # 3. 点击传送点并执行传送(Travel)
+        self.operate_click(teleport)
+        if not self.wait_feature(Labels.close_button, threshold=0.8, time_out=1):
+            if box := self.find_best_match_in_box(
+                self.box_of_screen(0.578, 0.426, 0.607, 0.580),
+                [Labels.map_big_teleport, Labels.map_small_teleport],
+                threshold=0.7
+            ):
+                self.operate_click(box, after_sleep=1)
+        self.click_traval_button()
+
+        return teleport
+
+    def click_nearest_map_teleport(self, zoom="mid", threshold=0.7, time_out=5):
+        """
+        从屏幕中心向外延展搜索，点击最近的传送点
+        """
         to_find = [Labels.map_big_teleport, Labels.map_small_teleport]
         template_boxes = [self.get_box_by_name(label) for label in to_find]
         max_template_size = max(
@@ -481,7 +646,8 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
         center_y = self.height_of_screen(0.5)
         max_radius = max(self.width, self.height)
 
-        def find_teleport():
+        # 定义中心向外扩展的查找策略
+        def find_nearest_teleport():
             radius = step
             while radius <= max_radius:
                 x = max(0, center_x - radius)
@@ -494,12 +660,26 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
                     return teleport
                 radius += step
 
-        teleport = self.wait_until(find_teleport, time_out=time_out, raise_if_not_found=True)
-        self.log_info(f"found nearest map teleport {teleport}")
-        self.operate_click(teleport, action_name="click_nearest_map_teleport", interval=1)
-        self.sleep(0.5)
-        self.click_traval_button()
-        return teleport
+        # 调用通用方法
+        return self._execute_map_teleport(
+            find_func=find_nearest_teleport, zoom=zoom, time_out=time_out
+        )
+
+    def click_map_teleport(self, box, zoom="mid", threshold=0.7, time_out=5):
+        """
+        在指定的 box 区域内搜索并点击传送点
+        :param box: Box 对象，指定查找的固定范围
+        """
+        to_find = [Labels.map_big_teleport, Labels.map_small_teleport]
+
+        # 定义特定区域的查找策略
+        def find_teleport_in_box():
+            return self.find_best_match_in_box(box, to_find, threshold=threshold)
+
+        # 调用通用方法
+        return self._execute_map_teleport(
+            find_func=find_teleport_in_box, zoom=zoom, time_out=time_out
+        )
 
     def click_traval_button(self, travel_btn=None, raise_if_not_found=True):
         if not isinstance(travel_btn, Box):
@@ -516,7 +696,6 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
             settle_time=0.5,
             raise_if_not_found=raise_if_not_found,
         )
-        self.monitor_and_sync_cursor()
         self.sleep(0.1)
         return True
 
@@ -624,7 +803,7 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
         if in_team_or_world:
             self.scene.set_logged_in()
             return True
-        if self.handle_monthly_card():
+        if self.handle_monthly_card(log=False):
             return True
         if self.wait_login():
             return True
@@ -644,7 +823,7 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
                 return True
         return False
 
-    def handle_monthly_card(self):
+    def handle_monthly_card(self, log=True):
         monthly_card = self.find_monthly_card()
         if monthly_card is not None:
             self.log_info("monthly_card found click")
@@ -666,7 +845,7 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
             else:
                 raise WaitFailedException()
             self.set_check_monthly_card(next_day=True)
-        else:
+        elif log:
             self.log_warning_gated("monthly_card not found")
         return monthly_card is not None
 
@@ -691,7 +870,7 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
         if not self.scene.logged_in():
             if self.is_in_team():
                 return True
-            self.handle_monthly_card()
+            self.handle_monthly_card(log=False)
             if self.find_one(Labels.login_setting):
                 self.log_info("found login_setting, bring_to_front and click")
                 if not self.is_foreground():
@@ -812,8 +991,9 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
 
     def wait_click_confirm(
         self,
-        action: Any | None = None,
+        pre_action: Any | None = None,
         range: tuple[float, float, float, float] | Box | None = None,
+        on_found: Any | None = None,
         time_out=10,
         settle_time=0.25,
         raise_if_not_found=True,
@@ -826,7 +1006,7 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
             box = self.box_of_screen(*range, hcenter=True)
         button = self.wait_until(
             lambda: self.find_confirm(box=box),
-            pre_action=action,
+            pre_action=pre_action,
             time_out=time_out,
             settle_time=settle_time,
             raise_if_not_found=raise_if_not_found,
@@ -834,6 +1014,9 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
         if not button:
             return False
         self.sleep(0.1)
+        if callable(on_found):
+            on_found()
+            self.sleep(0.1)
         result = self.wait_until(
             lambda: not self.find_confirm(box=box),
             pre_action=lambda: self.operate_click(button, interval=1),
@@ -844,14 +1027,23 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
         return bool(result)
 
     def find_confirm(self, box=None, threshold=0.7) -> Box:
-        return self.lw_find_confirm(box=box, threshold=threshold)  # [lw] OCR认字防确认/取消调换
+        return self.lw_find_confirm(  # [lw] OCR picks confirm over cancel
+            box=box,
+            threshold=threshold,
+            mask_function=confirm_mask,
+        )
 
     def find_confirms(self, box=None, threshold=0.7) -> list[Box]:
         if not isinstance(box, Box):
             box = self.main_viewport
         match_feature: list[list[Box]] = []
         for feature_name in [Labels.confirm_btn_1, Labels.confirm_btn_2]:
-            features = self.find_feature(feature_name=feature_name, box=box, threshold=threshold)
+            features = self.find_feature(
+                feature_name=feature_name,
+                box=box,
+                threshold=threshold,
+                mask_function=confirm_mask,
+            )
             if features:
                 match_feature.append(features)
 
@@ -924,13 +1116,54 @@ class BaseNTETask(NTETaskExtMixin, CharUIMixin, MovementMixin, VisionMixin, OgMi
             return False
         return True
 
-    def monitor_and_sync_cursor(self, timeout=1):
-        if interaction := self.executor.interaction:
-            interaction.monitor_and_sync_cursor(timeout=timeout)
+    def run_and_check_changed(
+        self,
+        action,
+        snap_box: Box,
+        check_box: Box | None = None,
+        after_sleep=0.25,
+        threshold=0.85,
+    ):
+        if not callable(action):
+            return
+        if check_box is None:
+            check_box = snap_box.scale(1.2)
+        snapshot = snap_box.crop_frame(self.frame)
+        action()
+        self.sleep(after_sleep)
+        if not self.find_one("snapshot", template=snapshot, box=check_box, threshold=threshold):
+            return True
+
+    def scroll_and_is_end(
+        self,
+        x,
+        y,
+        count,
+        snap_box: Box,
+        check_box: Box | None = None,
+        after_sleep=0.25,
+        threshold=0.85,
+    ):
+        return not self.run_and_check_changed(
+            action=lambda: self.operate(
+                lambda: self.scroll(x, y, count=count),
+                block=True,
+            ),
+            snap_box=snap_box,
+            check_box=check_box,
+            after_sleep=after_sleep,
+            threshold=threshold,
+        )
 
 
 def interac_mask(image):
     mask = iu.create_color_mask(image, interac_pink_color, to_bgr=False)
+    dilated_mask = iu.morphology_mask(mask, kernel_size=5, to_bgr=False)
+    return dilated_mask
+
+
+def confirm_mask(image):
+    mask = iu.create_color_mask(image, text_black_color, to_bgr=False)
     dilated_mask = iu.morphology_mask(mask, kernel_size=5, to_bgr=False)
     return dilated_mask
 

@@ -3,7 +3,6 @@
 # - click_traval_button: 修正上游"传送按钮未消失仍返回成功"的假成功判定
 # - lw_wait_interac: 传送后交互提示缺失时, 先回主界面等加载, 仍失败再传送一次
 #   (接线: DSDFarmTask.ensure_teleport 有界重试 + do_run 两个一行钩子)
-# - lw_refresh_monsters: 刷新怪物后识别新确认弹窗并点击确认
 import time
 from typing import TYPE_CHECKING
 
@@ -25,8 +24,6 @@ class DSDFarmExtMixin(_TaskProxy):
     LW_INTERAC_RECOVER_WAIT = 30
     LW_TRAVEL_BUTTON_STUCK_WAIT = 6
     LW_INPUT_PAUSE_POLL_INTERVAL = 0.05
-    LW_REFRESH_CONFIRM_RANGE = (0.49, 0.595, 0.72, 0.71)
-    LW_REFRESH_CONFIRM_WAIT = 2
 
     def _lw_held_keys(self):
         keys = getattr(self, "_lw_held_key_set", None)
@@ -114,45 +111,6 @@ class DSDFarmExtMixin(_TaskProxy):
         finally:
             if key_down:
                 interaction.send_key_up(key)
-
-    def lw_refresh_monsters(self):
-        """Refresh monsters, then confirm the update dialog when it is shown."""
-        self.lw_perform_input(
-            self.operate_click,
-            0.057,
-            0.218,
-            action_name="dsd_refresh_monsters",
-        )
-        self.sleep(0.5)
-        return self.lw_confirm_refresh_monsters()
-
-    def lw_confirm_refresh_monsters(self):
-        """Click only the confirmation button in the post-refresh dialog."""
-        box = self.box_of_screen(*self.LW_REFRESH_CONFIRM_RANGE, hcenter=True)
-        button = self.wait_until(
-            lambda: self.find_confirm(box=box),
-            time_out=self.LW_REFRESH_CONFIRM_WAIT,
-            settle_time=0.1,
-            raise_if_not_found=False,
-        )
-        if not button:
-            return False
-        self.log_info("refresh monster confirmation detected")
-        self.sleep(0.1)
-        return bool(
-            self.wait_until(
-                lambda: not self.find_confirm(box=box),
-                pre_action=lambda: self.lw_perform_input(
-                    self.operate_click,
-                    button,
-                    action_name="dsd_confirm_refresh_monsters",
-                    interval=0.5,
-                ),
-                time_out=self.LW_REFRESH_CONFIRM_WAIT,
-                settle_time=0.1,
-                raise_if_not_found=False,
-            )
-        )
 
     def click_traval_button(self, travel_btn=None, raise_if_not_found=True):
         """修正 RU 假成功, 并用更短的卡死等待快速失败, 交给有界重试重新开图。"""

@@ -1,8 +1,12 @@
 if __name__ == "__main__":
+    from src.config import config
+    from src.patches.startup_patches import install_startup_patches
+
+    install_startup_patches()
+
     import ok
 
     from src.cleanup import purge_old_debug_images  # [lw]
-    from src.config import config
 
     purge_old_debug_images()  # [lw] 清理过期调试截图
     config["debug"] = True

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
+from itertools import count
 from typing import TYPE_CHECKING, Callable, Generator, Iterable
 
 if TYPE_CHECKING:
@@ -25,8 +26,9 @@ class Planner:
     class Role(StrEnum):
         """角色战斗定位。
 
-        `RoleProfile.role` 使用此枚举描述角色的大方向；实际站场偏好由
-        `FieldPreference` 进一步控制。
+        `RoleProfile.role` 使用此枚举描述角色的队伍定位。它可用于
+        `CombatContext.request_role()` 选择队友；实际站场偏好由
+        `FieldPreference` 单独控制。
         """
 
         SUB_DPS = "Sub DPS"
@@ -339,8 +341,9 @@ class RequestWhenPredicates:
 class RoleProfile:
     """角色向 `CombatPlanner` 声明的基础战斗画像。
 
-    由角色的 `describe_role()` 返回。`max_field_time` 会被 planner 用来生成
-    内建的 `planner_field_time` 站场动作。
+    由角色的 `describe_role()` 返回。`role` 描述队伍定位, 可由
+    `CombatContext.request_role()` 匹配; `field_preference` 决定普通切人评分。
+    `max_field_time` 会被 planner 用来生成内建的 `planner_field_time` 站场动作。
 
     `combat_start_priority` 只用于开战首切。大于 0 的角色会成为首切候选；
     数值越高越优先。普通战斗中的切人评分不会使用此字段。
@@ -536,6 +539,9 @@ EntryFlow = Generator["ActionIntent", ActionResult, None]
 EntryFactory = Callable[[], EntryFlow]
 
 
+_ENTRY_REPEAT_IDS = count()
+
+
 @dataclass(slots=True)
 class ActionIntent:
     """角色声明给 `CombatPlanner` 的候选动作。"""
@@ -547,18 +553,35 @@ class ActionIntent:
     reason: str = ""
     can_execute: ActionPredicate | None = None
     priority_ready: ActionPredicate | None = None
+    _entry_repeat_id: int | None = field(default=None, repr=False, compare=False)
 
     def identity_key(self) -> str:
         """返回 planner 内部使用的动作身份。"""
 
         if self.name:
-            return f"name:{self.name}"
-        if self.slot is not None:
+            identity = f"name:{self.name}"
+        elif self.slot is not None:
             if self.reason:
-                return f"slot:{self.slot}|reason:{self.reason}"
-            return f"slot:{self.slot}"
-        tag_key = ",".join(sorted(str(tag) for tag in self.tags))
-        return f"tags:{tag_key}|reason:{self.reason}"
+                identity = f"slot:{self.slot}|reason:{self.reason}"
+            else:
+                identity = f"slot:{self.slot}"
+        else:
+            tag_key = ",".join(sorted(str(tag) for tag in self.tags))
+            identity = f"tags:{tag_key}|reason:{self.reason}"
+        if self._entry_repeat_id is not None:
+            return f"{identity}|entry_repeat:{self._entry_repeat_id}"
+        return identity
+
+    def repeat_for_entry(self) -> "ActionIntent":
+        """返回可在同一次 entry 中再次 yield 的动作副本。
+
+        副本保留原 action 的执行器, 槽位, 标签和权限限制, 仅增加 entry 内部的
+        去重标识。每次调用都会生成一个新的标识, 因此循环中可以自然重试动作。
+        它适合大招窗口内再次施放 E 这类机制; 通常只在 entry flow 里 yield,
+        不加入 `CombatPlan.actions`, 因此不参与切人评分。
+        """
+
+        return replace(self, _entry_repeat_id=next(_ENTRY_REPEAT_IDS))
 
     def display_name(self) -> str:
         """返回仅用于日志的人类可读动作名。"""

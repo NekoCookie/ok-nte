@@ -12,7 +12,6 @@ from ok import Logger, safe_get
 from src import text_white_color
 from src.char.BaseChar import BaseChar, Element
 from src.char.custom.CustomCharManager import CustomCharManager
-from src.char.Healer import Healer
 from src.lw.team_roster import TeamReloadRequested, TeamRosterMonitor
 from src.sound_trigger.SoundCombatContext import SoundCombatContext
 from src.utils import game_filters as gf
@@ -236,7 +235,7 @@ class CombatExtMixin(_TaskProxy):
         now = time.time()
         cds["time"] = now  # 兼容旧字段; 实际推算用每个 box 独立的 <box>_time
         texts = self.ocr(
-            0.8594, 0.8847, 0.9578, 0.9139, frame_processor=gf.isolate_cd_to_black, match=cd_regex
+            0.8594, 0.8847, 0.9578, 0.9139, frame_processor=gf.isolate_text_to_black, match=cd_regex
         )
         ocr_cds = {"skill": None, "ultimate": None}
         for text in texts:
@@ -778,24 +777,23 @@ class CombatExtMixin(_TaskProxy):
     TEAM_RELOAD_WAIT_INTERVAL = 0.2
 
     def lw_combat_run(self):
-        """AutoCombatTask.run 的唯一实现，包含队伍变化重载和当前角色丢失恢复。"""
+        """Run the upstream combat session with LW team-reload recovery."""
         from src.combat.BaseCombatTask import NotInCombatException
 
         ret = False
         if not self.scene.is_in_team(self.is_in_team):
             return
+        if not self.in_combat():
+            return
 
         self._last_team_recheck = 0.0
-        combat_start = time.time()
         try:
             with self.team_reload_watch():
+                self.combat_session.use_ultimate = self.config.get(self.CONF_USE_ULT, True)
+                self.begin_combat_session()
+                ret = True
                 while self.in_combat():
                     try:
-                        if not ret:
-                            ret = True
-                            # [lw] 保留开战读取终结技开关, 避免 UI 配置被默认值覆盖.
-                            self.use_ultimate = self.config.get(self.CONF_USE_ULT, True)
-                            self.switch_to_combat_start_char()
                         if not self._reload_if_team_size_changed():
                             time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
                             continue
@@ -808,13 +806,17 @@ class CombatExtMixin(_TaskProxy):
                         current_char.perform()
                     except TeamReloadRequested as e:
                         logger.info(
-                            f"auto_combat_task_team_changed {int(time.time() - combat_start)} {e}"
+                            "auto_combat_task_team_changed "
+                            f"{int(time.time() - self.combat_session.combat_start)} {e}"
                         )
                         if not self._reload_combat_team():
                             time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
                         continue
         except NotInCombatException as e:
-            logger.info(f"auto_combat_task_out_of_combat {int(time.time() - combat_start)} {e}")
+            logger.info(
+                "auto_combat_task_out_of_combat "
+                f"{int(time.time() - self.combat_session.combat_start)} {e}"
+            )
         finally:
             if ret:
                 self.combat_end()
@@ -1025,22 +1027,18 @@ class CombatExtMixin(_TaskProxy):
         self.combat_planner.reset(self.chars)  # 上游planner架构要求换队后重置(record_switch等仍走planner)
         self.info_set("char elements", elements)
 
-        healer_count = 0
         self.info_set("chars", [])
         for char in self.chars:
             if char is not None:
                 char.reset_state()
-                if isinstance(char, Healer):
-                    healer_count += 1
                 char.is_current_char = char.index == current_index
                 name = char.char_name
                 conf = char.confidence
                 elem = char.element
                 self.log_info(f"load char success {char} {name} {conf:.2f} {elem}")
-                self.info_add_to_list("chars", f"{char.char_name}: {char.combo_name}")  # 上游改名(原combo_label)
+                self.info_add_to_list("chars", f"{char.char_name}: {char.impl_id or 'BaseChar'}")
 
         if self.team_size > 0:
-            self.combat_start = time.time()
             self._apply_sound_config()
             self._warm_up_background_mouse()
             return True

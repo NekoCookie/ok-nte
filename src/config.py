@@ -59,6 +59,11 @@ sound_trigger_config_option = ConfigOption(
     },
 )
 
+cursor_sync_config_option = ConfigOption(
+    "防止 NTE 移动鼠标",
+    {"启用": True},
+    description=("后台运行时，在 NTE 将鼠标移动到屏幕中心后，自动恢复鼠标位置。"),
+)
 background_audio_routing_config_option = create_background_audio_routing_config_option()
 
 
@@ -75,6 +80,7 @@ config = {
         key_config_option,
         monthly_card_config_option,
         sound_trigger_config_option,
+        cursor_sync_config_option,
         background_audio_routing_config_option,
     ],
     # "screenshot_processor": make_bottom_left_black,  # 在截图的时候对frame进行修改, 可选
@@ -181,10 +187,8 @@ config = {
     ],  # 可选. 全局单例对象, 可以存放加载的模型, 使用og.my_app调用
     "onetime_tasks": [  # 用户点击触发的任务
         ["src.tasks.LauncherTask", "LauncherTask"],
-        ["src.tasks.DailyTask", "DailyTask"],
-        ["src.tasks.SwitchAccountTask", "SwitchAccountTask"],  # [lw] 显示在日常任务下方
-
-        ["src.tasks.CoffeeTask", "CoffeeTask"],
+        ["src.tasks.daily.DailyRoutineTask", "DailyRoutineTask"],
+        ["src.tasks.SwitchAccountTask", "SwitchAccountTask"],  # [lw]
         ["src.tasks.FishingTask", "FishingTask"],
         ["src.tasks.FishCatchingTask", "FishCatchingTask"],  # [lw] 都市闲趣自动捕鱼
         ["src.tasks.AnomalyTask", "AnomalyTask"],
@@ -196,11 +200,17 @@ config = {
         ["src.tasks.BagelAITools", "BagelAITools"],
         ["src.tasks.WhirlwindTask", "WhirlwindTask"],
         ["src.tasks.DSDFarmTask", "DSDFarmTask"],
-        ["src.tasks.GiftTask", "GiftTask"],
         ["src.tasks.CombatDetectionTestTask", "CombatDetectionTestTask"],
-        ["ok", "DiagnosisTask"],
         # ["src.tasks.custom.TeamScannerTask", "TeamScannerTask"],
         # ["src.tasks.DebugCharTask", "DebugCharTask"],
+        ["ok", "DiagnosisTask"],
+        # 日常相关
+        ["src.tasks.daily.DailyClaimTask", "DailyClaimTask"],
+        ["src.tasks.daily.GiftTask", "GiftTask"],
+        ["src.tasks.daily.CoffeeTask", "CoffeeTask"],
+        ["src.tasks.daily.FountainTask", "FountainTask"],
+        ["src.tasks.daily.FurnitureTask", "FurnitureTask"],
+        ["src.tasks.daily.CinemaDateTask", "CinemaDateTask"],
     ],
     "trigger_tasks": [  # 不断执行的触发式任务
         ["src.tasks.trigger.AutoCombatTask", "AutoCombatTask"],
@@ -213,15 +223,16 @@ config = {
         ["src.tasks.trigger.AutoLoginTask", "AutoLoginTask"],
     ],
     "custom_tabs": [
-        ["src.ui.CharHubTab", "CharHubTab"],
+        ["src.ui.DailyRoutineTab", "DailyRoutineTab"],
         ["src.ui.GiftManagerTab", "GiftManagerTab"],
+        ["src.ui.CharHubTab", "CharHubTab"],
         ["src.ui.MidiPlayerTab", "MidiPlayerTab"],
         # ['src.ui.MyTab', 'MyTab'], #可选, 自定义UI, 显示在侧边栏
     ],
     "scene": ["src.scene.NTEScene", "NTEScene"],
     "update_pyappify": {
-        "to_version": "1.1.9",
-        "zip_url": "https://github.com/BnanZ0/ok-nte/releases/download/v1.2.19/ok-nte-win32.zip",
-        "sha256": "7820277938b0b56e562b57657f26bdc9a659b00de11ca61729e43187e68d4bf7",
+        "to_version": "1.1.11",
+        "zip_url": "https://github.com/BnanZ0/ok-nte/releases/download/v1.2.25/ok-nte-win32.zip",
+        "sha256": "1ac3e1d566c7b8de670187e8d230992d3204c4f9b13187b0dc5b65a86ef1eb3d",
     },
 }

@@ -2,6 +2,7 @@ import time
 
 from src.char.BaseChar import BaseChar
 from src.combat.planner import (
+    ActionIntent,
     CombatContext,
     Planner,
     RoleProfile,
@@ -9,6 +10,9 @@ from src.combat.planner import (
 
 
 class Nanally(BaseChar):
+    cn_name = "娜娜莉"
+    element = BaseChar.Element.GREEN
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -20,8 +24,8 @@ class Nanally(BaseChar):
         )
 
     def combat_plan(self, context):
-        skill = self.click_skill_action(reason="Nanally skill available")
-        ultimate = self.click_ultimate_action(reason="Nanally ultimate available")
+        skill = self.click_skill_action()
+        ultimate = self.click_ultimate_action()
 
         def entry():
             skill_result = yield skill
@@ -34,7 +38,7 @@ class Nanally(BaseChar):
             #      "no effect"(返回False); 但只要大招CD已进(之前可用、现在不可用)就是真放出了,
             #      仍要站满6s, 不被误判跳过——否则大招放完瞬间被切走(如零的元素反应), 站场白丢。
             if ultimate_result or (ult_was_available and not self.ultimate_available()):
-                self.perform_in_ult(context)
+                self.perform_in_ult(context, skill)
 
         return self.plan(
             skill,
@@ -42,29 +46,18 @@ class Nanally(BaseChar):
             entry=entry,
         )
 
-    def perform_in_ult(self, context: CombatContext = None):
+    def perform_in_ult(self, context: CombatContext, skill: ActionIntent):
         # [lw] 娜娜莉大招强制站场约 6 秒,期间持续平A。上游用"大招不可用"早退,但大招一
         # 放完就进CD=立即不可用,会在 ~1s 就退场、白白浪费强制站场。改为留满 6s;战斗真
         # 结束时由 normal_attack 内的 check_combat 抛出跳出,不会空打。
         start = time.time()
         skill_used = False
-        while time.time() - start < 6:  # [lw] 移除上游"elapsed>1 且大招不可用即 break"的早退
-            if not skill_used:
-                skill_used = self._try_skill_during_ultimate(context)
+        while time.time() - start < 6:  # [lw] Do not leave field merely because ultimate enters CD.
+            if not skill_used and context.is_action_allowed(self, skill):
+                skill_used = self.click_skill()
             self.normal_attack()
             self.sleep(0.2)
         return skill_used
-
-    def _try_skill_during_ultimate(self, context: CombatContext = None):
-        if context is not None and not context.can_execute_action(
-            self,
-            slot=Planner.ActionSlot.SKILL,
-        ):
-            self.logger.debug("not allow skill")
-            return False
-
-        clicked = self.click_skill()
-        return clicked
     
     def on_combat_end(self, chars):
         self.switch_other_char()

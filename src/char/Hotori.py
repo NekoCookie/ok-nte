@@ -50,6 +50,9 @@ class HotoriRecordTeam:
 
 
 class Hotori(BaseChar):
+    cn_name = "浔"
+    element = BaseChar.Element.WHITE
+
     TEAM_SKILL_WINDOW = 5 + 1.2
     MAX_TEAM_SKILL_RECORDS = 3
     ULT_ATTACK_DURATION = 6
@@ -359,7 +362,7 @@ class Hotori(BaseChar):
         self.clear_records()
         self.clear_reservation()
 
-    def _wait_ultimate_unfreeze(self, start):
+    def _wait_ultimate_unfreeze(self, start, click=True):
         self.logger.debug("waiting for time unfrozen")
         self.task.in_animation = False
         self.task.wait_until(lambda: not self.has_cd("ultimate"), time_out=2)
@@ -367,7 +370,7 @@ class Hotori(BaseChar):
             self.task.wait_until(
                 lambda: not self.available("ultimate"),
                 time_out=13,
-                post_action=self.click_with_interval,
+                post_action=lambda: click and self.click_with_interval(),
                 pre_action=self.check_combat,
             )
         finally:

@@ -12,7 +12,7 @@ def make_combat_once_task(*, dead=False, in_team=True):
     task.chars = [char]
     task.info = {}
     task.wait_until = mock.MagicMock()
-    task.switch_to_combat_start_char = mock.MagicMock()
+    task.begin_combat_session = mock.MagicMock()
     task.retarget_turn_policy = mock.MagicMock(return_value=nullcontext())
     task.in_combat = mock.MagicMock(return_value=False)
     task.combat_end = mock.MagicMock()

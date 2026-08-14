@@ -252,10 +252,10 @@ msgid "关联特征"
 msgstr "Link Feature"
 
 msgid ""
-"此为内建 Python 脚本，不可在此修改。\n"
+"此为 Python 脚本，不可在此修改。\n"
 "请在对应的源文件中直接修改代码。"
 msgstr ""
-"This is a built-in Python script and cannot be modified here.\n"
+"This Python script cannot be modified here.\n"
 "Please modify the code directly in the corresponding source file."
 
 msgid "没有可用扫描结果"
@@ -361,15 +361,6 @@ msgstr "Team size less than 2"
 msgid "队伍管理"
 msgstr "Team Mgmt"
 
-msgid "领取活跃度奖励"
-msgstr "Claim Activity Rewards"
-
-msgid "领取环期任务奖励"
-msgstr "Claim Periodic Task Rewards"
-
-msgid "领取邮件"
-msgstr "Claim Mail"
-
 msgid "使用ESC"
 msgstr "Use ESC"
 
@@ -454,9 +445,6 @@ msgstr "Console Index"
 
 msgid "经验与甲硬币"
 msgstr "EXP & Beetle Coins"
-
-msgid "自动循环项目"
-msgstr "Auto Cycle Items"
 
 msgid "自动进行异象界域任务"
 msgstr "Automatically perform Anomaly Zone tasks"
@@ -582,9 +570,6 @@ msgstr "Automatically loop entering and exiting stages (requires an in-game AFK 
 msgid "自动登录游戏"
 msgstr "Auto Login"
 
-msgid "领取/补货一咖舍"
-msgstr "Claim/Restock Cafe"
-
 msgid "一咖舍任务"
 msgstr "Cafe Tasks"
 
@@ -629,20 +614,6 @@ msgstr "Enter or select a character"
 
 msgid "自动战斗任务不可用"
 msgstr "Auto combat task is unavailable"
-
-msgid ""
-"※ 关联角色特征后，软件将能自动识别角色并使用绑定的出招表；未关联时，将使用通用脚本。\n"
-"游戏内换人/换队自动适配，无需手动调整"
-msgstr ""
-"※ After linking character features, the software can automatically identify characters and use the bound combo; when not linked, it will use the generic script.\n"
-"In-game character and team switches adapt automatically, with no manual adjustment needed"
-
-msgid ""
-"※ {fixed_team}会优先使用已填写槽位；未填写的槽位仍会自动识别。\n"
-"如果游戏内切换队伍，已填写槽位需要在软件里手动修改。"
-msgstr ""
-"※ {fixed_team} will prioritize filled slots; empty slots will still use auto recognition.\n"
-"If you switch teams in game, update the filled slots manually in the software."
 
 msgid "<span style=\"color: #2ecc71;\">● 自动识别：已启用</span>"
 msgstr "<span style=\"color: #2ecc71;\">● Auto recognition: enabled</span>"
@@ -757,9 +728,6 @@ msgstr "Audition Selected Track"
 
 msgid "调试校准"
 msgstr "Debug Calibration"
-
-msgid "选中歌曲后可选择参与分析与播放的 MIDI 音轨。"
-msgstr "After selecting a song, choose which MIDI tracks to analyze and play."
 
 msgid "选择 MIDI 档案"
 msgstr "Select MIDI File"
@@ -995,7 +963,6 @@ msgstr "Anomaly Furniture"
 msgid "每2小时重新登入"
 msgstr "Re-login every 2 hours"
 
-
 msgid "除了选择内建存在的<b style=\"color: #0078d7;\">{combo}</b>外，您也可以自己输入名称来建立自己的<b style=\"color: #0078d7;\">{combo}</b>。"
 msgstr "In addition to selecting a built-in <b style=\"color: #0078d7;\">{combo}</b>, you can also enter a name to create your own <b style=\"color: #0078d7;\">{combo}</b>."
 
@@ -1056,8 +1023,14 @@ msgstr "Select svcl.exe"
 msgid "Open Download Page"
 msgstr "Open Download Page"
 
-msgid "⚠️ 正在运行{rob_mode}\n该模式会高频占用/争夺鼠标。如需停止，请使用热键暂停 ok-nte, 再手动停止任务。\n当前热键: {hotkey} (如无法确认当前热键则点击取消, 主动确认后再运行)"
-msgstr "⚠️ Running {rob_mode}\nThis mode will occupy/fight for the mouse at high frequency. To stop, use the hotkey to pause ok-nte, then manually stop the task.\nCurrent hotkey: {hotkey} (if you cannot confirm the current hotkey, click cancel and run after confirming manually)"
+msgid ""
+"⚠️ 正在运行{rob_mode}\n"
+"该模式会高频占用/争夺鼠标。如需停止，请使用热键暂停 ok-nte, 再手动停止任务。\n"
+"当前热键: {hotkey} (如无法确认当前热键则点击取消, 主动确认后再运行)"
+msgstr ""
+"⚠️ Running {rob_mode}\n"
+"This mode will occupy/fight for the mouse at high frequency. To stop, use the hotkey to pause ok-nte, then manually stop the task.\n"
+"Current hotkey: {hotkey} (if you cannot confirm the current hotkey, click cancel and run after confirming manually)"
 
 msgid "赤龙古堡-残丝长巷篝火"
 msgstr "Red Dragon Castle - Silken Alley Checkpoint"
@@ -1068,8 +1041,14 @@ msgstr "Max Combat Duration"
 msgid "战斗时不切人"
 msgstr "Do not switch characters during combat"
 
-msgid "主界面检测失败。建议操作: \n1. 关闭显卡滤镜与锐化功能；\n2. 尝试开启 Windows “自动管理应用的颜色”设置。"
-msgstr "Main interface detection failed. Suggested actions: \n1. Disable GPU filters and sharpening features;\n2. Try enabling the Windows \"Automatically manage color for apps\" setting."
+msgid ""
+"主界面检测失败。建议操作: \n"
+"1. 关闭显卡滤镜与锐化功能；\n"
+"2. 尝试开启 Windows “自动管理应用的颜色”设置。"
+msgstr ""
+"Main interface detection failed. Suggested actions: \n"
+"1. Disable GPU filters and sharpening features;\n"
+"2. Try enabling the Windows \"Automatically manage color for apps\" setting."
 
 msgid "大世界检测失败: 请检查游戏内 UI 透明度是否已设置为 1.0。"
 msgstr "Overworld detection failed: Please check if the in-game UI opacity has been set to 1.0."
@@ -1219,3 +1198,109 @@ msgstr "Auto-Combat Detection Diagnostics"
 
 msgid "持续检测诊断 Lv, 锁定目标标记(白色菱形)和红色血条; 请手动停止以查看完整报告"
 msgstr "Continuously diagnose detection for Lv, lock-on target marker (white diamond), and red health bar; please stop manually to view the full report."
+
+msgid "喷泉签到"
+msgstr "Fountain Check-in"
+
+msgid "防止 NTE 移动鼠标"
+msgstr "Prevent NTE From Moving the Cursor"
+
+msgid "后台运行时，在 NTE 将鼠标移动到屏幕中心后，自动恢复鼠标位置。"
+msgstr "When running in the background, automatically restore the cursor position after NTE moves it to the screen center."
+
+msgid ""
+"关联角色特征后，即可自动识别角色并使用绑定的出招表；游戏内换人/换队无需手动调整。\n"
+"未关联时，将使用通用脚本。"
+msgstr ""
+"After linking character features, characters are automatically recognized and use their bound combos; in-game character/team switches require no manual adjustment.\n"
+"When not linked, generic scripts will be used."
+
+msgid ""
+"{fixed_team}会优先使用已填写槽位；未填写的槽位仍会自动识别。\n"
+"如果游戏内切换队伍，已填写槽位需要在软件里手动修改。"
+msgstr ""
+"{fixed_team} will prioritize filled slots; unfilled slots will still use automatic recognition.\n"
+"If switching teams in-game, filled slots must be updated manually in the software."
+
+msgid "循环模式"
+msgstr "Cycle Mode"
+
+msgid "循环序列"
+msgstr "Cycle Sequence"
+
+msgid "自动循环序号/目标"
+msgstr "Auto Cycle Index/Target"
+
+msgid "自定义循环"
+msgstr "Custom Cycle"
+
+msgid "副本类型"
+msgstr "Domain Type"
+
+msgid "签到方式"
+msgstr "Check-in Method"
+
+msgid "签到"
+msgstr "Check in"
+
+msgid "捞币"
+msgstr "Scoop Coins"
+
+msgid ""
+"导入数据会完整覆盖当前用户资料.\n"
+"导出数据会导出完整用户资料."
+msgstr "Importing data will completely overwrite current user profiles.\nExporting data will export complete user profiles."
+
+msgid "资料管理"
+msgstr "Data Management"
+
+msgid "关闭"
+msgstr "Close"
+
+msgid "[外置代码]"
+msgstr "[External Code]"
+
+msgid "打开外置代码目录"
+msgstr "Open External Code Folder"
+
+msgid "手动添加或修改 Python 代码后, 需点击 [{refresh}] 按钮以生效。<br>关于编写角色出招表的指南, 请参考 <a href='{doc_url}'>文档</a>。"
+msgstr "After manually adding or modifying Python code, click the [{refresh}] button for changes to take effect.<br>For a guide on writing character combo tables, please refer to the <a href='{doc_url}'>documentation</a>."
+
+msgid "日常领取"
+msgstr "Daily Claim"
+
+msgid "领取每日邮件和奖励"
+msgstr "Claim daily mail and rewards"
+
+msgid "模式"
+msgstr "Mode"
+
+msgid "邮件"
+msgstr "Mail"
+
+msgid "活跃度奖励"
+msgstr "Activity Rewards"
+
+msgid "环期任务奖励"
+msgstr "Period Task Rewards"
+
+msgid "一咖舍"
+msgstr "Cafe"
+
+msgid "领取/补货"
+msgstr "Claim/Restock"
+
+msgid "全选"
+msgstr "Select All"
+
+msgid "取消全选"
+msgstr "Deselect All"
+
+msgid "全部折叠"
+msgstr "Collapse All"
+
+msgid "全部展开"
+msgstr "Expand All"
+
+msgid "重置配置"
+msgstr "Reset Config"

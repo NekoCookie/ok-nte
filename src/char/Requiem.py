@@ -99,6 +99,8 @@ class _RequiemCombatIO:
 class Requiem(MainDps):
     """Main DPS template with off-field skill overlap after skill cast."""
 
+    cn_name = "安魂曲主C"
+
     # 主C站场输出改用一轮 4A跳A combo(时序见 requiem_combo, 与跳A宏方案一同源)。
     # idle 原来是 2.5s 连点; 按需求改成"刚好打一轮"的时长。
     IDLE_ATTACK_DURATION = requiem_combo.scheme_a_round_seconds()

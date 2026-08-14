@@ -11,7 +11,7 @@ from ok import Box, Logger, safe_get
 
 from src import text_white_color
 from src.char.BaseChar import BaseChar, Element
-from src.char.CharFactory import get_char_by_id, get_char_by_pos
+from src.char.core.CharFactory import get_char_by_id, get_char_by_pos
 from src.char.custom.CustomCharManager import CustomCharManager
 from src.combat.CombatCheck import CombatCheck
 from src.combat.planner import CombatPlanner
@@ -53,7 +53,19 @@ class TeamSurvivalStatus(Enum):
     WIPED = 3  # 团灭
 
 
-class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] 插入用户扩展基类
+@dataclass
+class CombatSession:
+    """一次实际战斗的生命周期状态。"""
+
+    combat_start: float
+    switch_enabled: bool = True
+    use_ultimate: bool = True
+    start_char: "BaseChar | None" = None
+    first_engage_char: "BaseChar | None" = None
+    first_engage_consumed: bool = False
+
+
+class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
     """基础战斗任务类，封装了游戏"鸣潮"中角色自动化操作的通用逻辑。"""
 
     hot_key_verified = False  # 热键是否已验证
@@ -90,10 +102,9 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
         self.sleep_check_interval = 0.1
         self.chars: list[BaseChar] = []
         self.mouse_pos = None  # 当前鼠标位置
-        self.combat_start = 0  # 战斗开始时间戳
+        self._combat_session: CombatSession | None = None
 
         self.add_text_fix({"Ｅ": "e"})
-        self.use_ultimate = True
         self.vibrate_chars_index: list[int] = []
         self.chars_slot_mat = [None, None, None, None]
         self.element_reaction_counts = {}
@@ -101,6 +112,55 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
         self.clear_element_reactions()
         self.preheat_element_template_cache_async()
         CustomCharManager().preheat_feature_cache_async()
+
+    @property
+    def combat_session(self) -> CombatSession:
+        """返回当前战斗会话, 必要时按默认策略创建。"""
+
+        if getattr(self, "_combat_session", None) is None:
+            self._combat_session = CombatSession(combat_start=time.time())
+        return self._combat_session
+
+    @combat_session.setter
+    def combat_session(self, value: CombatSession | None) -> None:
+        self._combat_session = value
+
+    def begin_combat_session(self) -> CombatSession:
+        """初始化本场战斗, 执行一次首切并记录实际首发角色。
+
+        此方法是战斗开始阶段唯一的副作用入口。首发角色已记录时直接复用。
+        """
+
+        session = self.combat_session
+        if session.start_char is None:
+            session.combat_start = time.time()
+            self.click(after_sleep=0.25)
+            self.switch_to_combat_start_char()
+            session.start_char = self.get_current_char(raise_exception=False)
+            logger.info(f"combat session started, start char: {session.start_char}")
+        return session
+
+    def record_first_engage(self, char: "BaseChar") -> None:
+        """记录本场首次实际执行战斗逻辑的角色。"""
+
+        session = self.combat_session
+        if session.first_engage_char is None:
+            session.first_engage_char = char
+            logger.info(f"combat first engage: {char}")
+
+    def is_first_engage(self, char: "BaseChar") -> bool:
+        """返回角色是否为本场第一个实际执行战斗逻辑的角色。"""
+
+        return self.combat_session.first_engage_char is char
+
+    def consume_first_engage(self, char: "BaseChar") -> bool:
+        """仅在本场首次登场角色首次消费时返回 ``True``。"""
+
+        session = self.combat_session
+        if session.first_engage_consumed or session.first_engage_char is not char:
+            return False
+        session.first_engage_consumed = True
+        return True
 
     @property
     def team_size(self):
@@ -363,7 +423,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
             self.in_combat, time_out=wait_combat_time, raise_if_not_found=raise_if_not_found
         )
         try:
-            self.switch_to_combat_start_char()
+            self.begin_combat_session()
             self.info["Combat Count"] = self.info.get("Combat Count", 0) + 1
             with self.retarget_turn_policy(enable=retarget_turn):
                 deadline = time.time() + max_combat_time
@@ -388,11 +448,6 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
             team_status = TeamSurvivalStatus.WIPED
 
         return team_status
-
-    def _get_char_log_name(self, char: "BaseChar"):
-        if hasattr(char, "char_name"):
-            return char.char_name
-        return getattr(char, "name", "None")
 
     def _decide_switch_to(
         self,
@@ -455,7 +510,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
         log_prefix="switch char",
         time_out=10,
     ):
-        current_char_name = self._get_char_log_name(current_char) if current_char else "None"
+        current_char_name = current_char.ufn_name if current_char else "None"
         switch_to.has_intro = has_intro
         intro_replanned = False
         start_time = time.time()
@@ -464,8 +519,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
         last_index_check = 0
 
         logger.info(
-            f"{log_prefix} {current_char_name} -> {self._get_char_log_name(switch_to)}, "
-            f"has_intro {has_intro}"
+            f"{log_prefix} {current_char_name} -> {switch_to.ufn_name}, has_intro {has_intro}"
         )
 
         with self.skip_sleep_checks() as skip:
@@ -474,7 +528,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
             while True:
                 current_time = time.time()
                 elapsed = current_time - start_time
-                switch_to_name = self._get_char_log_name(switch_to)
+                switch_to_name = switch_to.ufn_name
                 frame = self.next_frame()
 
                 if self.is_in_team(frame=frame):
@@ -529,7 +583,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
                         switch_to = new_switch_to
                         has_intro = new_has_intro
                         switch_to.has_intro = True
-                        switch_to_name = self._get_char_log_name(switch_to)
+                        switch_to_name = switch_to.ufn_name
                         logger.info(
                             f"{log_prefix} updated target to {switch_to_name}, "
                             f"has_intro {switch_to.has_intro}"
@@ -613,8 +667,8 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
             post_action (callable, optional): 切换后执行的动作 (回调函数)。默认为 None。
             free_intro (bool, optional): 是否强制认为拥有入场技 (通常在协奏值满时)。默认为 False。
         """
-        if self.team_size <= 1:
-            self.click(action_name="switch_char_click", interval=0.1)
+        if not self.combat_session.switch_enabled or self.team_size <= 1:
+            self.click(after_sleep=0.1)
             return
 
         decision = self.combat_planner.decide_switch(
@@ -655,6 +709,9 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
         if isinstance(self, AutoCombatTask):
             current_char.logger.debug("AutoCombatTask, skip switch_other_char")
             return
+        if not self.combat_session.switch_enabled:
+            current_char.logger.debug("combat character switching disabled by task policy")
+            return
         target = next(
             (
                 char
@@ -669,7 +726,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
 
         next_char = str(target.index + 1)
         current_char.logger.debug(
-            f"{current_char.char_name} on_combat_end {current_char.index} "
+            f"{current_char.ufn_name} on_combat_end {current_char.index} "
             f"switch next char: {next_char}"
         )
         start = time.time()
@@ -691,6 +748,9 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
         # click_ultimate 误判"正在大招动画中"、不发招直接空等 unfreeze,卡住十几秒。
         self.in_animation = False  # [lw]
         self.lw_settle_combat_start_resources()  # [lw] 首动作前等辅助头像资源状态稳定
+        if not self.combat_session.switch_enabled:
+            logger.info("combat start switch disabled by task policy")
+            return
         current_char = self.get_current_char(raise_exception=False)
         decision = self.combat_planner.decide_combat_start_char(current_char)
         switch_to = decision.target
@@ -777,18 +837,20 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
 
     def combat_end(self):
         """战斗结束时调用的清理方法。"""
-        self.reset_to_false()
-        SoundCombatContext().clear_task_if(self)
+        try:
+            self.reset_to_false()
+            SoundCombatContext().clear_task_if(self)
 
-        current_char = self.get_current_char(raise_exception=False)
-        if current_char:
-            try:
-                self.get_current_char().on_combat_end(self.chars)
-            except Exception as e:
-                self.log_error(f"{current_char.char_name} on_combat_end error", e)
-                pass
+            current_char = self.get_current_char(raise_exception=False)
+            if current_char:
+                try:
+                    self.get_current_char().on_combat_end(self.chars)
+                except Exception as e:
+                    self.log_error(f"{current_char.ufn_name} on_combat_end error", e)
 
-        self._clear_dead_chars()
+            self._clear_dead_chars()
+        finally:
+            self.combat_session = None
 
     def _clear_dead_chars(self):
         for char in self.chars:
@@ -893,23 +955,23 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw] �
     def _do_load_char(self, index: int, fixed_slots) -> "BaseChar":
         fixed_slot = safe_get(fixed_slots, index)
         fixed_char_id = ""
-        fixed_combo_id = ""
+        fixed_impl_id = ""
         if isinstance(fixed_slot, dict):
             fixed_char_id = fixed_slot.get("char_id", "")
-            fixed_combo_id = fixed_slot.get("combo_id", "")
+            fixed_impl_id = fixed_slot.get("impl_id", "")
             if fixed_char_id:
                 char_info = CustomCharManager().get_character_info_by_id(fixed_char_id)
                 if not char_info:
                     self.logger.warning(f"Fixed char {index} not found: {fixed_char_id}")
                     fixed_char_id = ""
-                    fixed_combo_id = ""
+                    fixed_impl_id = ""
                 else:
                     fixed_char_name = char_info["char_name"]
                     self.logger.info(
-                        f"Using fixed char {index}: {fixed_char_name} {fixed_combo_id}"
+                        f"Using fixed char {index}: {fixed_char_name} {fixed_impl_id}"
                     )
                     return get_char_by_id(
-                        self, index, fixed_char_id, confidence=1, combo_id=fixed_combo_id
+                        self, index, fixed_char_id, confidence=1, impl_id=fixed_impl_id
                     )
 
         box_scaled = self.get_char_box(index).scale(1.1, 1.1)
