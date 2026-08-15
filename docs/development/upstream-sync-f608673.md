@@ -130,6 +130,17 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Commit | `6818c49`, `7d37ed9` |
 | Status | verified |
 
+### C-06: Combat snapshot and action-loop hooks
+
+| Field | Evidence |
+| --- | --- |
+| Old local contract | LW had a full replacement of `BaseCombatTask.get_cd()`, plus multi-line direct changes to the RU action poll and combat-start method. |
+| New RU contract | RU owns `get_cd()` control flow, the action loop, and first-switch sequence. LW supplies only its CD policy, animation-safe poll, and pre-start cleanup/resource observation. |
+| Migration | `lw_get_cd()`, `lw_after_action_poll()`, and `lw_prepare_combat_start()` now contain the LW behavior. The RU files retain one minimal `[lw]` call at each extension point. |
+| Regression | `TestCombatExtensionHooks` asserts the current snapshot and start-preparation wiring; `TestSettleSkill`, `TestRefreshCdReady`, `TestCD`, `TestUseUltimateConfig`, and `TestTeamChangeCheck` pass. |
+| Commit | `e4201e2` |
+| Status | verified |
+
 ## Shared-path acceptance matrix
 
 Each group below expands to the named shared paths. Every group is `pending`
