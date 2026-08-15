@@ -623,7 +623,7 @@ class CombatExtMixin(_TaskProxy):
                 return True
         return False
 
-    def _committing_to_ready_support(self, switch_to):
+    def lw_is_committing_to_ready_support(self, switch_to):
         """正在切向的目标若是支援(辅助/治疗),就不让环合在它落地前把它改道走——它既然赢了
         决策被选中切过去,就让它落地放完大招/技能再被抢,避免落地前被薅走形成空切。环合反应
         留到下一次切人再走。决策层优先级不受影响(治疗仍最低,不会越级抢初次决策)。

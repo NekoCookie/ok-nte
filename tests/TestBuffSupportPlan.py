@@ -396,9 +396,9 @@ class TestResourceSupportHierarchy(unittest.TestCase):
     def test_entry_commit_guard_checks_capability_not_role_parent(self):
         task = BaseCombatTask.__new__(BaseCombatTask)
 
-        self.assertTrue(task._committing_to_ready_support(BuffSupport.__new__(BuffSupport)))
-        self.assertTrue(task._committing_to_ready_support(HealSupport.__new__(HealSupport)))
-        self.assertFalse(task._committing_to_ready_support(MainDps.__new__(MainDps)))
+        self.assertTrue(task.lw_is_committing_to_ready_support(BuffSupport.__new__(BuffSupport)))
+        self.assertTrue(task.lw_is_committing_to_ready_support(HealSupport.__new__(HealSupport)))
+        self.assertFalse(task.lw_is_committing_to_ready_support(MainDps.__new__(MainDps)))
 
 
 class TestHealSupportResourcePlan(unittest.TestCase):

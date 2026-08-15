@@ -561,7 +561,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
                     and not has_intro
                     and not intro_replanned
                     and intro_ready
-                    and not self._committing_to_ready_support(switch_to)  # [lw] 正切向就绪支援时不改道
+                    and not self.lw_is_committing_to_ready_support(switch_to)  # [lw]
                 ):
                     intro_replanned = True
                     new_switch_to, new_has_intro = self._decide_switch_to(
