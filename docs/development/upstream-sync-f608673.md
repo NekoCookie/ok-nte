@@ -178,6 +178,39 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Commit | `e4201e2`, `df46aeb`, `ad031e6`, `aee9558` |
 | Status | verified |
 
+### L-02: LW adapter-layer caller audit
+
+| Field | Evidence |
+| --- | --- |
+| Old local contract | User behavior was spread across character registration, combat, confirmation, 999, and character-UI files. Some 999 code retained `_ru_*` helper copies inside `DSDFarmTask`, making later upstream comparison needlessly ambiguous. |
+| New RU contract | The active RU contracts are the registry API, current combat session/planner APIs, `BaseNTETask.find_confirm()` with its internal mask, and the current 999 public task method signatures. No LW extension may call removed factory/planner APIs or retain a parallel RU helper in a task class. |
+| Migration | `chars.py`, `combat_ext.py`, and `nte_task_ext.py` use the contracts recorded in C-01 to C-09, C-05, I-01, and M-01e. `DSDFarmExtMixin` now owns bounded teleport recovery and deterministic target selection; `DSDFarmTask` retains only `[lw]` delegation. `_ru_teleport_to_nearest_bonfire()` and `_ru_teleport_to_top_bonfire()` no longer exist. `CharUIExtMixin` remains a visual extension; its off-field diamond signal is limited to opening observation and does not override RU normal-dispatch ultimate truth. |
+| Caller audit | Static scan found no removed factory lookup, planner timing API, old action-availability API, or retained 999 `_ru_teleport_*` helper. Every production connection is a mixin inheritance or a marked one-way call. |
+| Regression | `test_dsd_farm_recovery`, `test_find_confirm`, `TestUltimateDiamond`, `TestTeamChangeCheck`, and the combat records above cover the current adapters. After the 999 extraction, `test_dsd_farm_recovery` passed 24 tests on 2026-08-16, including real LW top-bonfire selection rather than a removed-helper mock. |
+| Commit | `e37f9fb` plus the prior migration commits in C-01 to C-09 |
+| Status | verified |
+
+### T-01: Task and mixin lifecycle boundary
+
+| Field | Evidence |
+| --- | --- |
+| Old local contract | Confirmation recognition, 999 recovery, routine retry/account summaries, daily ordering, stamina completion, and character UI observations were mixed into task classes with several extended methods. |
+| New RU contract | `BaseNTETask.find_confirm(box, threshold)`, `DailyRoutineTask.do_run(self)`, and `FurnitureTask.claim_anomaly_furniture(self)` retain current signatures; RU owns the task lifecycle, confirmation lifecycle, and ordinary combat paths. `AnomalyTask.exit_anomaly()` uses the current RU-safe confirmation range. |
+| Migration | `NTETaskExtMixin` receives the internal confirmation mask and OCR candidate policy; `DSDFarmExtMixin` receives 999 recovery; `DailyRoutineExtMixin` and the furniture/UI extensions receive targeted retry/account behavior (P-01). `DailyTaskExtMixin` now owns LW daily ordering and the stamina-only completion policy, leaving `DailyTask` with three minimal `[lw]` calls. `CharUIExtMixin` owns the UI visual extension. |
+| Regression | `test_dsd_farm_recovery`, `test_find_confirm`, `TestDailyRoutine`, `TestDailyStamina`, `TestDailyCoffee`, `TestAnomalyTask`, `TestUltimateDiamond`, `TestSwitchAccount`, `test_fish_catching`, and `TestRequiemCombatConfigTask` passed (121 tests) before the 999 extraction; its 24-test focused suite passed after extraction. `TestDailyCoffee`, `TestDailyStamina`, and `TestDailyRoutine` passed again (41 tests) after `DailyTaskExtMixin` migration. |
+| Commit | `2fde742`, `c7c52eb`, `e37f9fb` |
+| Status | verified |
+
+### R-02: Runtime task-registration audit with user-worktree protection
+
+| Field | Evidence |
+| --- | --- |
+| Audit target | `HEAD:src/config.py`, not the dirty worktree file. |
+| New RU contract | RU owns config bootstrap and task discovery. The committed LW additions are four registrations only: Switch Account, Fish Catching, Requiem Combat Config, and Nanally Super Jump. |
+| Verification | `git diff f608673^2 HEAD -- src/config.py` shows only those four `[lw]` entries. `TestConfigTaskRegistration` verifies all four remain registered (1 test passed on 2026-08-16). The working-tree Hide Seek registration and its untracked implementation are user changes; they were neither read as sync evidence nor modified, staged, or committed. |
+| Commit | `8045e5d` |
+| Status | verified; audit-only for the user-modified working-tree file |
+
 ### L-01: Gettext catalog provenance and compilation
 
 | Field | Evidence |
@@ -229,9 +262,9 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Field | Evidence |
 | --- | --- |
 | Command | `python -m unittest discover -s tests -p "*.py"` |
-| Result | 590 tests passed in 16.308 seconds. |
-| Scope | The suite uses its headless test initialization and mocks for task behavior. It is regression evidence for the completed records above, not a substitute for the remaining per-contract audit or real-game validation. |
-| Matrix effect | None. The acceptance matrix stays in progress until every pending group has its own contract record and regression evidence. |
+| Result | 591 tests passed in 18.861 seconds on 2026-08-16. |
+| Scope | The suite uses headless initialization and mocks for input/visual leaves. It is regression evidence for each completed record, not a substitute for real-game validation. The run used the existing user worktree, whose untracked Hide Seek task is discoverable through the user's dirty config; that file was not modified, staged, or used as merge evidence. |
+| Matrix effect | The focused contract records C-01 to C-09, L-02, T-01, R-01, and R-02 are complete; this final suite closes the regression-matrix row. |
 
 ## Shared-path acceptance matrix
 
@@ -246,10 +279,10 @@ until the individual contracts and regression evidence are added below it.
 | Bootstrap and dependencies | `main.py`, `main_debug.py`, `pyproject.toml`, `uv.lock` | Verify startup and dependency contract changes against LW initialization | verified; see B-01 |
 | Character core | `src/char/BaseChar.py`, `Hotori.py`, `Nanally.py`, `Requiem.py`, `core/CharFactory.py`, `core/CharRegistry.py`, `custom/CustomCharDbMigrator.py` | Map character lifecycle, role registration, custom-character schema, and all LW callers | verified; see C-01, C-03 to C-05, and C-08 |
 | Combat core | `src/combat/BaseCombatTask.py`, `planner/core.py`, `planner/types.py` | Map session lifecycle, planner action/result contracts, interrupt and team-reload behavior | verified; see C-07 and C-09 |
-| Runtime infrastructure | `src/config.py`, `src/globals.py`, `src/interaction/NTEInteraction.py` | Check registration, global lifecycle, interaction semantics, and LW connections | pending; R-01 verifies globals and interaction, while `src/config.py` has active user changes outside this sync |
-| LW layer | `src/lw/chars.py`, `combat_ext.py`, `dsd_farm_ext.py`, `nte_task_ext.py` | Reapply each required LW behavior on current RU public APIs; no stale private calls or dual paths | pending; I-01 is verified only |
-| Tasks and mixins | `src/tasks/AnomalyTask.py`, `BaseNTETask.py`, `DSDFarmTask.py`, `DailyTask.py`, `daily/DailyRoutineTask.py`, `mixin/CharUIMixin.py` | Trace task lifecycle and each `[lw]` hook across changed RU contracts | pending |
-| Regression suite | `TestCharImplDb.py`, `TestCombatPlanner.py`, `TestCombatSurvivalStatus.py`, `TestDailyCoffee.py`, `TestUseUltimateConfig.py`, `test_dsd_farm_recovery.py` | Remove obsolete mocks, prove current contracts and preserve LW results | pending |
+| Runtime infrastructure | `src/config.py`, `src/globals.py`, `src/interaction/NTEInteraction.py` | Check registration, global lifecycle, interaction semantics, and LW connections | verified; see R-01 and R-02; config is audited at HEAD because its worktree has user changes |
+| LW layer | `src/lw/chars.py`, `combat_ext.py`, `dsd_farm_ext.py`, `nte_task_ext.py` | Reapply each required LW behavior on current RU public APIs; no stale private calls or dual paths | verified; see L-02 and C-01 to C-09 |
+| Tasks and mixins | `src/tasks/AnomalyTask.py`, `BaseNTETask.py`, `DSDFarmTask.py`, `DailyTask.py`, `daily/DailyRoutineTask.py`, `mixin/CharUIMixin.py` | Trace task lifecycle and each `[lw]` hook across changed RU contracts | verified; see T-01 and P-01 |
+| Regression suite | `TestCharImplDb.py`, `TestCombatPlanner.py`, `TestCombatSurvivalStatus.py`, `TestDailyCoffee.py`, `TestUseUltimateConfig.py`, `test_dsd_farm_recovery.py` | Remove obsolete mocks, prove current contracts and preserve LW results | verified; see V-01 and the focused records C-01 to C-09, L-02, and T-01 |
 
 ## Post-merge changes requiring boundary audit
 
