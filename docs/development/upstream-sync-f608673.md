@@ -85,6 +85,17 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Commit | `1dfd165` |
 | Status | verified |
 
+### C-02: Support-entry commit hook
+
+| Field | Evidence |
+| --- | --- |
+| Old local contract | `BaseCombatTask` called the private mixin method `_committing_to_ready_support()` while reconsidering an intro switch. |
+| New RU contract | RU switch logic has no LW private helper; the local policy must be an explicit, minimal extension point. |
+| Migration | Renamed the LW method to `lw_is_committing_to_ready_support()` and retained one `[lw]` condition in the RU decision. |
+| Regression | `TestBuffSupportPlan` exercises the public LW hook and `TestCombatPlanner` verifies the related planner paths. |
+| Commit | `df46aeb` |
+| Status | verified |
+
 ## Shared-path acceptance matrix
 
 Each group below expands to the named shared paths. Every group is `pending`
