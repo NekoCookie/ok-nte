@@ -279,14 +279,13 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             return previous_target
         return next_target
 
-    def add_freeze_duration(self, start, duration=-1.0, freeze_time=0.1, cause=""):  # [lw] cause=诊断归因
+    def add_freeze_duration(self, start, duration=-1.0, freeze_time=0.1):
         """添加冻结持续时间。用于精确计算技能冷却等。
 
         Args:
             start (float): 冻结开始时间。
             duration (float, optional): 冻结持续时间。如果为-1.0, 则根据当前时间计算。默认为 -1.0。
             freeze_time (float, optional): 认为发生冻结的最小持续时间。默认为 0.1。
-            cause (str, optional): 冻结来源(大招时停/技能动画/入场环合/浔...),用于诊断归因CD漂移。
         """
         if duration < 0:
             duration = time.time() - start
@@ -298,13 +297,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
                 <= current_time - self.FREEZE_DURATION_RETENTION_SECONDS
             ):
                 self.freeze_durations.popleft()
-            freeze_duration = (start, duration, freeze_time, cause)  # [lw] 4元组带cause
-            if self.SKILL_CD_DIAG:  # [lw] 诊断日志块
-                deduct = 0 if freeze_time == -100 else duration
-                self.log_info(
-                    f"freeze记录: 原因={cause or '?'} 时长={duration:.2f}s "
-                    f"扣CD={deduct:.2f}s{'(入场不扣)' if freeze_time == -100 else ''}"
-                )  # [lw]
+            freeze_duration = (start, duration, freeze_time)
             if not self.freeze_durations or start >= self.freeze_durations[-1][0]:
                 self.freeze_durations.append(freeze_duration)
                 return
@@ -328,8 +321,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
         if start < 0:
             return 10000
         to_minus = 0
-        for item in reversed(self.freeze_durations):  # [lw] 元组为4元(带cause), 按下标取前3个
-            freeze_start, duration, freeze_time = item[0], item[1], item[2]  # [lw]
+        for freeze_start, duration, freeze_time in reversed(self.freeze_durations):
             if freeze_start <= start:
                 break
             if intro_motion_freeze:

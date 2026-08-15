@@ -75,6 +75,32 @@ class CombatExtMixin(_TaskProxy):
         self._last_team_recheck = 0.0  # AutoCombatTask 的队伍重载节流
         self._team_reload_enabled = False
 
+    def lw_add_freeze_duration(self, start, duration=-1.0, freeze_time=0.1, cause=""):
+        """Record LW diagnostic context without changing the RU freeze tuple contract."""
+
+        if duration < 0:
+            duration = time.time() - start
+        self.add_freeze_duration(start, duration, freeze_time)
+        if not (start > 0 and duration > freeze_time):
+            return
+
+        causes = getattr(self, "_lw_freeze_causes", None)
+        if causes is None:
+            causes = {}
+            self._lw_freeze_causes = causes
+        causes[start] = cause
+        retention_start = time.time() - self.FREEZE_DURATION_RETENTION_SECONDS
+        for recorded_start in tuple(causes):
+            if recorded_start <= retention_start:
+                causes.pop(recorded_start, None)
+
+        if self.SKILL_CD_DIAG:
+            deduct = 0 if freeze_time == -100 else duration
+            self.log_info(
+                f"freeze record: cause={cause or '?'} duration={duration:.2f}s "
+                f"deduct={deduct:.2f}s{' (intro not deducted)' if freeze_time == -100 else ''}"
+            )
+
     @contextmanager
     def team_reload_watch(self):
         """在作用域内开启战斗中队伍变更检测(TeamReloadRequested 信号)。
@@ -564,9 +590,9 @@ class CombatExtMixin(_TaskProxy):
             anchor_cd = cds.get(box_name, 0)
             parts = []
             to_minus = 0.0
-            for item in self.freeze_durations:
-                fs, dur, ft = item[0], item[1], item[2]
-                cause = item[3] if len(item) > 3 else ""
+            causes = getattr(self, "_lw_freeze_causes", {})
+            for fs, dur, ft in self.freeze_durations:
+                cause = causes.get(fs, "")
                 if anchor < fs:
                     if ft == -100:
                         parts.append(f"入场/环合@{now - fs:.1f}s前(dur{dur:.2f},跳过不扣)[{cause}]")

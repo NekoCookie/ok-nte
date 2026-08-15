@@ -375,5 +375,5 @@ class Hotori(BaseChar):
             )
         finally:
             duration = time.time() - start - 0.1
-            self.add_freeze_duration(start, duration, cause="浔大招")  # [lw] cause=
+            self.task.lw_add_freeze_duration(start, duration, cause="hotori ultimate")  # [lw]
         return duration

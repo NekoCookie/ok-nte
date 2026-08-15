@@ -149,7 +149,12 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             self.click_arc()
 
     def add_intro_motion_freeze(self, start):
-        self.add_freeze_duration(start, self.INTRO_MOTION_FREEZE_DURATION, freeze_time=-100, cause="入场/环合")  # [lw] cause=
+        self.task.lw_add_freeze_duration(  # [lw] Keep freeze diagnostics outside RU tuple storage.
+            start,
+            self.INTRO_MOTION_FREEZE_DURATION,
+            freeze_time=-100,
+            cause="intro/entry",
+        )
 
     def wait_intro(self, time_out=-1, click=True):
         """等待角色入场动画结束。
@@ -707,7 +712,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             post_action=lambda: click and self._click_during_ultimate_unfreeze(),  # [lw]
         )
         duration = time.time() - start
-        self.add_freeze_duration(start, duration, cause="大招时停")  # [lw] cause=
+        self.task.lw_add_freeze_duration(start, duration, cause="ultimate")  # [lw]
         return duration
 
     def click_skill(
@@ -775,7 +780,11 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
                 start=animation_start,
                 timeout=6,
             )
-            self.add_freeze_duration(animation_start, time.time() - animation_start, cause="技能动画")  # [lw] cause=
+            self.task.lw_add_freeze_duration(  # [lw]
+                animation_start,
+                time.time() - animation_start,
+                cause="skill animation",
+            )
         if clicked:
             self.last_skill_time = skill_click_time
             self.sleep(post_sleep)
