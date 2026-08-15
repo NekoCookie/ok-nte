@@ -2,9 +2,9 @@
 
 ## Status
 
-**In progress.** This ledger is the durable state for this upstream sync. Do not
-describe the sync as complete until every row in the acceptance matrix is marked
-`verified` or an explicit user-approved exception is recorded here.
+**Complete.** Every acceptance-matrix row is marked `verified`; V-01 records the
+final full regression run. The user-modified `src/config.py` worktree was audited
+at `HEAD` only and was not changed as part of this sync.
 
 ## Immutable scope
 
