@@ -94,12 +94,21 @@ class NTETaskExtMixin(_TaskProxy):
         # 局部 import: SwitchAccountTask → BaseNTETask → 本模块, 顶部引会循环
         from src.tasks.SwitchAccountTask import SwitchAccountTask, switch_account
 
+        record_result = getattr(self, "lw_record_current_routine_result", None)
+
+        def record_account_result(account_name):
+            if callable(record_result):
+                record_result(account_name)
+
         switch = self.get_task_by_class(SwitchAccountTask)
         if not switch or not switch.config.get(SwitchAccountTask.CONF_CYCLE_WITH_DAILY):
+            record_account_result("当前账号")
             return
         self.log_info("日常任务完成, 自动切换账号再跑一轮", notify=True)
         _, original = switch_account(self)
+        record_account_result("账号 1")
         self.do_run()
+        record_account_result("账号 2")
         if switch.config.get(SwitchAccountTask.CONF_SWITCH_BACK):
             # original 为 None(面板打开时已展开, 没读到折叠态原UID)时退化为"切到另一个"
             self.log_info(f"第二轮日常完成, 切回原账号 {original or '<另一个账号>'}", notify=True)

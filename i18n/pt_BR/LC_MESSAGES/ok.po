@@ -1035,3 +1035,6 @@ msgstr "Expandir Tudo"
 
 msgid "重置配置"
 msgstr "Redefinir conf."
+
+msgid "重试失败项"
+msgstr "Tentar novamente itens com falha"

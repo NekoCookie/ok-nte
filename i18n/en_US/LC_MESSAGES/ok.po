@@ -1304,3 +1304,6 @@ msgstr "Expand All"
 
 msgid "重置配置"
 msgstr "Reset Config"
+
+msgid "重试失败项"
+msgstr "Retry Failed Items"

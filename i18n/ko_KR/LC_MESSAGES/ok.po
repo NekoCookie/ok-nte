@@ -1304,3 +1304,6 @@ msgstr "모두 펼치기"
 
 msgid "重置配置"
 msgstr "설정 리셋"
+
+msgid "重试失败项"
+msgstr "실패한 항목 다시 시도"

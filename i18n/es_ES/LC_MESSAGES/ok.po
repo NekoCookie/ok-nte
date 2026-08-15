@@ -1304,3 +1304,6 @@ msgstr "Expandir todo"
 
 msgid "重置配置"
 msgstr "Restablecer conf."
+
+msgid "重试失败项"
+msgstr "Reintentar elementos fallidos"

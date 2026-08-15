@@ -2,6 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from src.Labels import Labels
 from src.tasks.AnomalyHunter import AnomalyHunter
 from src.tasks.AnomalyTask import AnomalyTask
 from src.tasks.BaseNTETask import BaseNTETask
@@ -10,8 +11,10 @@ from src.tasks.daily.DailyRoutineTask import (
     routine_has_active_tasks,
     selected_routine_tasks,
     selection_is_complete,
+    start_routine_retry_tasks,
     start_routine_tasks,
 )
+from src.tasks.daily.FurnitureTask import FurnitureTask
 
 
 class TestDailyRoutineConfig(unittest.TestCase):
@@ -252,6 +255,18 @@ class TestDailyRoutineStart(unittest.TestCase):
         self.assertTrue(started)
         controller.do_start.assert_called_once_with(routine_task)
 
+    def test_starts_only_the_latest_account_failed_items_on_retry(self):
+        routine_task = Mock(enabled=False, running=False)
+        routine_task.lw_prepare_retry_failed_items.return_value = True
+        controller = Mock()
+        controller.do_start.return_value = True
+
+        started = start_routine_retry_tasks(controller, routine_task)
+
+        self.assertTrue(started)
+        routine_task.lw_prepare_retry_failed_items.assert_called_once_with()
+        controller.do_start.assert_called_once_with(routine_task)
+
     def test_daily_routine_do_run_executes_selected_tasks_in_order_and_records_results(self):
         task = object.__new__(DailyRoutineTask)
         task.scene = Mock()
@@ -342,3 +357,95 @@ class TestDailyRoutineStart(unittest.TestCase):
         self.assertTrue(routine_has_active_tasks([SimpleNamespace(enabled=True, running=False)]))
         self.assertTrue(routine_has_active_tasks([SimpleNamespace(enabled=False, running=True)]))
         self.assertFalse(routine_has_active_tasks([SimpleNamespace(enabled=False, running=False)]))
+
+    def test_daily_routine_records_a_separate_summary_for_each_account(self):
+        task = object.__new__(DailyRoutineTask)
+        task._task_display_name = lambda task_id: {"coffee": "一咖舍", "gift": "羁遇赠礼"}[task_id]
+        task.info_set = Mock()
+        task.log_info = Mock()
+        task.task_status = {"success": ["coffee"], "failed": ["gift"], "skipped": [], "pending": []}
+        task.task_failure_details = {"gift": ["gift_a: 未找到目标"]}
+        task.account_results = []
+        task._recorded_status_id = None
+
+        task.lw_record_current_routine_result("账号 A")
+        task.task_status = {"success": [], "failed": [], "skipped": ["coffee"], "pending": []}
+        task.task_failure_details = {}
+        task.lw_record_current_routine_result("账号 B")
+        task.lw_finish_daily_run()
+
+        self.assertEqual(len(task.account_results), 2)
+        self.assertEqual(task.account_results[0].account_name, "账号 A")
+        self.assertEqual(task.account_results[0].failed, ("gift",))
+        failed_summary = next(call.args[1] for call in task.info_set.call_args_list if call.args[0] == "failed")
+        self.assertIn("账号 A", failed_summary)
+        self.assertIn("gift_a: 未找到目标", failed_summary)
+        self.assertIn("账号 B", failed_summary)
+
+    def test_daily_routine_retry_runs_only_failed_task_ids(self):
+        task = object.__new__(DailyRoutineTask)
+        task.scene = Mock()
+        task.normalize_items = Mock(
+            return_value=[
+                {"id": "daily_claim", "enabled": True},
+                {"id": "coffee", "enabled": True},
+                {"id": "gift", "enabled": True},
+            ]
+        )
+        task.log_info = Mock()
+        task.log_warning = Mock()
+        task.log_error = Mock()
+        task.screenshot = Mock()
+        task.info_set = Mock()
+        task.ensure_main = Mock()
+        task.current_task_key = None
+        task._active_routine_task = None
+        task.sleep_check_interval = 1
+        task.config = {}
+        task.routine_task_configs = {}
+        task.task_failure_details = {}
+        task._active_retry_task_ids = frozenset({"coffee"})
+        child = Mock(name="一咖舍", enabled=False, running=False)
+        child.sleep_check_interval = 1
+        child.config = {}
+        child.default_config = {}
+        child.config_description = {}
+        child.config_type = {}
+        child.do_run.return_value = True
+        task.task_for_id = Mock(return_value=child)
+
+        result = task.do_run(("coffee",))
+
+        self.assertTrue(result)
+        self.assertEqual(task.task_status["success"], ["coffee"])
+        self.assertEqual(task.task_status["failed"], [])
+        self.assertEqual(task.task_status["skipped"], [])
+        child.do_run.assert_called_once_with()
+
+
+class TestFurnitureTask(unittest.TestCase):
+    def test_records_each_failed_furniture_and_continues(self):
+        task = object.__new__(FurnitureTask)
+        task.log_info = Mock()
+        task.log_error = Mock()
+        task._retry_furniture = ()
+        task.claim_furniture = Mock(side_effect=[True, False, True])
+
+        result = task.claim_anomaly_furniture(
+            (Labels.anomaly_fluff, Labels.anomaly_mammon, Labels.anomaly_fluff)
+        )
+
+        self.assertFalse(result)
+        self.assertEqual(task.claim_furniture.call_count, 3)
+        self.assertEqual(len(task.failure_details), 1)
+        self.assertIn(Labels.anomaly_mammon.value, task.failure_details[0])
+
+    def test_prepare_retry_keeps_only_failed_furniture(self):
+        task = object.__new__(FurnitureTask)
+        task.furniture_results = {
+            Labels.anomaly_fluff: True,
+            Labels.anomaly_mammon: False,
+        }
+
+        self.assertTrue(task.prepare_retry())
+        self.assertEqual(task._retry_furniture, (Labels.anomaly_mammon,))

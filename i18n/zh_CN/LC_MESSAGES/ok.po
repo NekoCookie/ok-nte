@@ -1287,3 +1287,6 @@ msgstr ""
 
 msgid "重置配置"
 msgstr ""
+
+msgid "重试失败项"
+msgstr "重试失败项"

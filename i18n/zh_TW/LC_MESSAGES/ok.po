@@ -1304,3 +1304,6 @@ msgstr "全部展開"
 
 msgid "重置配置"
 msgstr "重置配置"
+
+msgid "重试失败项"
+msgstr "重試失敗項目"

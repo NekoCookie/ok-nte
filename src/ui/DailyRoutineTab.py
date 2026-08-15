@@ -1,5 +1,6 @@
 from ok import og
 from ok.gui.common.design_system import DesignToken, configure_page_layout
+from ok.gui.Communicate import communicate
 from ok.gui.common.style_sheet import StyleSheet
 from ok.gui.tasks.TaskCard import TaskCard
 from ok.gui.widget.CustomTab import CustomTab
@@ -27,6 +28,7 @@ from src.tasks.daily.DailyRoutineTask import (
     DailyRoutineEntry,
     DailyRoutineTask,
     selection_is_complete,
+    start_routine_retry_tasks,
 )
 from src.ui.common import FluentSystemIcon
 
@@ -246,14 +248,19 @@ class DailyRoutineTab(CustomTab):
         self.collapse_button = PushButton(
             FluentSystemIcon.CHEVRON_UP_DOWN, self.tr("全部展开"), self.action_bar
         )
+        self.retry_button = PushButton(FluentIcon.SYNC, self.tr("重试失败项"), self.action_bar)
+        self.retry_button.setEnabled(False)
         action_layout.addWidget(self.select_all_check)
         action_layout.addWidget(self.collapse_button)
+        action_layout.addWidget(self.retry_button)
         action_layout.addStretch(1)
         self.action_layout = action_layout
         self.vBoxLayout.addWidget(self.action_bar)
 
         self.select_all_check.toggled.connect(self._set_all_selected)
         self.collapse_button.clicked.connect(self._toggle_all_expansion)
+        self.retry_button.clicked.connect(self._retry_failed_items)
+        communicate.task.connect(self._sync_retry_button)
 
     @property
     def executor(self):
@@ -438,6 +445,22 @@ class DailyRoutineTab(CustomTab):
         self.select_all_check.setChecked(is_complete)
         self.select_all_check.blockSignals(False)
         self.select_all_check.setText(self.tr("取消全选") if is_complete else self.tr("全选"))
+        self.retry_button.setEnabled(
+            not self._routine_task().enabled and self._routine_task().lw_can_retry_failed_items()
+        )
+
+    def _retry_failed_items(self):
+        routine_task = self._routine_task()
+        if routine_task is None:
+            return
+        if start_routine_retry_tasks(og.app.start_controller, routine_task):
+            self.retry_button.setEnabled(False)
+
+    def _sync_retry_button(self, task):
+        if task is self._routine_task():
+            self.retry_button.setEnabled(
+                not task.enabled and task.lw_can_retry_failed_items()
+            )
 
     def _toggle_all_expansion(self):
         expand = not any(card.isExpand for card in self._cards.values())

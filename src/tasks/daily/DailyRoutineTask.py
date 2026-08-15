@@ -6,6 +6,7 @@ from ok import TaskDisabledException
 from ok.util.config import Config
 from qfluentwidgets import FluentIcon
 
+from src.lw.daily_routine_ext import DailyRoutineExtMixin  # [lw]
 from src.tasks.AnomalyHunter import AnomalyHunter
 from src.tasks.AnomalyTask import AnomalyTask
 from src.tasks.BaseNTETask import BaseNTETask
@@ -56,6 +57,15 @@ def routine_has_active_tasks(tasks):
 
 def start_routine_tasks(start_controller, routine_task):
     return start_controller.do_start(routine_task)
+
+
+def start_routine_retry_tasks(start_controller, routine_task):
+    if not routine_task.lw_prepare_retry_failed_items():
+        return False
+    if start_controller.do_start(routine_task):
+        return True
+    routine_task._retry_task_ids = ()  # [lw] Do not retain retry mode if startup was rejected.
+    return False
 
 
 def selection_is_complete(items, entries):
@@ -130,7 +140,7 @@ class _DailyTaskConfig(dict):
         self.routine_task.routine_task_configs[self.task_id] = deepcopy(dict(self))
 
 
-class DailyRoutineTask(NTEOneTimeTask, BaseNTETask):
+class DailyRoutineTask(DailyRoutineExtMixin, NTEOneTimeTask, BaseNTETask):
     CONF_ITEMS = "Routine Items"
     TASK_CONFIGS_FILE_NAME = "DailyRoutineTaskConfigs"
 
@@ -324,9 +334,15 @@ class DailyRoutineTask(NTEOneTimeTask, BaseNTETask):
 
     def run(self):
         super().run()
+        self.lw_begin_daily_run()  # [lw] Reset account-level results for this run.
         try:
-            self.do_run()
-            self.lw_daily_account_cycle()  # [lw] Run a configured second account cycle once.
+            if retry_task_ids := self.lw_take_retry_task_ids():  # [lw] Do not switch accounts on retry.
+                self.do_run(retry_task_ids)
+                self.lw_record_current_routine_result("当前账号")
+            else:
+                self.do_run()
+                self.lw_daily_account_cycle()  # [lw] Run a configured second account cycle once.
+            self.lw_finish_daily_run()  # [lw] Show one summary per completed account.
         except TaskDisabledException:
             raise
         except Exception as error:
@@ -334,12 +350,21 @@ class DailyRoutineTask(NTEOneTimeTask, BaseNTETask):
             if self.current_task_key:
                 self.info_set("当前失败任务", self.current_task_key)
             self._print_result()
+            self.lw_finish_daily_run()  # [lw] Preserve the partial account result on unexpected failure.
             self.log_error("DailyRoutineTask error", error)
             raise
 
-    def do_run(self) -> bool:
+    def do_run(self, task_ids=None) -> bool:
         self.scene.set_logged_in(False)
         items = self.normalize_items()
+        if task_ids is not None:
+            retry_ids = set(task_ids)
+            items = [
+                {"id": item["id"], "enabled": True}
+                for item in items
+                if item["id"] in retry_ids
+            ]
+            self.log_info(f"重试失败任务: {sorted(retry_ids)}")
         selected = [item for item in items if item["enabled"]]
         if not selected:
             self.log_info("日常任务没有已选任务，跳过执行")
@@ -373,8 +398,11 @@ class DailyRoutineTask(NTEOneTimeTask, BaseNTETask):
         self.info_set("当前任务", task.name)
         self.log_info(f"开始任务: {task.name}")
         self.ensure_main()
+        error = None
         try:
             with self._active_task_context(task_id, task):
+                if self.lw_is_retrying_task(task_id):  # [lw] Child tasks may retry only their failed subitems.
+                    self.lw_prepare_task_retry(task)
                 result = task.do_run()
                 entry = self.entries_by_id()[task_id]
                 if result and entry.daily_config and (shift_id := getattr(task, "shift_id", None)):
@@ -387,6 +415,7 @@ class DailyRoutineTask(NTEOneTimeTask, BaseNTETask):
 
         if not result:
             self.task_status["failed"].append(task_id)
+            self.lw_record_task_failure(task_id, task, error)  # [lw]
             self.screenshot(f"daily_routine_fail_{task_id}")
             self.log_info(f"任务失败: {task.name}")
             return
@@ -396,6 +425,7 @@ class DailyRoutineTask(NTEOneTimeTask, BaseNTETask):
         self.log_info(f"任务完成: {task.name}")
 
     def _reset_task_status(self, items):
+        self.lw_reset_task_failure_details()  # [lw] Details belong to one account cycle.
         self.task_status = {
             "success": [],
             "failed": [],
@@ -405,7 +435,10 @@ class DailyRoutineTask(NTEOneTimeTask, BaseNTETask):
 
     def _print_result(self):
         results = {
-            status: [self._task_display_name(task_id) for task_id in task_ids]
+            status: [
+                self.lw_task_result_display_name(task_id, self._task_display_name(task_id))
+                for task_id in task_ids
+            ]
             for status, task_ids in self.task_status.items()
             if status in ("success", "failed", "skipped")
         }

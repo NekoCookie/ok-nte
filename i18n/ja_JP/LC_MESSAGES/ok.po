@@ -1304,3 +1304,6 @@ msgstr "すべて展開"
 
 msgid "重置配置"
 msgstr "設定リセット"
+
+msgid "重试失败项"
+msgstr "失敗した項目を再試行"

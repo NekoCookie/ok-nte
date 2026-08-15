@@ -13,6 +13,10 @@ class FurnitureTask(NTEOneTimeTask, BaseCombatTask):
         self.icon = FluentIcon.SHOPPING_CART
         self.group_name = "日常/周常"
         self.visible = False
+        self.furniture_results = {}
+        self.failure_details = []
+        self._retry_furniture = ()
+        self._claim_failure_reason = None
 
     def run(self):
         super().run()
@@ -27,18 +31,23 @@ class FurnitureTask(NTEOneTimeTask, BaseCombatTask):
     def do_run(self) -> bool:
         return self.claim_anomaly_furniture()
 
-    def claim_anomaly_furniture(self):
+    def claim_anomaly_furniture(self, furniture_list=None):
         """领取异象家具奖励"""
 
         self.log_info("正在领取异象家具奖励")
 
-        furniture_list = [
+        supported_furniture = (
             Labels.anomaly_fluff,
             # Labels.anomaly_mammon,
-        ]
+        )
+        if furniture_list is None:
+            furniture_list = self._retry_furniture or supported_furniture
+        self._retry_furniture = ()
 
-        furniture_results = {}
+        self.furniture_results = {}
+        self.failure_details = []
         for furniture in furniture_list:
+            self._claim_failure_reason = None
             try:
                 claimed = self.claim_furniture(furniture)
             except TaskDisabledException:
@@ -46,17 +55,31 @@ class FurnitureTask(NTEOneTimeTask, BaseCombatTask):
             except Exception as e:
                 self.log_error(f"领取异象家具失败: {furniture}", e)
                 claimed = False
+                self._claim_failure_reason = str(e).strip() or type(e).__name__
 
-            furniture_results[furniture] = claimed
+            failure_reason = None
+            if not claimed:
+                failure_reason = self._claim_failure_reason or "领取流程未完成"
+                self.failure_details.append(f"{furniture.value}: {failure_reason}")
+            self.furniture_results[furniture] = claimed
             result = "成功" if claimed else "失败"
-            self.log_info(f"异象家具 {furniture} 领取{result}")
+            message = f"异象家具 {furniture.value} 领取{result}"
+            if failure_reason:
+                message = f"{message}: {failure_reason}"
+            self.log_info(message)
 
-        all_claimed = all(furniture_results.values())
+        all_claimed = all(self.furniture_results.values())
         if all_claimed:
             self.log_info("异象家具奖励全部领取成功")
         else:
             self.log_error("异象家具奖励未能全部领取成功")
         return all_claimed
+
+    def prepare_retry(self):
+        self._retry_furniture = tuple(
+            furniture for furniture, claimed in self.furniture_results.items() if not claimed
+        )
+        return bool(self._retry_furniture)
 
     def open_house_panel(self):
         def action():
@@ -189,6 +212,7 @@ class FurnitureTask(NTEOneTimeTask, BaseCombatTask):
 
     def claim_furniture(self, furniture):
         if not self.teleport_to_furniture(furniture):
+            self._claim_failure_reason = "未在房产列表中找到目标家具, 或未能传送到对应房产"
             return False
 
         # 打开异象家具
