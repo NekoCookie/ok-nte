@@ -188,6 +188,17 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Commit | `2fde742` |
 | Status | verified |
 
+### R-01: Window layout and focus-stability extension boundary
+
+| Field | Evidence |
+| --- | --- |
+| Old local contract | The merge result put `Globals.on_show_main_window()` and `NTEInteraction._lw_stabilize_click_focus()` directly in RU files. The former installs the LW task-info layout; the latter retries activation once before suppressing a click during a foreground transition. |
+| New RU contract | RU owns the global lifecycle and click delivery flow. LW must not add its own state or retry algorithm to their public implementation classes. |
+| Migration | `GlobalsExtMixin` owns the main-window hook; `NTEInteractionExtMixin` owns the focus retry constant and algorithm. `Globals` and `NTEInteraction` retain only `[lw]` mixin connections and the two click guard calls. |
+| Regression | `test_window_focus_stabilizer`, `test_nte_interaction`, `test_task_info_layout`, and `test_globals_ext` pass. The new checks prove the hook and focus policy are resolved from the LW mixins, without operating a real game window or input device. |
+| Commit | `00ef976` |
+| Status | verified |
+
 ## Shared-path acceptance matrix
 
 Each group below expands to the named shared paths. Every group is `pending`
@@ -201,7 +212,7 @@ until the individual contracts and regression evidence are added below it.
 | Bootstrap and dependencies | `main.py`, `main_debug.py`, `pyproject.toml`, `uv.lock` | Verify startup and dependency contract changes against LW initialization | verified; see B-01 |
 | Character core | `src/char/BaseChar.py`, `Hotori.py`, `Nanally.py`, `Requiem.py`, `core/CharFactory.py`, `core/CharRegistry.py`, `custom/CustomCharDbMigrator.py` | Map character lifecycle, role registration, custom-character schema, and all LW callers | pending |
 | Combat core | `src/combat/BaseCombatTask.py`, `planner/core.py`, `planner/types.py` | Map session lifecycle, planner action/result contracts, interrupt and team-reload behavior | pending |
-| Runtime infrastructure | `src/config.py`, `src/globals.py`, `src/interaction/NTEInteraction.py` | Check registration, global lifecycle, interaction semantics, and LW connections | pending |
+| Runtime infrastructure | `src/config.py`, `src/globals.py`, `src/interaction/NTEInteraction.py` | Check registration, global lifecycle, interaction semantics, and LW connections | pending; R-01 verifies globals and interaction, while `src/config.py` has active user changes outside this sync |
 | LW layer | `src/lw/chars.py`, `combat_ext.py`, `dsd_farm_ext.py`, `nte_task_ext.py` | Reapply each required LW behavior on current RU public APIs; no stale private calls or dual paths | pending; I-01 is verified only |
 | Tasks and mixins | `src/tasks/AnomalyTask.py`, `BaseNTETask.py`, `DSDFarmTask.py`, `DailyTask.py`, `daily/DailyRoutineTask.py`, `mixin/CharUIMixin.py` | Trace task lifecycle and each `[lw]` hook across changed RU contracts | pending |
 | Regression suite | `TestCharImplDb.py`, `TestCombatPlanner.py`, `TestCombatSurvivalStatus.py`, `TestDailyCoffee.py`, `TestUseUltimateConfig.py`, `test_dsd_farm_recovery.py` | Remove obsolete mocks, prove current contracts and preserve LW results | pending |
