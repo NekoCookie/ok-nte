@@ -59,15 +59,6 @@ def start_routine_tasks(start_controller, routine_task):
     return start_controller.do_start(routine_task)
 
 
-def start_routine_retry_tasks(start_controller, routine_task):
-    if not routine_task.lw_prepare_retry_failed_items():
-        return False
-    if start_controller.do_start(routine_task):
-        return True
-    routine_task._retry_task_ids = ()  # [lw] Do not retain retry mode if startup was rejected.
-    return False
-
-
 def selection_is_complete(items, entries):
     if not items:
         return False
@@ -334,37 +325,12 @@ class DailyRoutineTask(DailyRoutineExtMixin, NTEOneTimeTask, BaseNTETask):
 
     def run(self):
         super().run()
-        self.lw_begin_daily_run()  # [lw] Reset account-level results for this run.
-        try:
-            if retry_task_ids := self.lw_take_retry_task_ids():  # [lw] Do not switch accounts on retry.
-                self.do_run(retry_task_ids)
-                self.lw_record_current_routine_result("当前账号")
-            else:
-                self.do_run()
-                self.lw_daily_account_cycle()  # [lw] Run a configured second account cycle once.
-            self.lw_finish_daily_run()  # [lw] Show one summary per completed account.
-        except TaskDisabledException:
-            raise
-        except Exception as error:
-            self.screenshot("daily_routine_unexpected_exception")
-            if self.current_task_key:
-                self.info_set("当前失败任务", self.current_task_key)
-            self._print_result()
-            self.lw_finish_daily_run()  # [lw] Preserve the partial account result on unexpected failure.
-            self.log_error("DailyRoutineTask error", error)
-            raise
+        self.lw_run_daily()  # [lw]
 
-    def do_run(self, task_ids=None) -> bool:
+    def do_run(self) -> bool:
         self.scene.set_logged_in(False)
         items = self.normalize_items()
-        if task_ids is not None:
-            retry_ids = set(task_ids)
-            items = [
-                {"id": item["id"], "enabled": True}
-                for item in items
-                if item["id"] in retry_ids
-            ]
-            self.log_info(f"重试失败任务: {sorted(retry_ids)}")
+        items = self.lw_filter_retry_items(items)  # [lw]
         selected = [item for item in items if item["enabled"]]
         if not selected:
             self.log_info("日常任务没有已选任务，跳过执行")

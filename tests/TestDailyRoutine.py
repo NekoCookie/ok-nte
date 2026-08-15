@@ -1,8 +1,11 @@
+import inspect
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from src.Labels import Labels
+from src.lw.daily_routine_ext import DailyRoutineExtMixin
+from src.lw.daily_routine_ui_ext import DailyRoutineTabExtMixin
 from src.tasks.AnomalyHunter import AnomalyHunter
 from src.tasks.AnomalyTask import AnomalyTask
 from src.tasks.BaseNTETask import BaseNTETask
@@ -11,7 +14,6 @@ from src.tasks.daily.DailyRoutineTask import (
     routine_has_active_tasks,
     selected_routine_tasks,
     selection_is_complete,
-    start_routine_retry_tasks,
     start_routine_tasks,
 )
 from src.tasks.daily.FurnitureTask import FurnitureTask
@@ -261,11 +263,23 @@ class TestDailyRoutineStart(unittest.TestCase):
         controller = Mock()
         controller.do_start.return_value = True
 
-        started = start_routine_retry_tasks(controller, routine_task)
+        started = DailyRoutineExtMixin.lw_start_retry_failed_items(routine_task, controller)
 
         self.assertTrue(started)
         routine_task.lw_prepare_retry_failed_items.assert_called_once_with()
         controller.do_start.assert_called_once_with(routine_task)
+
+    def test_rejected_retry_start_clears_the_pending_retry_queue(self):
+        routine_task = Mock()
+        routine_task.lw_prepare_retry_failed_items.return_value = True
+        routine_task._retry_task_ids = ("coffee",)
+        controller = Mock()
+        controller.do_start.return_value = False
+
+        started = DailyRoutineExtMixin.lw_start_retry_failed_items(routine_task, controller)
+
+        self.assertFalse(started)
+        self.assertEqual(routine_task._retry_task_ids, ())
 
     def test_daily_routine_do_run_executes_selected_tasks_in_order_and_records_results(self):
         task = object.__new__(DailyRoutineTask)
@@ -414,7 +428,7 @@ class TestDailyRoutineStart(unittest.TestCase):
         child.do_run.return_value = True
         task.task_for_id = Mock(return_value=child)
 
-        result = task.do_run(("coffee",))
+        result = task.do_run()
 
         self.assertTrue(result)
         self.assertEqual(task.task_status["success"], ["coffee"])
@@ -422,23 +436,69 @@ class TestDailyRoutineStart(unittest.TestCase):
         self.assertEqual(task.task_status["skipped"], [])
         child.do_run.assert_called_once_with()
 
+    def test_daily_retry_does_not_extend_the_ru_do_run_signature(self):
+        self.assertEqual(list(inspect.signature(DailyRoutineTask.do_run).parameters), ["self"])
+
+    def test_retry_run_does_not_start_the_account_cycle(self):
+        task = object.__new__(DailyRoutineTask)
+        task.lw_begin_daily_run = Mock()
+        task.lw_take_retry_task_ids = Mock(return_value=("coffee",))
+        task.do_run = Mock()
+        task.lw_record_current_routine_result = Mock()
+        task.lw_daily_account_cycle = Mock()
+        task.lw_finish_daily_run = Mock()
+
+        task.lw_run_daily()
+
+        task.do_run.assert_called_once_with()
+        task.lw_record_current_routine_result.assert_called_once_with("当前账号")
+        task.lw_daily_account_cycle.assert_not_called()
+
 
 class TestFurnitureTask(unittest.TestCase):
     def test_records_each_failed_furniture_and_continues(self):
         task = object.__new__(FurnitureTask)
         task.log_info = Mock()
         task.log_error = Mock()
-        task._retry_furniture = ()
+        task.lw_init_furniture_retry_state()
+        task.LW_SUPPORTED_FURNITURE = (
+            Labels.anomaly_fluff,
+            Labels.anomaly_mammon,
+            Labels.anomaly_fluff,
+        )
         task.claim_furniture = Mock(side_effect=[True, False, True])
 
-        result = task.claim_anomaly_furniture(
-            (Labels.anomaly_fluff, Labels.anomaly_mammon, Labels.anomaly_fluff)
-        )
+        result = task.claim_anomaly_furniture()
 
         self.assertFalse(result)
         self.assertEqual(task.claim_furniture.call_count, 3)
         self.assertEqual(len(task.failure_details), 1)
         self.assertIn(Labels.anomaly_mammon.value, task.failure_details[0])
+
+    def test_exception_for_one_furniture_does_not_stop_later_furniture(self):
+        task = object.__new__(FurnitureTask)
+        task.log_info = Mock()
+        task.log_error = Mock()
+        task.lw_init_furniture_retry_state()
+        task.LW_SUPPORTED_FURNITURE = (Labels.anomaly_fluff, Labels.anomaly_mammon)
+        task.claim_furniture = Mock(side_effect=[RuntimeError("house list unavailable"), True])
+
+        result = task.claim_anomaly_furniture()
+
+        self.assertFalse(result)
+        self.assertEqual(task.claim_furniture.call_count, 2)
+        self.assertTrue(task.furniture_results[Labels.anomaly_mammon])
+        self.assertIn(Labels.anomaly_fluff.value, task.failure_details[0])
+
+    def test_missing_house_list_sets_a_furniture_specific_failure_reason(self):
+        task = object.__new__(FurnitureTask)
+        task.teleport_to_furniture = Mock(return_value=False)
+        task.lw_init_furniture_retry_state()
+
+        claimed = task.claim_furniture(Labels.anomaly_fluff)
+
+        self.assertFalse(claimed)
+        self.assertIn("房产列表", task._claim_failure_reason)
 
     def test_prepare_retry_keeps_only_failed_furniture(self):
         task = object.__new__(FurnitureTask)
@@ -449,3 +509,46 @@ class TestFurnitureTask(unittest.TestCase):
 
         self.assertTrue(task.prepare_retry())
         self.assertEqual(task._retry_furniture, (Labels.anomaly_mammon,))
+
+    def test_furniture_retry_does_not_extend_the_ru_claim_signature(self):
+        self.assertEqual(
+            list(inspect.signature(FurnitureTask.claim_anomaly_furniture).parameters), ["self"]
+        )
+
+
+class _RetryTabHarness(DailyRoutineTabExtMixin):
+    def __init__(self, routine_task, controller):
+        self._routine_task_value = routine_task
+        self._controller = controller
+        self.retry_button = Mock()
+
+    def _routine_task(self):
+        return self._routine_task_value
+
+    def lw_retry_start_controller(self):
+        return self._controller
+
+
+class TestDailyRoutineRetryUi(unittest.TestCase):
+    def test_retry_button_requires_a_stopped_task_with_latest_failures(self):
+        routine_task = Mock(enabled=False)
+        routine_task.lw_can_retry_failed_items.return_value = True
+        tab = _RetryTabHarness(routine_task, Mock())
+
+        self.assertTrue(tab.lw_retry_button_enabled())
+        tab.lw_sync_retry_button()
+        tab.retry_button.setEnabled.assert_called_once_with(True)
+
+        routine_task.enabled = True
+        self.assertFalse(tab.lw_retry_button_enabled())
+
+    def test_retry_button_starts_the_targeted_retry_and_disables_it(self):
+        routine_task = Mock(enabled=False)
+        routine_task.lw_start_retry_failed_items.return_value = True
+        controller = Mock()
+        tab = _RetryTabHarness(routine_task, controller)
+
+        tab.lw_retry_failed_items()
+
+        routine_task.lw_start_retry_failed_items.assert_called_once_with(controller)
+        tab.retry_button.setEnabled.assert_called_once_with(False)

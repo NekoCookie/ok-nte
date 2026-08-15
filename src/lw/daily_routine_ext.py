@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from ok import TaskDisabledException
+
 
 @dataclass(frozen=True)
 class DailyRoutineAccountResult:
@@ -36,6 +38,17 @@ class DailyRoutineExtMixin:
     def lw_is_retrying_task(self, task_id):
         return task_id in getattr(self, "_active_retry_task_ids", frozenset())
 
+    def lw_filter_retry_items(self, items):
+        retry_ids = getattr(self, "_active_retry_task_ids", frozenset())
+        if not retry_ids:
+            return items
+        self.log_info(f"Retry failed tasks: {sorted(retry_ids)}")
+        return [
+            {"id": item["id"], "enabled": True}
+            for item in items
+            if item["id"] in retry_ids
+        ]
+
     def lw_prepare_retry_failed_items(self):
         if not self.account_results:
             return False
@@ -44,6 +57,16 @@ class DailyRoutineExtMixin:
             return False
         self._retry_task_ids = failed_task_ids
         return True
+
+    def lw_start_retry_failed_items(self, start_controller):
+        """Start a targeted retry without exposing LW retry state to RU helpers."""
+
+        if not self.lw_prepare_retry_failed_items():
+            return False
+        if start_controller.do_start(self):
+            return True
+        self._retry_task_ids = ()
+        return False
 
     def lw_can_retry_failed_items(self):
         return bool(self.account_results and self.account_results[-1].failed)
@@ -108,6 +131,29 @@ class DailyRoutineExtMixin:
             "\n".join(f"{status}: {summary}" for status, summary in summaries.items()),
             notify=True,
         )
+
+    def lw_run_daily(self):
+        """Run account summaries and retries around the unchanged RU daily workflow."""
+
+        self.lw_begin_daily_run()
+        try:
+            if self.lw_take_retry_task_ids():
+                self.do_run()
+                self.lw_record_current_routine_result("当前账号")
+            else:
+                self.do_run()
+                self.lw_daily_account_cycle()
+            self.lw_finish_daily_run()
+        except TaskDisabledException:
+            raise
+        except Exception as error:
+            self.screenshot("daily_routine_unexpected_exception")
+            if self.current_task_key:
+                self.info_set("当前失败任务", self.current_task_key)
+            self._print_result()
+            self.lw_finish_daily_run()
+            self.log_error("DailyRoutineTask error", error)
+            raise
 
     def _daily_result_names(self, result, status):
         task_ids = getattr(result, status)
