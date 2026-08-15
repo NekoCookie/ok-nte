@@ -96,6 +96,17 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Commit | `df46aeb` |
 | Status | verified |
 
+### C-03: Nanally ultimate policy boundary
+
+| Field | Evidence |
+| --- | --- |
+| Old local contract | Local code embedded the cooldown-transition tolerance and forced six-second ultimate field time directly in `src/char/Nanally.py`. |
+| New RU contract | RU still owns Nanally's planner plan and action loop; only the two LW-specific decisions differ. |
+| Migration | `NanallyExtMixin` owns `lw_ultimate_action_landed()` and `lw_should_continue_ultimate_field()`. `Nanally` retains the RU flow with two minimal `[lw]` calls. |
+| Regression | `TestNanallyLw` drives the real plan entry generator, the loop connection, and cooldown-transition rule; `TestCombatPlanner` remains green. |
+| Commit | `6c6bc47` |
+| Status | verified |
+
 ## Shared-path acceptance matrix
 
 Each group below expands to the named shared paths. Every group is `pending`
