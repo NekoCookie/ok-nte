@@ -165,6 +165,19 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Commit | `1dfd165`, `d75e8a2`, `e4201e2` |
 | Status | verified |
 
+### C-09: Combat session, planner lifecycle, and reload extension boundary
+
+| Field | Evidence |
+| --- | --- |
+| Old local contract | The pre-migration local combat path replaced CD refresh/load behavior, tracked team changes during any combat check, and depended on planner APIs that RU later renamed or removed. The original merge also embedded LW preemptive claims in `FieldClaim` and in the planner core. |
+| New RU contract | `f608673^2` owns `CombatSession`, `begin_combat_session()`, the combat-start switch sequence, `CombatContext.is_slot_available()`, `CombatContext.is_action_allowed()`, `request_role()`, and repeatable entry actions. `FieldClaim` is again a four-field RU value object; planner state remains internal to planner/context implementation. `can_execute_action`, `FieldClaimTiming`, and `FieldClaim.preemptive()` are not current APIs. |
+| Migration | `BaseCombatTask` retains the RU session and switch lifecycle. Its `[lw]` connections delegate one-way into `CombatExtMixin` for CD snapshots, bounded start observation, support-commit protection, team-monitor opt-in, and weak-recognition recovery; `lw_combat_run()` is the sole consumer of `TeamReloadRequested`. Thus `combat_once` paths do not receive an unhandled reload signal. `CombatPlannerExtMixin` supplies the two preemptive decisions while RU `core`, `types`, and `context` remain on their current contracts; see C-07 for the claim policy. |
+| Required LW behavior | Keep conservative OCR CD anchoring and post-cast grace, preserve valid teams through transient UI/recognition loss, reload only a confirmed changed team in trigger auto-combat, and allow confirmed support resources before an automatic element reaction without weakening strict routes or public planner contracts. |
+| Caller audit | Repository scan found no callers of removed `can_execute_action`, removed `FieldClaimTiming`/`preemptive()`, or the removed private character lookup. Character and LW code use `is_action_allowed()`, `is_slot_available()`, request methods, and standard `ActionIntent` declarations; direct state references are confined to planner implementation and its context, not character policy code. |
+| Regression | `TestCombatPlanner`, `TestCombatSurvivalStatus`, `TestUseUltimateConfig`, `TestTeamChangeCheck`, `TestCombatExtensionHooks`, `TestUltimateCombatSettle`, `TestCD`, `TestRefreshCdReady`, `TestBuffSupportPlan`, and `TestCombatStartSupport` passed (162 tests) on 2026-08-16. The tests cover the current session API, planner request/action lifecycle, team-reload scope, OCR CD path, and current source-level API restrictions. |
+| Commit | `e4201e2`, `df46aeb`, `ad031e6`, `aee9558` |
+| Status | verified |
+
 ### L-01: Gettext catalog provenance and compilation
 
 | Field | Evidence |
@@ -232,7 +245,7 @@ until the individual contracts and regression evidence are added below it.
 | Localization | 13 `i18n/*/LC_MESSAGES/ok.po` or `ok.mo` paths | Verify no LW-visible strings were lost and generated catalogs match sources | verified; see L-01 |
 | Bootstrap and dependencies | `main.py`, `main_debug.py`, `pyproject.toml`, `uv.lock` | Verify startup and dependency contract changes against LW initialization | verified; see B-01 |
 | Character core | `src/char/BaseChar.py`, `Hotori.py`, `Nanally.py`, `Requiem.py`, `core/CharFactory.py`, `core/CharRegistry.py`, `custom/CustomCharDbMigrator.py` | Map character lifecycle, role registration, custom-character schema, and all LW callers | verified; see C-01, C-03 to C-05, and C-08 |
-| Combat core | `src/combat/BaseCombatTask.py`, `planner/core.py`, `planner/types.py` | Map session lifecycle, planner action/result contracts, interrupt and team-reload behavior | pending |
+| Combat core | `src/combat/BaseCombatTask.py`, `planner/core.py`, `planner/types.py` | Map session lifecycle, planner action/result contracts, interrupt and team-reload behavior | verified; see C-07 and C-09 |
 | Runtime infrastructure | `src/config.py`, `src/globals.py`, `src/interaction/NTEInteraction.py` | Check registration, global lifecycle, interaction semantics, and LW connections | pending; R-01 verifies globals and interaction, while `src/config.py` has active user changes outside this sync |
 | LW layer | `src/lw/chars.py`, `combat_ext.py`, `dsd_farm_ext.py`, `nte_task_ext.py` | Reapply each required LW behavior on current RU public APIs; no stale private calls or dual paths | pending; I-01 is verified only |
 | Tasks and mixins | `src/tasks/AnomalyTask.py`, `BaseNTETask.py`, `DSDFarmTask.py`, `DailyTask.py`, `daily/DailyRoutineTask.py`, `mixin/CharUIMixin.py` | Trace task lifecycle and each `[lw]` hook across changed RU contracts | pending |
