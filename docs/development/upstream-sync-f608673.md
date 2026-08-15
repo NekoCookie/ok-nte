@@ -175,6 +175,19 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Commit | `9df71ca` |
 | Status | verified |
 
+### P-01: Post-merge daily account summary and targeted retry boundary
+
+| Field | Evidence |
+| --- | --- |
+| Scope | This post-merge feature does not close a shared-path row by itself. It is recorded because it changes LW behavior in RU daily task and UI files and must obey the same boundary rules. |
+| Old local contract | Account summaries and retry state were in `DailyRoutineExtMixin`, but `DailyRoutineTask.do_run(task_ids=None)` and `FurnitureTask.claim_anomaly_furniture(furniture_list=None)` extended RU method signatures. The retry button implementation also lived directly in `DailyRoutineTab`. |
+| RU contract | RU keeps `DailyRoutineTask.do_run(self)` and `FurnitureTask.claim_anomaly_furniture(self)` as zero-argument task lifecycle methods. Daily UI has no retry-specific state or callback. |
+| Required LW behavior | Each account has a separate success/failed/skipped summary. Retry runs only the failed task IDs from the most recent account and does not switch accounts. Furniture failures name the affected furniture and do not prevent later furniture from running. |
+| Migration | `DailyRoutineExtMixin` owns retry filtering, start rejection cleanup, and account-cycle wrapping. `FurnitureTaskExtMixin` owns per-furniture retry state and failure details. `DailyRoutineTabExtMixin` owns the retry button. RU files retain only `[lw]` mixin connections; no old signature or retry helper remains. The existing gettext entry `"重试失败项"` is present in all eight locale catalogs. |
+| Regression | `TestDailyRoutine`, `TestDailyCoffee`, and `TestI18nPatch` pass. Tests assert restored signatures, no account cycle during retry, rejection cleanup, disabled/enabled retry-button policy, continued furniture processing after an exception, and the house-list-specific failure reason. |
+| Commit | `2fde742` |
+| Status | verified |
+
 ## Shared-path acceptance matrix
 
 Each group below expands to the named shared paths. Every group is `pending`
@@ -200,7 +213,7 @@ matrix and must themselves obey the LW/RU boundary before the ledger can close.
 
 | Change | Files | Required action | Status |
 | --- | --- | --- | --- |
-| Account-aware daily summary and retry | `src/lw/daily_routine_ext.py`, `src/tasks/daily/DailyRoutineTask.py`, `src/tasks/daily/FurnitureTask.py`, `src/ui/DailyRoutineTab.py` | Move remaining daily-specific behavior behind `src/lw/` adapters or mark minimal RU connection points with `[lw]`; retain current tests | pending |
+| Account-aware daily summary and retry | `src/lw/daily_routine_ext.py`, `src/tasks/daily/DailyRoutineTask.py`, `src/tasks/daily/FurnitureTask.py`, `src/ui/DailyRoutineTab.py` | Move remaining daily-specific behavior behind `src/lw/` adapters or mark minimal RU connection points with `[lw]`; retain current tests | verified; see P-01 |
 | Interface-break repair | `src/lw/combat_ext.py`, `src/lw/fish_catch_ext.py` | Keep I-01 and I-02 regression coverage during later migration work | verified |
 
 ## Required evidence before closure
