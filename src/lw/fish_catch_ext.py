@@ -244,7 +244,7 @@ class FishCatchingTaskMixin:
             box = self.box_of_screen(*self.FISH_SKILL_ROIS[key], name=f"fish_skill_{key}")
             texts = self.ocr(
                 box=box,
-                frame_processor=gf.isolate_cd_to_black,
+                frame_processor=gf.isolate_text_to_black,
                 match=cd_regex,
             )
             values = []

@@ -50,16 +50,22 @@ def make_signature_task():
 
 
 class TestTeamSignatureCheck(unittest.TestCase):
-    """上游schema v5后 match_feature 的 target_char/返回值语义从 char_name 变为 char_id。
+    """上游schema v7后 match_feature 的 target_char/返回值语义从 char_name 变为 char_id。
     签名未变、静态扫描抓不到; 传名字会过滤掉全部候选→置信度恒0.00→每秒误判队伍变更、
-    清掉 combo 挂起状态(实机表现: 双4a只出窗口内一半)。锁住: 必须用 char_id 调用与比对。"""
+    清掉 combo 挂起状态(实机表现: 双4a只出窗口内一半)。锁住: 必须用 char_id 调用与比对,
+    且不再访问上游已删除的私有按名查询接口。"""
 
     def test_match_feature_called_and_compared_with_char_id(self):
         t = make_signature_task()
         with mock.patch("src.lw.combat_ext.CustomCharManager") as mgr_cls:
             mgr = mgr_cls.return_value
-            mgr._find_character_id_by_name.return_value = "char_123"
-            mgr.get_character_info_by_id.return_value = {"feature_ids": ["f1"]}
+            mgr.get_all_characters.return_value = {
+                "char_123": {
+                    "char_id": "char_123",
+                    "char_name": "安魂曲",
+                    "feature_ids": ["f1"],
+                }
+            }
             # 新版语义: 匹配成功时返回 char_id
             mgr.match_feature.return_value = (True, "char_123", 0.92)
             result = t.check_team_signature_changed_during_combat()
@@ -70,6 +76,7 @@ class TestTeamSignatureCheck(unittest.TestCase):
             kwargs["target_char"], "char_123",
             "target_char 必须传 char_id(传 char_name 会过滤掉全部候选、置信度恒0)",
         )
+        mgr._find_character_id_by_name.assert_not_called()
         self.assertIsNone(t._roster_monitor()._signature_candidate)
 
 

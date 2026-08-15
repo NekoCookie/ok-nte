@@ -9,6 +9,7 @@ from ok import Box
 from src.Labels import Labels
 from src.lw.fish_catch_ext import FishCatchingTaskMixin
 from src.tasks.FishCatchingTask import FishCatchingTask
+from src.utils import game_filters as gf
 
 
 class TestFishCatchingVision(unittest.TestCase):
@@ -91,9 +92,10 @@ class TestFishCatchingVision(unittest.TestCase):
         task.box_of_screen = mock.Mock(return_value=Box(0, 0, 500, 500))
         task.ocr = mock.Mock(return_value=[Box(10, 10, 20, 20, name="1.8")])
         task.log_debug = mock.Mock()
-        task._fish_skill_last_cast = {"e": time.monotonic() - 8.2}
+        task._fish_skill_last_cast = {"e": time.monotonic() - 20.0}
 
         self.assertAlmostEqual(task.read_fish_skill_cooldown("e"), 1.8)
+        self.assertIs(task.ocr.call_args.kwargs["frame_processor"], gf.isolate_text_to_black)
 
     def test_skill_cd_ocr_skips_skills_still_in_local_cooldown(self):
         task = FishCatchingTaskMixin.__new__(FishCatchingTaskMixin)

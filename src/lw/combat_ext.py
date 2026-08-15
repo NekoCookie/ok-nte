@@ -712,6 +712,11 @@ class CombatExtMixin(_TaskProxy):
         self._last_team_signature_check = now
 
         manager = CustomCharManager()
+        characters_by_name = {
+            char_info.get("char_name"): char_info
+            for char_info in manager.get_all_characters().values()
+            if isinstance(char_info, dict) and char_info.get("char_name")
+        }
         mismatches = []
         verified = 0
         frame = self.frame
@@ -720,9 +725,9 @@ class CombatExtMixin(_TaskProxy):
             if char is None or not char.char_name or char.char_name == "unknown":
                 continue
 
-            # 上游schema v5删除了按名查询get_character_info, 用 按名找id+按id查 组合等价
-            char_id = manager._find_character_id_by_name(char.char_name)
-            char_info = (manager.get_character_info_by_id(char_id) if char_id else None) or {}
+            # [lw] Use the manager's public character snapshot after the schema-v7 refactor.
+            char_info = characters_by_name.get(char.char_name, {})
+            char_id = char_info.get("char_id")
             if not char_info.get("feature_ids"):
                 continue
 
