@@ -153,6 +153,18 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Commit | `aee9558` |
 | Status | verified |
 
+### C-08: BaseChar action-loop and ultimate-safety extension boundary
+
+| Field | Evidence |
+| --- | --- |
+| Old local contract | The local result embedded input-mode retry, post-dodge skill settlement, action-frame polling, ultimate wait protection, idle attack filling, and freeze diagnostic causes directly in `BaseChar`. It also changed the upstream ten-second ultimate-unfreeze timeout. Those behaviors must remain, but must not replace the current RU character lifecycle. |
+| New RU contract | In `f608673^2`, `BaseChar` owns the action lifecycle, `click_skill()` signature, cooldown/freeze tuple updates, normal-attack loop, and the initial `combat_detect_uncertain` wait. It has no LW mixin and no extended public API. Character callers must use the current task methods and public `click_skill()` rather than reintroducing the former local parameters or a second action loop. |
+| Migration | `CharExtMixin` owns the retry and safety algorithms: `lw_skill_send_action()`, `lw_after_skill_action()`, `lw_after_action_poll()`, `fill_idle_attack()`, and the ultimate-unfreeze helper. `BaseChar` retains only minimal `[lw]` connections in the current RU flow. `CombatExtMixin.lw_wait_ultimate_combat_settle()` owns the uncertain-combat policy. Freeze causes use `lw_add_freeze_duration()` and preserve the RU three-field storage; this is the C-01 contract. The 4-second unfreeze bound is now the LW mixin constant, not a replacement copy of the RU method. |
+| Required LW behavior | A missed input mode may receive one retry; a dodge during a skill receives a bounded settlement window; polling advances the frame without treating a valid animation as combat exit; ultimate and idle filling stop safely when the current character or team is no longer valid; and failed ultimate OCR cannot hold the combat loop for the former ten seconds. |
+| Regression | Focused current-API tests: `TestSettleSkill`, `TestUltimateCombatSettle`, `TestFreezeDiagnostics`, `TestRequiemSkill`, `TestNanallyLw`, and `TestCharImplDb` (48 tests) passed on 2026-08-16. They exercise `BaseChar`'s real signatures and current mixin connection points; mocks are confined to visual/input leaves and do not mock removed planner or factory APIs. C-03, C-04, and C-05 retain their dedicated coverage. |
+| Commit | `1dfd165`, `d75e8a2`, `e4201e2` |
+| Status | verified |
+
 ### L-01: Gettext catalog provenance and compilation
 
 | Field | Evidence |
@@ -219,7 +231,7 @@ until the individual contracts and regression evidence are added below it.
 | Planner documentation | `docs/development/combat-planner.md` | Check changed planner APIs, examples, and associated tests | verified; current file matches `f608673^2`, see C-07 |
 | Localization | 13 `i18n/*/LC_MESSAGES/ok.po` or `ok.mo` paths | Verify no LW-visible strings were lost and generated catalogs match sources | verified; see L-01 |
 | Bootstrap and dependencies | `main.py`, `main_debug.py`, `pyproject.toml`, `uv.lock` | Verify startup and dependency contract changes against LW initialization | verified; see B-01 |
-| Character core | `src/char/BaseChar.py`, `Hotori.py`, `Nanally.py`, `Requiem.py`, `core/CharFactory.py`, `core/CharRegistry.py`, `custom/CustomCharDbMigrator.py` | Map character lifecycle, role registration, custom-character schema, and all LW callers | pending |
+| Character core | `src/char/BaseChar.py`, `Hotori.py`, `Nanally.py`, `Requiem.py`, `core/CharFactory.py`, `core/CharRegistry.py`, `custom/CustomCharDbMigrator.py` | Map character lifecycle, role registration, custom-character schema, and all LW callers | verified; see C-01, C-03 to C-05, and C-08 |
 | Combat core | `src/combat/BaseCombatTask.py`, `planner/core.py`, `planner/types.py` | Map session lifecycle, planner action/result contracts, interrupt and team-reload behavior | pending |
 | Runtime infrastructure | `src/config.py`, `src/globals.py`, `src/interaction/NTEInteraction.py` | Check registration, global lifecycle, interaction semantics, and LW connections | pending; R-01 verifies globals and interaction, while `src/config.py` has active user changes outside this sync |
 | LW layer | `src/lw/chars.py`, `combat_ext.py`, `dsd_farm_ext.py`, `nte_task_ext.py` | Reapply each required LW behavior on current RU public APIs; no stale private calls or dual paths | pending; I-01 is verified only |
