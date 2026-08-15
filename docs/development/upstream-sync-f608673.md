@@ -141,6 +141,18 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Commit | `e4201e2` |
 | Status | verified |
 
+### C-07: LW preemptive FieldClaim policy
+
+| Field | Evidence |
+| --- | --- |
+| Old local contract | The merge result added `FieldClaimTiming`, `FieldClaim.timing`, and `FieldClaim.preemptive()` to the RU public planner API. It also embedded a 47-line preemptive-claim selector in `CombatPlanner`. BuffSupport used the extended API to place confirmed ultimate or skill resources before automatic element reactions. |
+| New RU contract | In `f608673^2`, `FieldClaim` has only source, level, reason, and expected-entry data. It has no timing dimension or `preemptive()` factory; the planner documentation likewise describes ordinary claims only. |
+| Required LW behavior | A confirmed LW BuffSupport resource must be allowed to run before the automatic element reaction and at combat start, while a strict route and an explicit combat-start priority still win. A current support must not be switched away solely for another support claim. |
+| Migration | `LwPreemptiveFieldClaim` and `lw_preemptive_field_claim()` live in `src/lw/field_claim_ext.py`. `CombatPlannerExtMixin` owns candidate selection and the opening policy. RU restores its `FieldClaim` and documentation exactly, retaining only the `[lw]` mixin connection and the two decision calls. |
+| Regression | `TestLwPreemptiveFieldClaim` proves the RU data contract has no timing field or preemptive factory. `TestCombatPlanner`, `TestBuffSupportPlan`, `TestCombatStartSupport`, `TestUltimateDiamond`, `TestCombatExtensionHooks`, and `TestUseUltimateConfig` exercise the public switch and resource behaviors. |
+| Commit | `aee9558` |
+| Status | verified |
+
 ## Shared-path acceptance matrix
 
 Each group below expands to the named shared paths. Every group is `pending`
@@ -149,7 +161,7 @@ until the individual contracts and regression evidence are added below it.
 | Group | Shared paths | Required audit | Status |
 | --- | --- | --- | --- |
 | Agent contracts | `AGENTS.md`, `CLAUDE.md` | Compare all shared LW/RU rules and record any mismatch | verified; see A-01 |
-| Planner documentation | `docs/development/combat-planner.md` | Check changed planner APIs, examples, and associated tests | pending |
+| Planner documentation | `docs/development/combat-planner.md` | Check changed planner APIs, examples, and associated tests | verified; current file matches `f608673^2`, see C-07 |
 | Localization | 13 `i18n/*/LC_MESSAGES/ok.po` or `ok.mo` paths | Verify no LW-visible strings were lost and generated catalogs match sources | pending |
 | Bootstrap and dependencies | `main.py`, `main_debug.py`, `pyproject.toml`, `uv.lock` | Verify startup and dependency contract changes against LW initialization | pending |
 | Character core | `src/char/BaseChar.py`, `Hotori.py`, `Nanally.py`, `Requiem.py`, `core/CharFactory.py`, `core/CharRegistry.py`, `custom/CustomCharDbMigrator.py` | Map character lifecycle, role registration, custom-character schema, and all LW callers | pending |
