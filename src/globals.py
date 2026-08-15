@@ -4,11 +4,12 @@ from threading import Event
 
 from ok import Logger, get_path_relative_to_exe
 from PySide6.QtCore import QObject
+from src.lw.globals_ext import GlobalsExtMixin  # [lw]
 
 logger = Logger.get_logger(__name__)
 
 
-class Globals(QObject):
+class Globals(GlobalsExtMixin, QObject):  # [lw]
     def __init__(self, exit_event):
         super().__init__()
         self._thread_pool_executor_max_workers = 0
@@ -24,12 +25,6 @@ class Globals(QObject):
             target=self.init_sound_context, daemon=True, name="SoundContextInit"
         ).start()
         threading.Thread(target=self.init_openvino, daemon=True, name="OpenVINOInit").start()
-
-    def on_show_main_window(self, main_window):
-        # [lw] Expand task info tables so rows use the page scroll instead of being hidden.
-        from src.lw.task_info_layout import install_task_info_layout
-
-        install_task_info_layout(main_window)
 
     def stop(self):
         self._sound_context_stop_event.set()

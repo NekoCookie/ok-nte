@@ -5,6 +5,8 @@ from src.lw.window_focus import WindowFocusStabilizer
 
 
 class NTEInteractionExtMixin:
+    LW_FOCUS_STABILIZE_RETRIES = 2
+
     def lw_init_focus_stabilizer(self):
         self._focus_stabilizer = WindowFocusStabilizer(
             lambda: self.hwnd_window.is_foreground()
@@ -16,3 +18,13 @@ class NTEInteractionExtMixin:
     def lw_stabilize_focus(self):
         """Return whether input may be posted after the foreground has settled."""
         return self._focus_stabilizer.stable()
+
+    def lw_stabilize_click_focus(self):
+        """Retry one activation while a foreground transition is still settling."""
+
+        for attempt in range(self.LW_FOCUS_STABILIZE_RETRIES):
+            if self.lw_stabilize_focus():
+                return True
+            if attempt + 1 < self.LW_FOCUS_STABILIZE_RETRIES:
+                self.try_activate()
+        return False

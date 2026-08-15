@@ -2,8 +2,9 @@ import threading
 import unittest
 from unittest import mock
 
-from src.lw.window_focus import WindowFocusStabilizer
 from src.interaction.NTEInteraction import NTEInteraction
+from src.lw.interaction_ext import NTEInteractionExtMixin
+from src.lw.window_focus import WindowFocusStabilizer
 
 
 class FakeClock:
@@ -20,6 +21,13 @@ class FakeClock:
 
 
 class WindowFocusStabilizerTest(unittest.TestCase):
+    def test_click_focus_retry_policy_is_owned_by_the_lw_mixin(self):
+        self.assertIs(
+            NTEInteraction.lw_stabilize_click_focus,
+            NTEInteractionExtMixin.lw_stabilize_click_focus,
+        )
+        self.assertFalse(hasattr(NTEInteraction, "_lw_stabilize_click_focus"))
+
     def test_stable_background_returns_immediately(self):
         clock = FakeClock()
         stabilizer = WindowFocusStabilizer(lambda: False, sleep=clock.sleep, now=clock)
