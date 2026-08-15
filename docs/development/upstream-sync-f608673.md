@@ -164,6 +164,17 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Commit | `35d80c7` (audit record) |
 | Status | verified |
 
+### B-01: Startup order and optional virtual-gamepad dependency
+
+| Field | Evidence |
+| --- | --- |
+| Old local contract | `f608673^1` contained the saved-window visibility repair, the bounded debug-image cleanup call, and the `virtual-gamepad` optional dependency. The gamepad module imports `vgamepad` only when the disabled-by-default test pulse is used. |
+| New RU contract | `f608673^2` imports config and installs `startup_patches` before loading `ok`; it upgrades `ok-script` and `onnxocr-ppocrv5`, and adds the required `pywin32` dependency. |
+| Migration | The current entry points preserve the RU import and patch order. The LW cleanup remains after `ok` loads; the window repair stays before app construction. `pyproject.toml` retains the RU required dependencies and the LW `virtual-gamepad` extra; `uv.lock` records the extra rather than making `vgamepad` a base dependency. |
+| Verification | `main.py` and `main_debug.py` compile. `TestMainEntry` verifies off-screen recovery without opening a GUI and preserves visible positions. `TestCleanup` and `test_virtual_gamepad` pass. `uv lock --check` passes and direct import of the virtual-gamepad module performs no driver creation. |
+| Commit | `9df71ca` |
+| Status | verified |
+
 ## Shared-path acceptance matrix
 
 Each group below expands to the named shared paths. Every group is `pending`
@@ -174,7 +185,7 @@ until the individual contracts and regression evidence are added below it.
 | Agent contracts | `AGENTS.md`, `CLAUDE.md` | Compare all shared LW/RU rules and record any mismatch | verified; see A-01 |
 | Planner documentation | `docs/development/combat-planner.md` | Check changed planner APIs, examples, and associated tests | verified; current file matches `f608673^2`, see C-07 |
 | Localization | 13 `i18n/*/LC_MESSAGES/ok.po` or `ok.mo` paths | Verify no LW-visible strings were lost and generated catalogs match sources | verified; see L-01 |
-| Bootstrap and dependencies | `main.py`, `main_debug.py`, `pyproject.toml`, `uv.lock` | Verify startup and dependency contract changes against LW initialization | pending |
+| Bootstrap and dependencies | `main.py`, `main_debug.py`, `pyproject.toml`, `uv.lock` | Verify startup and dependency contract changes against LW initialization | verified; see B-01 |
 | Character core | `src/char/BaseChar.py`, `Hotori.py`, `Nanally.py`, `Requiem.py`, `core/CharFactory.py`, `core/CharRegistry.py`, `custom/CustomCharDbMigrator.py` | Map character lifecycle, role registration, custom-character schema, and all LW callers | pending |
 | Combat core | `src/combat/BaseCombatTask.py`, `planner/core.py`, `planner/types.py` | Map session lifecycle, planner action/result contracts, interrupt and team-reload behavior | pending |
 | Runtime infrastructure | `src/config.py`, `src/globals.py`, `src/interaction/NTEInteraction.py` | Check registration, global lifecycle, interaction semantics, and LW connections | pending |
