@@ -340,19 +340,12 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
         """刷新技能冷却，统一使用 LW 锚定与去抖实现。"""
         return self.lw_refresh_cd()  # [lw] 单一路径接入 src/lw/combat_ext.py
 
-    def get_cd(self, box_name, char_index=None):  # [lw] 本方法被大幅改写: 按box独立锚点时间+UNKNOWN_CD兜底+诊断
+    def get_cd(self, box_name, char_index=None):
         self.refresh_cd()
         if char_index is None:
             char_index = self.get_current_char().index
         if cds := self.cds.get(char_index):
-            if box_name not in cds:
-                return self.UNKNOWN_CD_SECONDS
-            anchor_time = cds.get(box_name + "_time", cds.get("time"))
-            time_elapsed = self.time_elapsed_accounting_for_freeze(anchor_time)
-            result = cds[box_name] - time_elapsed
-            if self.SKILL_CD_DIAG:
-                self._log_cd_estimate(box_name, char_index, cds, result)
-            return result
+            return self.lw_get_cd(box_name, char_index, cds)  # [lw]
         else:
             return 0
 
@@ -735,11 +728,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
         )
 
     def switch_to_combat_start_char(self):
-        # [lw] 进入/重启战斗(含深渊换层 reload)时,清掉可能从上一场残留的大招动画标志。
-        # 否则起始角色已在场时本方法会提前 return,残留的 in_animation=True 会让该角色的
-        # click_ultimate 误判"正在大招动画中"、不发招直接空等 unfreeze,卡住十几秒。
-        self.in_animation = False  # [lw]
-        self.lw_settle_combat_start_resources()  # [lw] 首动作前等辅助头像资源状态稳定
+        self.lw_prepare_combat_start()  # [lw]
         if not self.combat_session.switch_enabled:
             logger.info("combat start switch disabled by task policy")
             return

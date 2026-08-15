@@ -101,6 +101,18 @@ class CombatExtMixin(_TaskProxy):
                 f"deduct={deduct:.2f}s{' (intro not deducted)' if freeze_time == -100 else ''}"
             )
 
+    def lw_get_cd(self, box_name, char_index, cds):
+        """Apply LW unknown-CD and diagnostic rules to the current RU CD snapshot."""
+
+        if box_name not in cds:
+            return self.UNKNOWN_CD_SECONDS
+        anchor_time = cds.get(f"{box_name}_time", cds.get("time"))
+        time_elapsed = self.time_elapsed_accounting_for_freeze(anchor_time)
+        result = cds[box_name] - time_elapsed
+        if self.SKILL_CD_DIAG:
+            self._log_cd_estimate(box_name, char_index, cds, result)
+        return result
+
     @contextmanager
     def team_reload_watch(self):
         """在作用域内开启战斗中队伍变更检测(TeamReloadRequested 信号)。
@@ -200,6 +212,12 @@ class CombatExtMixin(_TaskProxy):
             self.sleep(self.COMBAT_START_RESOURCE_SETTLE_INTERVAL)
 
         self.log_info("combat start support resources settle timeout, keep conservative state")
+
+    def lw_prepare_combat_start(self):
+        """Apply LW-only state cleanup and support observation before the RU first switch."""
+
+        self.in_animation = False
+        self.lw_settle_combat_start_resources()
 
     # ---------- 闪避/放招诊断 ----------
 

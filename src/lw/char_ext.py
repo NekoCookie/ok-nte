@@ -61,6 +61,13 @@ class CharExtMixin(_CharProxy):
             down_time=down_time,
         )
 
+    def lw_after_action_poll(self, has_animation):
+        """Advance the frame after an action without misclassifying a valid animation."""
+
+        self.task.next_frame()
+        if not has_animation:
+            self.check_combat()
+
     def settle_skill_after_cast(
         self,
         cast_at,
