@@ -107,6 +107,18 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Commit | `6c6bc47` |
 | Status | verified |
 
+### C-04: BaseChar skill-settlement API
+
+| Field | Evidence |
+| --- | --- |
+| Old local contract | LW appended `settle_cooldown` and `settle_max_duration` to RU `BaseChar.click_skill()`, then Requiem called those local-only parameters. |
+| New RU contract | `click_skill()` retains the upstream signature and action lifecycle. |
+| Required LW behavior | Retain one retry for a lost input and the optional post-dodge settlement window, including Requiem's 16-second and three-second override. |
+| Migration | `CharExtMixin` owns the input action factory, post-action settlement, and `lw_click_skill_with_settlement()` wrapper. `BaseChar` has two minimal `[lw]` calls; Requiem uses the LW wrapper rather than extending RU arguments. |
+| Regression | `TestSettleSkill` executes the current RU method and asserts its signature excludes the two LW arguments; `TestRequiemSkill`, `TestBuffSupportPlan`, and `TestCombatPlanner` pass. |
+| Commit | `d75e8a2` |
+| Status | verified |
+
 ## Shared-path acceptance matrix
 
 Each group below expands to the named shared paths. Every group is `pending`
