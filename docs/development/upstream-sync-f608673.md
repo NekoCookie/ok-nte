@@ -262,7 +262,7 @@ at `HEAD` only and was not changed as part of this sync.
 | Field | Evidence |
 | --- | --- |
 | Command | `python -m unittest discover -s tests -p "*.py"` |
-| Result | 591 tests passed in 18.861 seconds on 2026-08-16. |
+| Result | 591 tests passed in 15.143 seconds on 2026-08-16. |
 | Scope | The suite uses headless initialization and mocks for input/visual leaves. It is regression evidence for each completed record, not a substitute for real-game validation. The run used the existing user worktree, whose untracked Hide Seek task is discoverable through the user's dirty config; that file was not modified, staged, or used as merge evidence. |
 | Matrix effect | The focused contract records C-01 to C-09, L-02, T-01, R-01, and R-02 are complete; this final suite closes the regression-matrix row. |
 
