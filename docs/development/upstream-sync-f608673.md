@@ -199,6 +199,15 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Commit | `00ef976` |
 | Status | verified |
 
+### V-01: Full regression snapshot after boundary migrations
+
+| Field | Evidence |
+| --- | --- |
+| Command | `python -m unittest discover -s tests -p "*.py"` |
+| Result | 590 tests passed in 16.308 seconds. |
+| Scope | The suite uses its headless test initialization and mocks for task behavior. It is regression evidence for the completed records above, not a substitute for the remaining per-contract audit or real-game validation. |
+| Matrix effect | None. The acceptance matrix stays in progress until every pending group has its own contract record and regression evidence. |
+
 ## Shared-path acceptance matrix
 
 Each group below expands to the named shared paths. Every group is `pending`
