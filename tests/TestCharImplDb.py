@@ -72,6 +72,11 @@ class TestCharImplDb(unittest.TestCase):
         self.assertEqual(entry.cn_name, "零")
 
     def test_lw_requiem_is_available_through_the_current_registry(self):
+        entry = char_registry.get("builtin:requiem")
+
+        self.assertIsNotNone(entry)
+        self.assertIs(entry.char_cls, Requiem)
+        self.assertEqual(entry.cn_name, "安魂曲主C")
         self.assertIs(get_char_implementation_class("builtin:requiem"), Requiem)
 
     def test_external_registry_generates_id_from_class_name(self):

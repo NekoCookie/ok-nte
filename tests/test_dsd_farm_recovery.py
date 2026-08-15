@@ -75,6 +75,50 @@ class TestClickTravalButton(unittest.TestCase):
         self.assertEqual(len(task.warnings), 0)
 
 
+class TestRefreshMonsterConfirmation(unittest.TestCase):
+    def test_current_ru_refresh_confirms_the_update_dialog_and_no_remind_option(self):
+        task = object.__new__(DSDFarmTask)
+        changed_box = Box(0, 0, 10, 10, name="changed")
+        no_remind_box = Box(0, 0, 10, 10, name="no_remind")
+        task.box_of_screen = mock.Mock(return_value=changed_box)
+        task.operate_click = mock.Mock()
+        task.find_one = mock.Mock(return_value=no_remind_box)
+        task.wait_until = mock.Mock(side_effect=lambda condition, **_kwargs: condition())
+
+        def run_and_check_changed(action, **_kwargs):
+            action()
+            return True
+
+        task.run_and_check_changed = mock.Mock(side_effect=run_and_check_changed)
+
+        def wait_click_confirm(**kwargs):
+            kwargs["on_found"]()
+            return True
+
+        task.wait_click_confirm = mock.Mock(side_effect=wait_click_confirm)
+
+        task.refresh_monster()
+
+        task.operate_click.assert_has_calls(
+            [mock.call(0.057, 0.218), mock.call(no_remind_box, after_sleep=0.5)]
+        )
+        task.wait_click_confirm.assert_called_once_with(
+            range=(0.650, 0.611, 0.707, 0.708),
+            on_found=mock.ANY,
+            time_out=3,
+        )
+
+    def test_current_ru_refresh_skips_the_dialog_when_the_refresh_click_has_no_effect(self):
+        task = object.__new__(DSDFarmTask)
+        task.box_of_screen = mock.Mock(return_value=Box(0, 0, 10, 10, name="changed"))
+        task.run_and_check_changed = mock.Mock(return_value=False)
+        task.wait_click_confirm = mock.Mock()
+
+        task.refresh_monster()
+
+        task.wait_click_confirm.assert_not_called()
+
+
 class _InteracStub(DSDFarmExtMixin, _BaseClick):
     def __init__(self, interac_results):
         super().__init__()

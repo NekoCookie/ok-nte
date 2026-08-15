@@ -34,6 +34,7 @@ class TestUseUltimateConfig(unittest.TestCase):
         t = make_run_task(False)
         t.run()
         self.assertFalse(t.combat_session.use_ultimate)
+        t.begin_combat_session.assert_called_once_with()
 
     def test_use_ultimate_enabled_by_config(self):
         t = make_run_task(True)
