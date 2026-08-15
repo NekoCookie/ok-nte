@@ -30,6 +30,37 @@ class CharExtMixin(_CharProxy):
 
         return getattr(self, "SKILL_COOLDOWN", None)
 
+    def lw_click_skill_with_settlement(self, cooldown=None, max_duration=None, **kwargs):
+        """Run the current RU skill action with an LW-only settlement override."""
+
+        sentinel = object()
+        previous = getattr(self, "_lw_skill_settle_options", sentinel)
+        self._lw_skill_settle_options = (cooldown, max_duration)
+        try:
+            return self.click_skill(**kwargs)
+        finally:
+            if previous is sentinel:
+                del self._lw_skill_settle_options
+            else:
+                self._lw_skill_settle_options = previous
+
+    def lw_after_skill_action(self, result, clicked, animated, down_time):
+        """Apply LW dodge-settlement only after a non-animated successful skill."""
+
+        if not clicked or animated:
+            return
+        cooldown, max_duration = getattr(
+            self,
+            "_lw_skill_settle_options",
+            (self.lw_skill_cooldown_hint(), None),
+        )
+        self.settle_skill_after_cast(
+            result["action_time"],
+            cooldown,
+            max_duration=max_duration,
+            down_time=down_time,
+        )
+
     def settle_skill_after_cast(
         self,
         cast_at,
@@ -103,7 +134,7 @@ class CharExtMixin(_CharProxy):
             and self.skill_available()
         )
 
-    def lw_send_skill_action_factory(self, down_time, has_animation=False):
+    def lw_skill_send_action(self, down_time, has_animation=False):
         """click_skill 的发键动作: 首次按键后若技能仍就绪(输入模式没吃到键), 重试一次。"""
         state = {"retry_used": False}
 

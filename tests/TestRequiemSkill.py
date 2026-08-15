@@ -49,6 +49,7 @@ def make_requiem(clock, skill_kind="real", skill_available=True,
     r.ultimate_available = mock.MagicMock(return_value=False)
     r.skill_available = mock.MagicMock(return_value=skill_available)
     r.click_skill = mock.MagicMock(return_value=click_skill_ok)
+    r.lw_click_skill_with_settlement = mock.MagicMock(return_value=click_skill_ok)
     r.should_yield_to_support = mock.MagicMock(return_value=False)
     r.continues_normal_attack = mock.MagicMock()
     r.idle_normal_attack = mock.MagicMock()
@@ -129,9 +130,9 @@ class TestRequiemSkillClassification(unittest.TestCase):
         r = make_requiem(self.clock, skill_kind="real", in_long_cd=True)
         run_requiem_plan(r)
         self.assertTrue(r.should_force_off_field(), "进长CD=放成功, 应 overlap 下场")
-        r.click_skill.assert_called_with(
-            settle_cooldown=r.REAL_SKILL_CD,
-            settle_max_duration=r.REAL_SKILL_RETRY_MAX_DURATION,
+        r.lw_click_skill_with_settlement.assert_called_with(
+            cooldown=r.REAL_SKILL_CD,
+            max_duration=r.REAL_SKILL_RETRY_MAX_DURATION,
         )
 
     # ---- 进的是短CD(被闪避打断的假成功)→ 不切, 修掉"短CD误当放成功" ----
@@ -139,9 +140,9 @@ class TestRequiemSkillClassification(unittest.TestCase):
         r = make_requiem(self.clock, skill_kind="real", in_long_cd=False)
         run_requiem_plan(r)
         self.assertFalse(r.should_force_off_field(), "短CD=被打断, 不该 overlap")
-        r.click_skill.assert_called_with(
-            settle_cooldown=r.REAL_SKILL_CD,
-            settle_max_duration=r.REAL_SKILL_RETRY_MAX_DURATION,
+        r.lw_click_skill_with_settlement.assert_called_with(
+            cooldown=r.REAL_SKILL_CD,
+            max_duration=r.REAL_SKILL_RETRY_MAX_DURATION,
         )
 
     # ---- 没按出去，经公共 click_skill 恢复后进长CD → overlap ----

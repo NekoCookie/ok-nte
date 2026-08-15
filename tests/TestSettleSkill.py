@@ -9,6 +9,7 @@
 - 超时仍没数字 → 锚成就绪(note_skill_ready), 返回 False;
 - settle 介入前先 flush_pending_dodge(修"放招→闪避pending→切人"漏检)。
 """
+import inspect
 import os
 import sys
 import unittest
@@ -180,14 +181,14 @@ class TestCommonSkillSettleHook(unittest.TestCase):
         c = BaseChar.__new__(BaseChar)
         c.logger = mock.MagicMock()
         c.skill_available = mock.MagicMock()
-        c.lw_send_skill_action_factory = mock.MagicMock(return_value=mock.MagicMock())
+        c.lw_skill_send_action = mock.MagicMock(return_value=mock.MagicMock())
         c._try_available_action = mock.MagicMock(
             return_value={"timed_out": False, "action_time": 123.0}
         )
         c._finish_skill_action = mock.MagicMock(
             return_value=(clicked, 0.2, animated)
         )
-        c.settle_skill_after_cast = mock.MagicMock()
+        c.lw_after_skill_action = mock.MagicMock()
         return c
 
     def test_every_base_char_uses_common_settle_after_skill(self):
@@ -195,41 +196,46 @@ class TestCommonSkillSettleHook(unittest.TestCase):
 
         self.assertTrue(c.click_skill(down_time=0.2))
 
-        c.settle_skill_after_cast.assert_called_once_with(
-            123.0,
-            None,
-            max_duration=None,
-            down_time=0.2,
+        c.lw_after_skill_action.assert_called_once_with(
+            {"timed_out": False, "action_time": 123.0}, True, False, 0.2
         )
 
-    def test_role_can_supply_precise_cooldown_and_longer_window(self):
+    def test_lw_wrapper_keeps_special_settle_options_out_of_the_ru_signature(self):
         c = self.make_char()
+        observed = {}
 
-        c.click_skill(
-            settle_cooldown=16.0,
-            settle_max_duration=3.0,
-        )
+        def click_skill(**kwargs):
+            observed["options"] = c._lw_skill_settle_options
+            return kwargs
 
-        c.settle_skill_after_cast.assert_called_once_with(
-            123.0,
-            16.0,
-            max_duration=3.0,
-            down_time=0.05,
+        c.click_skill = mock.MagicMock(side_effect=click_skill)
+
+        self.assertEqual(
+            c.lw_click_skill_with_settlement(cooldown=16.0, max_duration=3.0, time_out=1.0),
+            {"time_out": 1.0},
         )
+        self.assertEqual(observed["options"], (16.0, 3.0))
+        self.assertFalse(hasattr(c, "_lw_skill_settle_options"))
+        self.assertNotIn("settle_cooldown", inspect.signature(BaseChar.click_skill).parameters)
+        self.assertNotIn("settle_max_duration", inspect.signature(BaseChar.click_skill).parameters)
 
     def test_confirmed_animation_does_not_retry_skill(self):
         c = self.make_char(animated=True)
 
         self.assertTrue(c.click_skill(has_animation=True))
 
-        c.settle_skill_after_cast.assert_not_called()
+        c.lw_after_skill_action.assert_called_once_with(
+            {"timed_out": False, "action_time": 123.0}, True, True, 0.05
+        )
 
     def test_failed_skill_does_not_start_settle(self):
         c = self.make_char(clicked=False)
 
         self.assertFalse(c.click_skill())
 
-        c.settle_skill_after_cast.assert_not_called()
+        c.lw_after_skill_action.assert_called_once_with(
+            {"timed_out": False, "action_time": 123.0}, False, False, 0.05
+        )
 
 
 class TestAvailableActionCombatCheck(unittest.TestCase):

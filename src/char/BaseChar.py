@@ -722,8 +722,6 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         has_animation=False,
         send_click=True,
         time_out=0,
-        settle_cooldown=None,  # [lw] 已知技能 CD；未知时使用保守占位
-        settle_max_duration=None,  # [lw] 特殊技能可延长打断恢复窗口
     ):
         """尝试释放技能。
 
@@ -733,8 +731,6 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             has_animation (bool, optional): 技能是否有释放动画。默认为 False。
             send_click (bool, optional): 在释放技能前是否发送普通点击。默认为 True。
             time_out (float, optional): 技能释放的超时时间。默认为 0。
-            settle_cooldown (float, optional): [lw] 打断恢复补发时使用的标称 CD。
-            settle_max_duration (float, optional): [lw] 打断恢复的最长补发窗口。
         Returns:
             bool: 是否成功点击。
         """
@@ -743,7 +739,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         result = self._try_available_action(
             "skill",
             self.skill_available,
-            self.lw_send_skill_action_factory(  # [lw] 输入模式没吃到键则重试一次
+            self.lw_skill_send_action(  # [lw] Input retry implementation lives in CharExtMixin.
                 down_time,
                 has_animation=has_animation,
             ),
@@ -754,18 +750,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         if result["timed_out"] and time_out == 0:
             self.alert_skill_failed()
         clicked, duration, animated = self._finish_skill_action(result, post_sleep)
-        if clicked and not animated:  # [lw] 动画本身已确认技能生效，其余角色统一处理闪避打断
-            cooldown = (
-                self.lw_skill_cooldown_hint()
-                if settle_cooldown is None
-                else settle_cooldown
-            )
-            self.settle_skill_after_cast(
-                result["action_time"],
-                cooldown,
-                max_duration=settle_max_duration,
-                down_time=down_time,
-            )
+        self.lw_after_skill_action(result, clicked, animated, down_time)  # [lw]
         self.logger.debug(
             f"click_skill end clicked {clicked} duration {duration} animated {animated}"
         )

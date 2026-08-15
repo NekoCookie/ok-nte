@@ -798,9 +798,9 @@ class Requiem(MainDps):
     def _try_land_real_skill(self):
         """放一次真技能并确认是否真进了**长CD**(= 放成功)。是→安排 overlap, 返回 True。
         还就绪(没按出去)/进短CD(被闪避打断的假成功)→ 返回 False, 交给 settle 补放/校准。"""
-        if not self.click_skill(
-            settle_cooldown=self.REAL_SKILL_CD,  # [lw] 通用技能打断恢复使用真技能 CD
-            settle_max_duration=self.REAL_SKILL_RETRY_MAX_DURATION,  # [lw]
+        if not self.lw_click_skill_with_settlement(  # [lw]
+            cooldown=self.REAL_SKILL_CD,
+            max_duration=self.REAL_SKILL_RETRY_MAX_DURATION,
         ):
             return False
         if self._skill_still_available_after_input_mode_delay():
