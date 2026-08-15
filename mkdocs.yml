@@ -58,6 +58,7 @@ nav:
       - Running from source: development/running-from-source.md
       - SceneFlow author guide: development/scene_flow.md
       - Combat Planner guide: development/combat-planner.md
+      - Upstream sync ledger: development/upstream-sync-f608673.md
 
 markdown_extensions:
   - admonition
