@@ -1,13 +1,14 @@
 import re
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Callable, Iterator, List, Optional, Tuple, Type, TypeVar, cast
+from typing import Iterator, Optional, Type, TypeVar, cast
 
 from ok import CannotFindException, TaskDisabledException, find_color_rectangles
 from qfluentwidgets import FluentIcon
 
 from src import text_white_color
 from src.Labels import Labels
+from src.lw.daily_task_ext import DailyTaskExtMixin  # [lw]
 from src.tasks.AnomalyTask import AnomalyTask
 from src.tasks.BaseNTETask import BaseNTETask
 from src.tasks.daily.CinemaDateTask import CinemaDateTask
@@ -21,7 +22,7 @@ from src.utils import image_utils as iu
 WorkingTaskT = TypeVar("WorkingTaskT", bound=BaseNTETask)
 
 
-class DailyTask(NTEOneTimeTask, BaseNTETask):
+class DailyTask(DailyTaskExtMixin, NTEOneTimeTask, BaseNTETask):  # [lw]
     """日常任务执行器"""
 
     # --- 配置项键名 ---
@@ -131,56 +132,7 @@ class DailyTask(NTEOneTimeTask, BaseNTETask):
         self.ensure_main()
         self.log_info("开始执行日常任务")
 
-        # [lw] 顺序调整: 做任务类(约会/家具/送礼)提到领奖类(活跃度/环期)之前,
-        # 防止送礼等触发的环期周任务在领奖之后才完成导致当天漏领
-        coffee_mode = [self.COFFEE_MODE_CLAIM_AND_RESTOCK, self.COFFEE_MODE_AUTO]
-        tasks: List[Tuple[str, bool, Callable]] = [
-            (
-                self.CONF_CLAIM_MAIL,
-                self._task_enabled(self.CONF_CLAIM_MAIL, True),
-                self.claim_mail,
-            ),
-            (
-                self.CONF_COMPLETE_DAILY,
-                self._task_enabled(self.CONF_COMPLETE_DAILY, True),
-                self.complete_daily_activities,
-            ),
-            (
-                self.CONF_CINEMA_DATE,
-                self._task_enabled(self.CONF_CINEMA_DATE, False),
-                self.run_cinema_task,
-            ),
-            (
-                self.CONF_FOUNTAIN_SIGN,
-                self._task_enabled(self.CONF_FOUNTAIN_SIGN, self.TASK_NONE, self.TASK_NONE),
-                self.run_fountain_sign_task,
-            ),
-            (
-                self.CONF_FURNITURE,
-                self._task_enabled(self.CONF_FURNITURE, False),
-                self.run_furniture_task,
-            ),
-            (
-                self.CONF_GIFT,
-                self._task_enabled(self.CONF_GIFT, False),
-                self.run_gift_task,
-            ),
-            (
-                self.CONF_CLAIM_ACTIVITY,
-                self._task_enabled(self.CONF_CLAIM_ACTIVITY, True),
-                self.claim_activity_rewards,
-            ),
-            (
-                self.CONF_COFFEE_TASK,
-                self.config.get(self.CONF_COFFEE_TASK) in coffee_mode,
-                self.run_coffee_task,
-            ),
-            (
-                self.CONF_CLAIM_BP,
-                self._task_enabled(self.CONF_CLAIM_BP, True),
-                self.claim_battle_pass_rewards,
-            ),
-        ]
+        tasks = self.lw_daily_task_entries()  # [lw]
 
         self._reset_task_status(tasks)
 
@@ -331,7 +283,7 @@ class DailyTask(NTEOneTimeTask, BaseNTETask):
         """执行操作完成每日活跃度"""
         self.log_info("正在执行每日活跃度任务")
         if self.check_activity():
-            self.log_info("当前体力消耗已达目标，跳过每日活跃度任务")  # [lw] 判定只看体力, 文案同步
+            self.log_info(self.lw_daily_activity_target_message())  # [lw]
             return True
 
         used_stamina = self.info_get("used stamina")
@@ -427,8 +379,7 @@ class DailyTask(NTEOneTimeTask, BaseNTETask):
         self.info_set("used stamina", used_stamina)
         self.info_set("daily activity", daily_activity)
 
-        target_stamina = self.config.get(self.DAILY_STAMINA_TARGET, 180)  # [lw] 只按体力目标判定, 去掉上游 daily_activity >= 100 条件
-        return used_stamina >= target_stamina  # [lw]
+        return self.lw_daily_activity_target_reached(used_stamina)  # [lw]
 
     def claim_activity_rewards(self, in_panel=False):
         """领取活跃度奖励"""
