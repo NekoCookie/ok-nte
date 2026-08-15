@@ -200,11 +200,22 @@ class TestDeterministicTeleportSelection(unittest.TestCase):
 
         self.assertIs(DSDFarmExtMixin._lw_select_volcano_bonfire([right, left]), left)
 
-    def test_top_bonfire_uses_deterministic_fallback_without_anchor(self):
-        task = _DeterministicTeleportStub()
+    def test_top_bonfire_selects_the_uppermost_result_without_an_anchor(self):
+        task = object.__new__(DSDFarmExtMixin)
+        lower = Box(20, 80, 10, 10)
+        upper = Box(40, 30, 10, 10)
+        task.ensure_main = mock.Mock()
+        task.open_map = mock.Mock()
+        task.find_feature = mock.Mock(return_value=[lower, upper])
+        task.log_info = mock.Mock()
+        task.operate_click = mock.Mock()
+        task.lw_perform_input = lambda action, *args, **kwargs: action(*args, **kwargs)
+        task.sleep = mock.Mock()
+        task.click_traval_button = mock.Mock(return_value=True)
 
         self.assertTrue(task.lw_teleport_to_top_bonfire(Box(0, 0, 100, 100)))
-        self.assertEqual(task.fallback_top_calls, 1)
+
+        task.operate_click.assert_called_once_with(upper, action_name="click_map_teleport")
 
 
 class _LocationStub(DSDFarmExtMixin, _BaseClick):

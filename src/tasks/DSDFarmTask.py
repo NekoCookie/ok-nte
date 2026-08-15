@@ -249,36 +249,7 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         )
 
     def ensure_teleport(self, fun):
-        origin_fun = None
-        if self.team_dead:
-            origin_fun = fun
-            fun = self.teleport_on_spot
-        switch = False
-        attempts = 0  # [lw] 有界重试, 避免传送持续失败时无限走位
-        max_attempts = self.lw_max_teleport_attempts()  # [lw]
-        while attempts < max_attempts:  # [lw]
-            try:  # [lw]
-                if fun():
-                    return True
-            except TaskDisabledException:  # [lw] 停止请求必须立即结束, 不进入恢复动作
-                raise
-            except Exception as e:  # [lw] 单次传送异常(如主界面检测超时)不终止任务
-                self.log_warning_gated(f"teleport attempt failed: {e}")  # [lw]
-            try:  # [lw]
-                self.ensure_main()
-            except TaskDisabledException:  # [lw] 不吞掉停止请求
-                raise
-            except Exception as e:  # [lw]
-                self.log_warning_gated(f"ensure main failed during teleport retry: {e}")  # [lw]
-            self.sleep(0.5)
-            key = "w" if switch else "s"
-            self.lw_hold_key_cancellable(key, duration=3)  # [lw]
-            switch = not switch
-            attempts += 1  # [lw]
-            if origin_fun:
-                fun = origin_fun
-        self.log_warning_gated("传送失败超过上限, 交由下一轮恢复")  # [lw]
-        return False  # [lw]
+        return self.lw_ensure_teleport(fun)  # [lw]
 
     def deside_combat_action(self):
         with self.skip_sleep_checks() as skip:
@@ -326,50 +297,6 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
     def teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10):
         return self.lw_teleport_to_nearest_bonfire(threshold=threshold, time_out=time_out)  # [lw]
 
-    def _ru_teleport_to_nearest_bonfire(
-        self, threshold=0.7, time_out=10, target_selector=None
-    ):
-        # [lw] 目标篝火通过确定性 target_selector 选择, 不使用临时锚点
-        self.ensure_main()
-        self.open_map()
-        to_find = [Labels.bonfire_teleport]
-        template_boxes = [self.get_box_by_name(label) for label in to_find]
-        max_template_size = max(
-            max(template_box.width, template_box.height) for template_box in template_boxes
-        )
-        step = max(max_template_size, self.width_of_screen(0.02), 1)
-        center_x = self.width_of_screen(0.5)
-        center_y = self.height_of_screen(0.5)
-        max_radius = max(self.width, self.height)
-
-        def find_teleport():
-            if target_selector is not None:  # [lw] 火山目标是左侧固定篝火, 不是最近篝火
-                teleports = self.find_feature(
-                    Labels.bonfire_teleport,
-                    box=self.main_viewport,
-                    threshold=threshold,
-                )
-                return target_selector(teleports) if teleports else None
-            radius = step
-            while radius <= max_radius:
-                x = max(0, center_x - radius)
-                y = max(0, center_y - radius)
-                to_x = min(self.width, center_x + radius)
-                to_y = min(self.height, center_y + radius)
-                box = Box(x=x, y=y, to_x=to_x, to_y=to_y, name="nearest_map_teleport")
-                teleport = self.find_best_match_in_box(box, to_find, threshold=threshold)
-                if teleport:
-                    return teleport
-                radius += step
-
-        teleport = self.wait_until(find_teleport, time_out=time_out, raise_if_not_found=True)
-        self.log_info(f"found nearest map teleport {teleport}")
-        self.lw_perform_input(  # [lw]
-            self.operate_click, teleport, action_name="click_nearest_map_teleport"
-        )
-        self.sleep(0.5)
-        return self.click_traval_button(raise_if_not_found=False)
-
     def teleport_to_bonfire(self, box: Box = None, threshold=0.7, order=1):
         self.ensure_main()
         self.open_map()
@@ -397,24 +324,6 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
 
     def teleport_to_top_bonfire(self, box: Box, threshold=0.7):
         return self.lw_teleport_to_top_bonfire(box=box, threshold=threshold)  # [lw]
-
-    def _ru_teleport_to_top_bonfire(self, box: Box, threshold=0.7):
-        # [lw] 使用地点固定区域的确定性选点, 不使用临时锚点
-        self.ensure_main()
-        self.open_map()
-
-        teleports = self.find_feature(Labels.bonfire_teleport, box=box, threshold=threshold)
-        if not teleports:
-            return False
-
-        self.log_info(f"found map teleports {teleports}")
-
-        teleport = min(teleports, key=lambda teleport: teleport.y)
-        self.lw_perform_input(  # [lw]
-            self.operate_click, teleport, action_name="click_map_teleport"
-        )
-        self.sleep(0.5)
-        return self.click_traval_button(raise_if_not_found=False)
 
     def teleport_on_spot(self):
         self.ensure_main()

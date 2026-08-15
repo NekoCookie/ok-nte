@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 from ok import Box, TaskDisabledException, WaitFailedException
 
+from src.Labels import Labels
+
 if TYPE_CHECKING:
     from src.tasks.DSDFarmTask import DSDFarmTask
 
@@ -59,6 +61,38 @@ class DSDFarmExtMixin(_TaskProxy):
             return True
         self.log_error("传送回目标篝火失败, 已停止九百九十九夜挂机")
         raise TaskDisabledException()
+
+    def lw_ensure_teleport(self, fun):
+        """Bound a failed teleport recovery without changing the public task method."""
+        origin_fun = None
+        if self.team_dead:
+            origin_fun = fun
+            fun = self.teleport_on_spot
+        switch = False
+        attempts = 0
+        max_attempts = self.lw_max_teleport_attempts()
+        while attempts < max_attempts:
+            try:
+                if fun():
+                    return True
+            except TaskDisabledException:
+                raise
+            except Exception as error:
+                self.log_warning_gated(f"teleport attempt failed: {error}")
+            try:
+                self.ensure_main()
+            except TaskDisabledException:
+                raise
+            except Exception as error:
+                self.log_warning_gated(f"ensure main failed during teleport retry: {error}")
+            self.sleep(0.5)
+            self.lw_hold_key_cancellable("w" if switch else "s", duration=3)
+            switch = not switch
+            attempts += 1
+            if origin_fun:
+                fun = origin_fun
+        self.log_warning_gated("传送失败超过上限, 交由下一轮恢复")
+        return False
 
     def lw_input_paused(self):
         """Return whether either the current task or the global executor is paused."""
@@ -140,15 +174,41 @@ class DSDFarmExtMixin(_TaskProxy):
 
     def lw_teleport_to_nearest_bonfire(self, threshold=0.7, time_out=10):
         """Teleport to the configured volcano target using deterministic map selection."""
-        return self._ru_teleport_to_nearest_bonfire(
-            threshold=threshold,
+        self.ensure_main()
+        self.open_map()
+
+        def find_volcano_bonfire():
+            teleports = self.find_feature(
+                Labels.bonfire_teleport,
+                box=self.main_viewport,
+                threshold=threshold,
+            )
+            return self._lw_select_volcano_bonfire(teleports) if teleports else None
+
+        teleport = self.wait_until(
+            find_volcano_bonfire,
             time_out=time_out,
-            target_selector=self._lw_select_volcano_bonfire,
+            raise_if_not_found=True,
         )
+        self.log_info(f"found volcano map teleport {teleport}")
+        self.lw_perform_input(
+            self.operate_click, teleport, action_name="click_nearest_map_teleport"
+        )
+        self.sleep(0.5)
+        return self.click_traval_button(raise_if_not_found=False)
 
     def lw_teleport_to_top_bonfire(self, box, threshold=0.7):
         """Teleport to a top bonfire using the location-specific deterministic box."""
-        return self._ru_teleport_to_top_bonfire(box=box, threshold=threshold)
+        self.ensure_main()
+        self.open_map()
+        teleports = self.find_feature(Labels.bonfire_teleport, box=box, threshold=threshold)
+        if not teleports:
+            return False
+        self.log_info(f"found map teleports {teleports}")
+        teleport = min(teleports, key=lambda candidate: candidate.y)
+        self.lw_perform_input(self.operate_click, teleport, action_name="click_map_teleport")
+        self.sleep(0.5)
+        return self.click_traval_button(raise_if_not_found=False)
 
     def lw_wait_interac(self, time_out=10):
         """等待篝火交互提示; 缺失时先回主界面等加载, 仍失败则重新传送一次。"""
