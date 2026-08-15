@@ -49,7 +49,7 @@ class CharRegistry:
         with self._lock:
             return sorted(self._entries.values(), key=lambda entry: entry.impl_id)
 
-    def register(
+    def register(  # [lw] Stable extension point for user-owned character implementations.
         self,
         impl_id: str,
         char_cls: type[BaseChar],

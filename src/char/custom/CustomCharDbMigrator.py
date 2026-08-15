@@ -38,11 +38,11 @@ class CustomCharDbMigrator:
         "char_fadia": "builtin:fadia",
         "char_shinku": "builtin:shinku",
         "char_iroi": "builtin:iroi",
-        "char_requiem": "builtin:requiem",
-        "template_main_dps": "builtin:template_main_dps",
-        "template_buff_support": "builtin:template_buff_support",
-        "template_heal_support": "builtin:template_heal_support",
-        "template_sakiri_buff_support": "builtin:template_sakiri_buff_support",
+        "char_requiem": "builtin:requiem",  # [lw]
+        "template_main_dps": "builtin:template_main_dps",  # [lw]
+        "template_buff_support": "builtin:template_buff_support",  # [lw]
+        "template_heal_support": "builtin:template_heal_support",  # [lw]
+        "template_sakiri_buff_support": "builtin:template_sakiri_buff_support",  # [lw]
     }
 
     def __init__(self, context: MigrationContext, target_schema_version: int):
