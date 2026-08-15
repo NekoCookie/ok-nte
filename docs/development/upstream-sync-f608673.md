@@ -153,6 +153,17 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Commit | `aee9558` |
 | Status | verified |
 
+### L-01: Gettext catalog provenance and compilation
+
+| Field | Evidence |
+| --- | --- |
+| Old local contract | `f608673^1` already contained the four LW auto-fish strings and six LW virtual-gamepad configuration strings in every locale. Those strings are still used by `FishCatchingTask` and `RequiemCombatConfigTask`. |
+| New RU contract | `f608673^2` updated all seven locale catalogs with its current source strings and generated `.mo` files. It contains two identical `"自动战斗任务不可用"` entries per catalog even though the current `TeamManagerTab` source has one use. |
+| Merge result | `f608673` is the required union: it retains the RU catalog updates and the ten LW-visible strings. It retains one, not zero, `"自动战斗任务不可用"` entry. This is catalog de-duplication in the merge result, not an upstream deletion. |
+| Verification | All seven `.po` files parse, have no duplicate `msgid`, and contain the ten LW strings plus the live TeamManager string. The i18n helper recompiled all seven `.mo` files without producing a Git diff. Every non-empty `.po` translation is returned by its `.mo`; `TestI18nPatch` passes. |
+| Commit | `35d80c7` (audit record) |
+| Status | verified |
+
 ## Shared-path acceptance matrix
 
 Each group below expands to the named shared paths. Every group is `pending`
@@ -162,7 +173,7 @@ until the individual contracts and regression evidence are added below it.
 | --- | --- | --- | --- |
 | Agent contracts | `AGENTS.md`, `CLAUDE.md` | Compare all shared LW/RU rules and record any mismatch | verified; see A-01 |
 | Planner documentation | `docs/development/combat-planner.md` | Check changed planner APIs, examples, and associated tests | verified; current file matches `f608673^2`, see C-07 |
-| Localization | 13 `i18n/*/LC_MESSAGES/ok.po` or `ok.mo` paths | Verify no LW-visible strings were lost and generated catalogs match sources | pending |
+| Localization | 13 `i18n/*/LC_MESSAGES/ok.po` or `ok.mo` paths | Verify no LW-visible strings were lost and generated catalogs match sources | verified; see L-01 |
 | Bootstrap and dependencies | `main.py`, `main_debug.py`, `pyproject.toml`, `uv.lock` | Verify startup and dependency contract changes against LW initialization | pending |
 | Character core | `src/char/BaseChar.py`, `Hotori.py`, `Nanally.py`, `Requiem.py`, `core/CharFactory.py`, `core/CharRegistry.py`, `custom/CustomCharDbMigrator.py` | Map character lifecycle, role registration, custom-character schema, and all LW callers | pending |
 | Combat core | `src/combat/BaseCombatTask.py`, `planner/core.py`, `planner/types.py` | Map session lifecycle, planner action/result contracts, interrupt and team-reload behavior | pending |
