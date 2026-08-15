@@ -15,7 +15,6 @@ from src.combat.planner import (
     CombatPlan,
     CombatPlanner,
     FieldClaimLevel,
-    FieldClaimTiming,
     FieldPreference,
     RoleProfile,
 )
@@ -27,6 +26,7 @@ from src.lw.combat_templates import (
     SakiriBuffSupport,
 )
 from src.lw.resource_support import ResourceSupportMixin
+from src.lw.field_claim_ext import is_lw_preemptive_field_claim
 
 
 def make_buff(main_dps=True, ult_ready=False, skill_ready=True, buff_pending=False):
@@ -130,7 +130,7 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         c = make_buff(ult_ready=True, buff_pending=True)
         claims = list(c.combat_plan(None).claims)
         self.assertTrue(claims and claims[0].level == FieldClaimLevel.HIGH)
-        self.assertIs(claims[0].timing, FieldClaimTiming.PREEMPTIVE)
+        self.assertTrue(is_lw_preemptive_field_claim(claims[0]))
 
     def test_combat_plan_without_ready_resource_has_no_claim(self):
         c = make_buff(ult_ready=False, skill_ready=False, buff_pending=False)
@@ -140,14 +140,14 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         c = make_buff(ult_ready=False, skill_ready=True, buff_pending=False)
         claims = list(c.combat_plan(None).claims)
         self.assertTrue(claims and claims[0].level == FieldClaimLevel.HIGH)
-        self.assertIs(claims[0].timing, FieldClaimTiming.PREEMPTIVE)
+        self.assertTrue(is_lw_preemptive_field_claim(claims[0]))
 
     def test_due_resource_probe_claims_high_and_enables_skill(self):
         c = make_buff(ult_ready=False, skill_ready=False, buff_pending=False)
         c.needs_resource_probe = lambda: True
         plan = c.combat_plan(None)
         self.assertEqual(list(plan.claims)[0].level, FieldClaimLevel.HIGH)
-        self.assertIs(list(plan.claims)[0].timing, FieldClaimTiming.NORMAL)
+        self.assertFalse(is_lw_preemptive_field_claim(list(plan.claims)[0]))
         self.assertTrue(actions_by_slot(plan)[ActionSlot.SKILL].priority_ready(None))
 
     def test_combat_start_resource_observation_preserves_unknown_diamond(self):

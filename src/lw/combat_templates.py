@@ -9,6 +9,7 @@ from src.combat.planner import (
     RoleProfile,
 )
 from src.combat.planner import Role as PlannerRole
+from src.lw.field_claim_ext import lw_preemptive_field_claim
 from src.lw.resource_support import ResourceSupportMixin
 
 
@@ -147,9 +148,9 @@ class BuffSupport(ResourceSupportMixin, BaseChar):
 
     def resource_field_claims(self, needs_probe):
         if self.ultimate_buff_pending():
-            return [FieldClaim.preemptive(source=self, reason="support ultimate buff pending")]
+            return [lw_preemptive_field_claim(source=self, reason="support ultimate buff pending")]
         if self.has_skill_resource():
-            return [FieldClaim.preemptive(source=self, reason="support skill resource ready")]
+            return [lw_preemptive_field_claim(source=self, reason="support skill resource ready")]
         if needs_probe:
             return [FieldClaim.high(source=self, reason="support resource probe due")]
         return []

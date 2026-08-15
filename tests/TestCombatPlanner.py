@@ -15,7 +15,6 @@ from src.combat.planner import (
     CombatPlanner,
     ExpectedEntry,
     FieldClaim,
-    FieldClaimTiming,
     FieldPreference,
     FollowupStep,
     Planner,
@@ -23,6 +22,7 @@ from src.combat.planner import (
     RoleProfile,
     SwitchInGuard,
 )
+from src.lw.field_claim_ext import is_lw_preemptive_field_claim, lw_preemptive_field_claim
 
 
 class FakeTask:
@@ -360,7 +360,7 @@ class TestCombatPlanner(unittest.TestCase):
         support = FakeChar(
             2,
             "support",
-            claims=[FieldClaim.preemptive("confirmed buff resource")],
+            claims=[lw_preemptive_field_claim("confirmed buff resource")],
         )
         planner = self._planner([current, reaction, support])
         planner.task.reaction_target = reaction
@@ -370,10 +370,7 @@ class TestCombatPlanner(unittest.TestCase):
         self.assertEqual(decision.target, support)
         self.assertEqual(decision.priority, 999600)
         self.assertIn("preemptive field claim", decision.reason)
-        self.assertIs(
-            list(support.combat_plan(None).claims)[0].timing,
-            FieldClaimTiming.PREEMPTIVE,
-        )
+        self.assertTrue(is_lw_preemptive_field_claim(list(support.combat_plan(None).claims)[0]))
 
     def test_strict_route_preempts_preemptive_field_claim(self):
         source = FakeChar(0, "source")
@@ -381,7 +378,7 @@ class TestCombatPlanner(unittest.TestCase):
         support = FakeChar(
             2,
             "support",
-            claims=[FieldClaim.preemptive("confirmed buff resource")],
+            claims=[lw_preemptive_field_claim("confirmed buff resource")],
         )
         planner = self._planner([source, route_target, support])
         self._publish(
@@ -473,7 +470,7 @@ class TestCombatPlanner(unittest.TestCase):
         support = FakeChar(
             1,
             "support",
-            claims=[FieldClaim.preemptive("opening buff ready")],
+            claims=[lw_preemptive_field_claim("opening buff ready")],
         )
         planner = self._planner([current, support])
 
@@ -488,7 +485,7 @@ class TestCombatPlanner(unittest.TestCase):
             1,
             "other support",
             field_preference=FieldPreference.SUPPORT,
-            claims=[FieldClaim.preemptive("opening buff ready")],
+            claims=[lw_preemptive_field_claim("opening buff ready")],
         )
         planner = self._planner([current, other_support])
 
@@ -503,7 +500,7 @@ class TestCombatPlanner(unittest.TestCase):
         support = FakeChar(
             2,
             "support",
-            claims=[FieldClaim.preemptive("opening buff ready")],
+            claims=[lw_preemptive_field_claim("opening buff ready")],
         )
         planner = self._planner([current, explicit, support])
 
@@ -519,7 +516,7 @@ class TestCombatPlanner(unittest.TestCase):
             1,
             "support",
             claims=lambda _: (
-                [FieldClaim.preemptive("opening buff ready")] if ready["support"] else []
+                [lw_preemptive_field_claim("opening buff ready")] if ready["support"] else []
             ),
         )
         next_best = FakeChar(2, "next_best", tags={ActionTag.ULTIMATE_ACTION})

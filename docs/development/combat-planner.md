@@ -260,8 +260,7 @@ self.planner_action(
 
 ## FieldClaim
 
-`FieldClaim` 表达“我应该被切进来”，不是动作。普通 claim 抬高目标角色的普通
-入场评分；`FieldClaim.preemptive(...)` 会在自动环合反应前获得一次入场机会。
+`FieldClaim` 表达“我应该被切进来”，不是动作。它只抬高目标角色的普通入场评分；
 角色切入后仍由 planner 从 `actions`、strict route/request 或 `entry` 中选择动作。
 
 ```python
@@ -281,8 +280,6 @@ def combat_plan(self, context):
 
 - 只是 Q/E 可用，不需要 FieldClaim；action 本身会参与评分。
 - 需要“之后抢回场”时用 FieldClaim。
-- 已经确认且必须在队伍输出窗口前处理的短期资源，才使用
-  `FieldClaim.preemptive(...)`。未知资源探测继续使用普通 claim。
 - 抢回场后需要优先做某动作时，加 `expected_entry`。
 - 多个 FieldClaim 适合表达多个独立机制入口；planner 不累加 claim 分，只选择最高等级的匹配 claim。
 
