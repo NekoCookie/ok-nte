@@ -119,6 +119,17 @@ describe the sync as complete until every row in the acceptance matrix is marked
 | Commit | `d75e8a2` |
 | Status | verified |
 
+### C-05: Character registry and persisted implementation IDs
+
+| Field | Evidence |
+| --- | --- |
+| Old local contract | `lw_char_dict` extended the removed `CharFactory.char_dict`, and existing user databases used `char_requiem` and template combo IDs. |
+| New RU contract | `CharRegistry.register()` is the extension API; persisted characters reference `impl_id` values such as `builtin:requiem`. |
+| Migration | `register_lw_char_implementations()` uses the registry API; the registry extension point and the five LW legacy-ID mappings are explicitly marked `[lw]`. |
+| Regression | `TestCharImplDb` migrates the legacy DB, resolves Requiem in the scanned registry, and checks its display name. |
+| Commit | `6818c49`, `7d37ed9` |
+| Status | verified |
+
 ## Shared-path acceptance matrix
 
 Each group below expands to the named shared paths. Every group is `pending`
