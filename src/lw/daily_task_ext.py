@@ -61,4 +61,4 @@ class DailyTaskExtMixin(_DailyTaskProxy):
 
     @staticmethod
     def lw_daily_activity_target_message() -> str:
-        return "当前体力消耗已达目标，跳过每日活跃度任务"
+        return "当前体力消耗已达目标, 跳过每日活跃度任务"
