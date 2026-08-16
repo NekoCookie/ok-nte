@@ -191,6 +191,7 @@ config = {
         ["src.tasks.SwitchAccountTask", "SwitchAccountTask"],  # [lw]
         ["src.tasks.FishingTask", "FishingTask"],
         ["src.tasks.FishCatchingTask", "FishCatchingTask"],  # [lw] 都市闲趣自动捕鱼
+        ["src.tasks.HideSeekTask", "HideSeekTask"],  # [lw] 都市闲趣自动捉迷藏
         ["src.tasks.AnomalyTask", "AnomalyTask"],
         ["src.tasks.AnomalyHunter", "AnomalyHunter"],
         ["src.tasks.RhythmTask", "RhythmTask"],

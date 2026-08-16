@@ -1038,3 +1038,9 @@ msgstr "Redefinir conf."
 
 msgid "重试失败项"
 msgstr "Tentar novamente itens com falha"
+
+msgid "自动捉迷藏"
+msgstr "Esconde-esconde automático"
+
+msgid "徊影憧憧活动自动挂机: 自动点击开始匹配, 对局结束自动开始下一局"
+msgstr "Automatiza o evento Hiding Shadows: inicia a partida automaticamente e começa a próxima rodada quando a atual termina."

@@ -1307,3 +1307,9 @@ msgstr "Restablecer conf."
 
 msgid "重试失败项"
 msgstr "Reintentar elementos fallidos"
+
+msgid "自动捉迷藏"
+msgstr "Escondite automático"
+
+msgid "徊影憧憧活动自动挂机: 自动点击开始匹配, 对局结束自动开始下一局"
+msgstr "Automatiza el evento Hiding Shadows: inicia el emparejamiento y comienza la siguiente ronda al terminar la partida."

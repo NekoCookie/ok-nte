@@ -1307,3 +1307,9 @@ msgstr "Reset Config"
 
 msgid "重试失败项"
 msgstr "Retry Failed Items"
+
+msgid "自动捉迷藏"
+msgstr "Auto Hide and Seek"
+
+msgid "徊影憧憧活动自动挂机: 自动点击开始匹配, 对局结束自动开始下一局"
+msgstr "Automate the Hiding Shadows event: start matchmaking automatically and start the next round when a match ends."
