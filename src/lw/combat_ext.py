@@ -1085,10 +1085,26 @@ class CombatExtMixin(_TaskProxy):
                 conf = char.confidence
                 elem = char.element
                 self.log_info(f"load char success {char} {name} {conf:.2f} {elem}")
-                self.info_add_to_list("chars", f"{char.char_name}: {char.impl_id or 'BaseChar'}")
+                template_name = self.lw_char_implementation_name(char)
+                self.info_add_to_list("chars", f"{char.char_name}: {template_name}")
 
         if self.team_size > 0:
             self._apply_sound_config()
             self._warm_up_background_mouse()
             return True
         return False
+
+    def lw_char_implementation_name(self, char: "BaseChar") -> str:
+        """Return a localized display name for a loaded character implementation."""
+
+        impl_id = str(getattr(char, "impl_id", "") or "").strip()
+        if not impl_id:
+            return "BaseChar"
+
+        from src.char.core.CharRegistry import char_registry
+
+        entry = char_registry.get(impl_id)
+        if entry is not None:
+            return entry.cn_name if self.is_chinese() else entry.en_name
+
+        return CustomCharManager().get_impl_name(impl_id) or impl_id

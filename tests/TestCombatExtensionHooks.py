@@ -27,6 +27,47 @@ class TestCombatExtensionHooks(unittest.TestCase):
         self.assertFalse(task.in_animation)
         task.lw_settle_combat_start_resources.assert_called_once_with()
 
+    def test_loaded_character_info_uses_the_localized_template_name(self):
+        task = object.__new__(BaseCombatTask)
+        task._roster_monitor = mock.Mock(return_value=mock.Mock())
+        task.clear_element_reactions = mock.Mock()
+        task.combat_planner = mock.Mock()
+        task.info_set = mock.Mock()
+        task.info_add_to_list = mock.Mock()
+        task.log_info = mock.Mock()
+        task.lw_char_implementation_name = mock.Mock(return_value="安魂曲主C")
+        task._apply_sound_config = mock.Mock()
+        task._warm_up_background_mouse = mock.Mock()
+        char = mock.Mock(
+            index=0,
+            char_name="安魂曲",
+            impl_id="builtin:requiem",
+            confidence=0.99,
+            element="White",
+        )
+
+        self.assertTrue(task._commit_loaded_chars([char], current_index=0))
+
+        task.lw_char_implementation_name.assert_called_once_with(char)
+        task.info_add_to_list.assert_called_once_with("chars", "安魂曲: 安魂曲主C")
+
+    def test_lw_template_name_uses_chinese_registry_metadata(self):
+        task = object.__new__(BaseCombatTask)
+        task.is_chinese = mock.Mock(return_value=True)
+        char = mock.Mock(impl_id="builtin:requiem")
+
+        self.assertEqual(task.lw_char_implementation_name(char), "安魂曲主C")
+
+    def test_lw_template_name_keeps_custom_combo_names(self):
+        task = object.__new__(BaseCombatTask)
+        task.is_chinese = mock.Mock(return_value=True)
+        char = mock.Mock(impl_id="combo_user_defined")
+
+        with mock.patch("src.lw.combat_ext.CustomCharManager") as manager_class:
+            manager_class.return_value.get_impl_name.return_value = "我的自定义模板"
+
+            self.assertEqual(task.lw_char_implementation_name(char), "我的自定义模板")
+
 
 if __name__ == "__main__":
     unittest.main()
