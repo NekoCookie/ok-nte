@@ -22,6 +22,7 @@ class DailyRoutineExtMixin:
         self.task_failure_details: dict[str, list[str]] = {}
         self._retry_plan: tuple[DailyRoutineAccountResult, ...] = ()
         self._retry_return_account: DailyRoutineAccountResult | None = None
+        self._retry_home_account: DailyRoutineAccountResult | None = None
         self._active_retry_task_ids: frozenset[str] = frozenset()
         self._current_daily_account_uid: str | None = None
         self._recorded_status_id: int | None = None
@@ -58,8 +59,10 @@ class DailyRoutineExtMixin:
         retry_plan = tuple(result for result in self.account_results if result.failed)
         if not retry_plan or not self.lw_can_retry_failed_items():
             return False
+        if len(self.account_results) > 1:
+            self._retry_home_account = self.account_results[0]
         self._retry_plan = retry_plan
-        self._retry_return_account = self.account_results[0] if len(self.account_results) > 1 else None
+        self._retry_return_account = getattr(self, "_retry_home_account", None)
         return True
 
     def lw_start_retry_failed_items(self, start_controller):
@@ -179,6 +182,9 @@ class DailyRoutineExtMixin:
         """Run account summaries and retries around the unchanged RU daily workflow."""
 
         retry_plan, return_account = self.lw_take_retry_plan()
+        if not retry_plan:
+            # A full daily run establishes a new account-cycle boundary.
+            self._retry_home_account = None
         self.lw_begin_daily_run()
         try:
             if retry_plan:

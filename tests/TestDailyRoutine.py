@@ -493,10 +493,35 @@ class TestDailyRoutineStart(unittest.TestCase):
         task.account_results = [first, second]
         task._retry_plan = ()
         task._retry_return_account = None
+        task._retry_home_account = None
 
         self.assertTrue(task.lw_prepare_retry_failed_items())
         self.assertEqual(task._retry_plan, (first, second))
         self.assertIs(task._retry_return_account, first)
+
+    def test_repeated_retry_keeps_the_original_first_account_as_return_target(self):
+        first = DailyRoutineAccountResult("账号 1", "1001", (), (), (), ())
+        second = DailyRoutineAccountResult("账号 2", "1002", (), ("gift",), (), ())
+        task = object.__new__(DailyRoutineTask)
+        task.account_results = [second]
+        task._retry_home_account = first
+        task._retry_plan = ()
+        task._retry_return_account = None
+        task._current_daily_account_uid = "1001"
+        task.do_run = Mock()
+        task.lw_record_current_routine_result = Mock()
+
+        self.assertTrue(task.lw_prepare_retry_failed_items())
+        with patch(
+            "src.tasks.SwitchAccountTask.switch_account",
+            side_effect=[("1002", "1001"), ("1001", "1002")],
+        ) as switch_account:
+            task.lw_run_retry_plan(task._retry_plan, task._retry_return_account)
+
+        self.assertEqual(
+            [call.args for call in switch_account.call_args_list],
+            [(task, "1002"), (task, "1001")],
+        )
 
     def test_multi_account_retry_requires_identified_account_ids(self):
         first = DailyRoutineAccountResult(
