@@ -130,7 +130,7 @@ at `HEAD` only and was not changed as part of this sync.
 | Old local contract | `lw_char_dict` extended the removed `CharFactory.char_dict`, and existing user databases used `char_requiem` and template combo IDs. |
 | New RU contract | `CharRegistry.register()` is the extension API; persisted characters reference `impl_id` values such as `builtin:requiem`. |
 | Migration | `register_lw_char_implementations()` uses the registry API; the registry extension point and the five LW legacy-ID mappings are explicitly marked `[lw]`. |
-| Regression | `TestCharImplDb` migrates a legacy database containing every LW legacy ID, including the four role templates and Requiem; it asserts every persisted `impl_id` and the scanned Requiem registry/display name. |
+| Regression | `TestCharImplDb` migrates a pre-v7 database containing every LW legacy ID, including the four role templates and Requiem; it asserts every persisted `impl_id` and the scanned Requiem registry/display name. |
 | Commit | `6818c49`, `7d37ed9` |
 | Status | verified |
 

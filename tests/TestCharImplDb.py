@@ -31,9 +31,9 @@ class TestCharImplDb(unittest.TestCase):
         CustomCharDb.reset_instance()
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_v6_records_migrate_to_impl_ids(self):
+    def test_pre_v7_records_migrate_all_lw_impl_ids(self):
         legacy = {
-            "schema_version": 6,
+            "schema_version": 5,
             "combos": {"combo_text": {"name": "Text", "content": "skill"}},
             "characters": {
                 "char_builtin": {"name": "Zero", "combo_id": "char_zero", "feature_ids": []},
