@@ -156,6 +156,26 @@ class TestDailyAccountCycle(unittest.TestCase):
         sw.assert_called_once_with(daily)
         daily.do_run.assert_called_once()
 
+    def test_cycle_records_account_ids_for_later_targeted_retry(self):
+        switch = MagicMock()
+        switch.config = {
+            SwitchAccountTask.CONF_CYCLE_WITH_DAILY: True,
+            SwitchAccountTask.CONF_SWITCH_BACK: False,
+        }
+        daily = self._daily(switch)
+        daily.lw_record_current_routine_result = MagicMock()
+        daily.lw_set_current_daily_account = MagicMock()
+        with patch(
+            "src.tasks.SwitchAccountTask.switch_account", return_value=("167250072", "167365281")
+        ):
+            daily.lw_daily_account_cycle()
+
+        self.assertEqual(
+            [call.args for call in daily.lw_record_current_routine_result.call_args_list],
+            [("账号 1", "167365281"), ("账号 2", "167250072")],
+        )
+        daily.lw_set_current_daily_account.assert_called_once_with("167250072")
+
     def test_cycle_switches_back_to_original_when_enabled(self):
         switch = MagicMock()
         switch.config = {

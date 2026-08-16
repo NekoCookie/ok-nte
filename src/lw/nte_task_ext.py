@@ -96,23 +96,34 @@ class NTETaskExtMixin(_TaskProxy):
 
         record_result = getattr(self, "lw_record_current_routine_result", None)
 
-        def record_account_result(account_name):
+        def record_account_result(account_name, account_uid=None):
             if callable(record_result):
-                record_result(account_name)
+                record_result(account_name, account_uid)
+
+        set_current_account = getattr(self, "lw_set_current_daily_account", None)
+
+        def set_current_daily_account(account_uid):
+            if callable(set_current_account):
+                set_current_account(account_uid)
 
         switch = self.get_task_by_class(SwitchAccountTask)
         if not switch or not switch.config.get(SwitchAccountTask.CONF_CYCLE_WITH_DAILY):
             record_account_result("当前账号")
             return
         self.log_info("日常任务完成, 自动切换账号再跑一轮", notify=True)
-        _, original = switch_account(self)
-        record_account_result("账号 1")
+        second_account_uid, first_account_uid = switch_account(self)
+        set_current_daily_account(second_account_uid)
+        record_account_result("账号 1", first_account_uid)
         self.do_run()
-        record_account_result("账号 2")
+        record_account_result("账号 2", second_account_uid)
         if switch.config.get(SwitchAccountTask.CONF_SWITCH_BACK):
             # original 为 None(面板打开时已展开, 没读到折叠态原UID)时退化为"切到另一个"
-            self.log_info(f"第二轮日常完成, 切回原账号 {original or '<另一个账号>'}", notify=True)
-            switch_account(self, original or "")
+            self.log_info(
+                f"第二轮日常完成, 切回原账号 {first_account_uid or '<另一个账号>'}",
+                notify=True,
+            )
+            selected_account_uid, _ = switch_account(self, first_account_uid or "")
+            set_current_daily_account(selected_account_uid)
 
     def _read_confirm_btn_text(self, btn):
         # 模板只是按钮端头, 文字在旁边, 向左右各扩2倍宽; 越界box会被crop_image

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from src.Labels import Labels
-from src.lw.daily_routine_ext import DailyRoutineExtMixin
+from src.lw.daily_routine_ext import DailyRoutineAccountResult, DailyRoutineExtMixin
 from src.lw.daily_routine_ui_ext import DailyRoutineTabExtMixin
 from src.tasks.AnomalyHunter import AnomalyHunter
 from src.tasks.AnomalyTask import AnomalyTask
@@ -257,7 +257,7 @@ class TestDailyRoutineStart(unittest.TestCase):
         self.assertTrue(started)
         controller.do_start.assert_called_once_with(routine_task)
 
-    def test_starts_only_the_latest_account_failed_items_on_retry(self):
+    def test_starts_the_failed_account_retry_plan(self):
         routine_task = Mock(enabled=False, running=False)
         routine_task.lw_prepare_retry_failed_items.return_value = True
         controller = Mock()
@@ -272,14 +272,16 @@ class TestDailyRoutineStart(unittest.TestCase):
     def test_rejected_retry_start_clears_the_pending_retry_queue(self):
         routine_task = Mock()
         routine_task.lw_prepare_retry_failed_items.return_value = True
-        routine_task._retry_task_ids = ("coffee",)
+        routine_task._retry_plan = (Mock(),)
+        routine_task._retry_return_account = Mock()
         controller = Mock()
         controller.do_start.return_value = False
 
         started = DailyRoutineExtMixin.lw_start_retry_failed_items(routine_task, controller)
 
         self.assertFalse(started)
-        self.assertEqual(routine_task._retry_task_ids, ())
+        self.assertEqual(routine_task._retry_plan, ())
+        self.assertIsNone(routine_task._retry_return_account)
 
     def test_daily_routine_do_run_executes_selected_tasks_in_order_and_records_results(self):
         task = object.__new__(DailyRoutineTask)
@@ -439,20 +441,80 @@ class TestDailyRoutineStart(unittest.TestCase):
     def test_daily_retry_does_not_extend_the_ru_do_run_signature(self):
         self.assertEqual(list(inspect.signature(DailyRoutineTask.do_run).parameters), ["self"])
 
-    def test_retry_run_does_not_start_the_account_cycle(self):
+    def test_retry_run_uses_the_account_retry_plan_without_starting_account_cycle(self):
         task = object.__new__(DailyRoutineTask)
         task.lw_begin_daily_run = Mock()
-        task.lw_take_retry_task_ids = Mock(return_value=("coffee",))
-        task.do_run = Mock()
-        task.lw_record_current_routine_result = Mock()
+        retry_plan = (Mock(),)
+        return_account = Mock()
+        task.lw_take_retry_plan = Mock(return_value=(retry_plan, return_account))
+        task.lw_run_retry_plan = Mock()
         task.lw_daily_account_cycle = Mock()
         task.lw_finish_daily_run = Mock()
 
         task.lw_run_daily()
 
-        task.do_run.assert_called_once_with()
-        task.lw_record_current_routine_result.assert_called_once_with("当前账号")
+        task.lw_run_retry_plan.assert_called_once_with(retry_plan, return_account)
         task.lw_daily_account_cycle.assert_not_called()
+
+    def test_retry_plan_includes_failures_from_both_accounts_and_returns_to_first(self):
+        first = DailyRoutineAccountResult(
+            "账号 1", "1001", (), ("coffee",), (), ()
+        )
+        second = DailyRoutineAccountResult(
+            "账号 2", "1002", (), ("gift",), (), ()
+        )
+        task = object.__new__(DailyRoutineTask)
+        task.account_results = [first, second]
+        task._retry_plan = ()
+        task._retry_return_account = None
+
+        self.assertTrue(task.lw_prepare_retry_failed_items())
+        self.assertEqual(task._retry_plan, (first, second))
+        self.assertIs(task._retry_return_account, first)
+
+    def test_multi_account_retry_requires_identified_account_ids(self):
+        first = DailyRoutineAccountResult(
+            "账号 1", None, (), ("coffee",), (), ()
+        )
+        second = DailyRoutineAccountResult(
+            "账号 2", "1002", (), ("gift",), (), ()
+        )
+        task = object.__new__(DailyRoutineTask)
+        task.account_results = [first, second]
+        task._retry_plan = ()
+        task._retry_return_account = None
+
+        self.assertFalse(task.lw_can_retry_failed_items())
+        self.assertFalse(task.lw_prepare_retry_failed_items())
+        self.assertEqual(task._retry_plan, ())
+
+    def test_retry_plan_runs_each_failed_account_then_returns_to_first(self):
+        first = DailyRoutineAccountResult(
+            "账号 1", "1001", (), ("coffee",), (), ()
+        )
+        second = DailyRoutineAccountResult(
+            "账号 2", "1002", (), ("gift",), (), ()
+        )
+        task = object.__new__(DailyRoutineTask)
+        task._current_daily_account_uid = "1002"
+        task.do_run = Mock()
+        task.lw_record_current_routine_result = Mock()
+
+        with patch(
+            "src.tasks.SwitchAccountTask.switch_account",
+            side_effect=[("1001", "1002"), ("1002", "1001"), ("1001", "1002")],
+        ) as switch_account:
+            task.lw_run_retry_plan((first, second), first)
+
+        self.assertEqual(
+            [call.args for call in switch_account.call_args_list],
+            [(task, "1001"), (task, "1002"), (task, "1001")],
+        )
+        self.assertEqual(task.do_run.call_count, 2)
+        self.assertEqual(
+            [call.args for call in task.lw_record_current_routine_result.call_args_list],
+            [("账号 1", "1001"), ("账号 2", "1002")],
+        )
 
 
 class TestFurnitureTask(unittest.TestCase):
