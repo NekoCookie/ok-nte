@@ -42,5 +42,49 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         parent_load.assert_called_once_with()
 
 
+class TestRequiemCombatConfigTaskExchangePaths(unittest.TestCase):
+    def make_task(self):
+        return RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
+
+    def test_exchange_directory_is_created_under_data_export(self):
+        task = self.make_task()
+        with (
+            mock.patch(
+                "src.tasks.trigger.RequiemCombatConfigTask.get_relative_path",
+                return_value="D:/workspace/data_export",
+            ) as get_relative_path,
+            mock.patch("src.tasks.trigger.RequiemCombatConfigTask.os.makedirs") as makedirs,
+        ):
+            self.assertEqual(task._preset_exchange_directory(), "D:/workspace/data_export")
+
+        get_relative_path.assert_called_once_with("data_export")
+        makedirs.assert_called_once_with("D:/workspace/data_export", exist_ok=True)
+
+    def test_export_dialog_defaults_to_data_export(self):
+        task = self.make_task()
+        task._preset_exchange_directory = mock.Mock(return_value="D:/workspace/data_export")
+
+        with mock.patch(
+            "PySide6.QtWidgets.QFileDialog.getSaveFileName", return_value=("", "")
+        ) as get_save_file_name:
+            task._preset_export()
+
+        self.assertEqual(
+            get_save_file_name.call_args.args[2],
+            os.path.join("D:/workspace/data_export", "安魂曲配置.json"),
+        )
+
+    def test_import_dialog_defaults_to_data_export(self):
+        task = self.make_task()
+        task._preset_exchange_directory = mock.Mock(return_value="D:/workspace/data_export")
+
+        with mock.patch(
+            "PySide6.QtWidgets.QFileDialog.getOpenFileName", return_value=("", "")
+        ) as get_open_file_name:
+            task._preset_import()
+
+        self.assertEqual(get_open_file_name.call_args.args[2], "D:/workspace/data_export")
+
+
 if __name__ == "__main__":
     unittest.main()

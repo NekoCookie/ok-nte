@@ -181,6 +181,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_PRESET_OPS = "档位存取"        # 两个按钮: 保存到该档位 / 载入该档位
     CONF_PRESET_FILE = "配置文件"       # 两个按钮: 导出到文件 / 从文件导入
     PRESET_FILE = "configs/RequiemPresets.json"  # 4 套档位存这里
+    EXCHANGE_DIRECTORY = "data_export"
+    EXCHANGE_FILE_NAME = "安魂曲配置.json"
 
     # 方案一/二的精确时序统一放在 src/combat/requiem_combo.py(宏与实战主C共用, 改一处两边同步)。
     # 一轮结束后, 若仍按着触发键, 停这么久再进下一轮(对齐参考的 Sleep(200))。
@@ -728,10 +730,23 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         n = self._apply_values(values)
         self.log_info(f"已载入档位 {slot} 的配置({n}项)", notify=True)
 
+    def _preset_exchange_directory(self):
+        path = get_relative_path(self.EXCHANGE_DIRECTORY)
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def _preset_export_default_path(self):
+        return os.path.join(self._preset_exchange_directory(), self.EXCHANGE_FILE_NAME)
+
     def _preset_export(self, *args):
         import json
         from PySide6.QtWidgets import QFileDialog
-        path, _ = QFileDialog.getSaveFileName(None, "导出安魂曲配置", "安魂曲配置.json", "JSON (*.json)")
+        path, _ = QFileDialog.getSaveFileName(
+            None,
+            "导出安魂曲配置",
+            self._preset_export_default_path(),
+            "JSON (*.json)",
+        )
         if not path:
             return
         try:
@@ -745,7 +760,12 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     def _preset_import(self, *args):
         import json
         from PySide6.QtWidgets import QFileDialog
-        path, _ = QFileDialog.getOpenFileName(None, "从文件导入安魂曲配置", "", "JSON (*.json)")
+        path, _ = QFileDialog.getOpenFileName(
+            None,
+            "从文件导入安魂曲配置",
+            self._preset_exchange_directory(),
+            "JSON (*.json)",
+        )
         if not path:
             return
         try:
