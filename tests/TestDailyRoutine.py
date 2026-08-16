@@ -552,3 +552,38 @@ class TestDailyRoutineRetryUi(unittest.TestCase):
 
         routine_task.lw_start_retry_failed_items.assert_called_once_with(controller)
         tab.retry_button.setEnabled.assert_called_once_with(False)
+
+
+class _SwitchAccountTabHarness(DailyRoutineTabExtMixin):
+    def __init__(self, switch_account_task):
+        self._switch_account_task = switch_account_task
+        self._lw_switch_account_card = None
+        self.routine_settings_view = Mock()
+        self.routine_settings_layout = Mock()
+
+    def get_task(self, task_class):
+        return self._switch_account_task
+
+
+class TestDailyRoutineUiExtensions(unittest.TestCase):
+    @patch("src.lw.daily_routine_ui_ext.TaskCard")
+    def test_switch_account_card_is_added_once_below_routine_settings(self, task_card_class):
+        switch_account_task = Mock()
+        tab = _SwitchAccountTabHarness(switch_account_task)
+
+        tab.lw_install_switch_account_card()
+        tab.lw_install_switch_account_card()
+
+        task_card_class.assert_called_once_with(switch_account_task, True)
+        card = task_card_class.return_value
+        card.setParent.assert_called_once_with(tab.routine_settings_view)
+        tab.routine_settings_layout.addWidget.assert_called_once_with(card)
+        card.show.assert_called_once_with()
+
+    @patch("src.lw.daily_routine_ui_ext.TaskCard")
+    def test_switch_account_card_is_not_created_when_the_task_is_unavailable(self, task_card_class):
+        tab = _SwitchAccountTabHarness(None)
+
+        tab.lw_install_switch_account_card()
+
+        task_card_class.assert_not_called()

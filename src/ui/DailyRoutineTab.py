@@ -294,6 +294,7 @@ class DailyRoutineTab(DailyRoutineTabExtMixin, CustomTab):  # [lw]
         if routine_task is None:
             return
         self._install_routine_settings(routine_task)
+        self.lw_install_switch_account_card()  # [lw]
         while self.routine_layout.count():
             layout_item = self.routine_layout.takeAt(0)
             if widget := layout_item.widget():

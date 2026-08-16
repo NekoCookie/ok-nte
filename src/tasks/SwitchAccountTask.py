@@ -52,9 +52,7 @@ class SwitchAccountTask(NTEOneTimeTask, BaseNTETask):
         self.name = "切换账号"
         self.description = "退出当前账号, 从HOTTA已记住的账号列表免密切换到另一个账号并进入游戏"
         self.icon = FluentIcon.PEOPLE
-        # 与 DailyTask 同组, 显示在"日常任务"下方
-        self.group_name = "日常/周常"
-        self.group_icon = FluentIcon.CALENDAR
+        self.show_in_task_tab = False
         self.default_config.update(
             {
                 self.CONF_TARGET_UID: "",

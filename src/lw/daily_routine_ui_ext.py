@@ -1,12 +1,33 @@
-"""[lw] Retry controls for the daily-routine UI."""
+"""[lw] Daily-routine UI extensions."""
 
 from ok import og
 from ok.gui.Communicate import communicate
+from ok.gui.tasks.TaskCard import TaskCard
 from qfluentwidgets import FluentIcon, PushButton
+
+from src.tasks.SwitchAccountTask import SwitchAccountTask
 
 
 class DailyRoutineTabExtMixin:
-    """Attach the LW failed-item retry control without extending the RU tab behavior."""
+    """Attach LW controls to the RU daily-routine tab through explicit hooks."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._lw_switch_account_card = None
+
+    def lw_install_switch_account_card(self):
+        if self._lw_switch_account_card is not None:
+            return
+
+        switch_account_task = self.get_task(SwitchAccountTask)
+        if switch_account_task is None:
+            return
+
+        card = TaskCard(switch_account_task, True)
+        card.setParent(self.routine_settings_view)
+        self.routine_settings_layout.addWidget(card)
+        card.show()
+        self._lw_switch_account_card = card
 
     def lw_install_retry_button(self, action_layout):
         self.retry_button = PushButton(FluentIcon.SYNC, self.tr("重试失败项"), self.action_bar)
