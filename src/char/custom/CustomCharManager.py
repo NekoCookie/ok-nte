@@ -137,6 +137,13 @@ class CustomCharManager:
 
     def validate_db(self):
         self._db.reload()
+        # [lw] Repair only records proven by the pre-v7 backup; it is a one-time operation.
+        restored_names = self._db.restore_lw_legacy_template_impl_ids()
+        if restored_names:
+            logger.warning(
+                "Restored LW character implementations from the pre-v7 migration backup: "
+                + ", ".join(restored_names)
+            )
         self._cleanup_orphan_feature_images()
         self._invalidate_feature_cache()
 

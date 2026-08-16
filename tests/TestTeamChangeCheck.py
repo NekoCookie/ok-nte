@@ -139,6 +139,33 @@ class TestTeamShrinkConfirm(unittest.TestCase):
         t._reload_combat_team.assert_not_called()
         self.assertIsNone(t._roster_monitor()._size_candidate)
 
+    def test_visible_removed_slot_rejects_sustained_false_shrink(self):
+        # 实机回归: 3 -> 2 时第3槽仍有0.86头像匹配, 不是减员, 不得重载丢安魂曲。
+        t = make_reload_task()
+        t.chars = [mock.MagicMock(), mock.MagicMock(), mock.MagicMock()]
+        t.in_team = mock.MagicMock(side_effect=[(True, 0, 2), (True, 0, 2)])
+        t.lw_dump_char_slot_scores.return_value = [0.99, 0.55, 0.86, 0.0]
+        with mock.patch("src.lw.combat_ext.time.time", side_effect=[10.0, 11.0]):
+            self.assertTrue(t._reload_if_team_size_changed())
+            self.assertTrue(t._reload_if_team_size_changed())
+
+        t._reload_combat_team.assert_not_called()
+        self.assertIsNone(t._roster_monitor()._size_candidate)
+
+    def test_initial_snapshot_expands_from_visible_portrait(self):
+        # 首帧文字槽漏安魂曲时, 用头像库交叉识别补回第3人再进入 planner。
+        t = make_reload_task()
+        t.chars = []
+        visible = mock.MagicMock(confidence=0.95)
+        hidden = mock.MagicMock(confidence=0.0)
+        t._do_load_char = mock.MagicMock(side_effect=[visible, hidden])
+        t._is_unknown_char = mock.MagicMock(side_effect=[False, True])
+
+        count = t._expand_initial_snapshot_from_portraits(2, [])
+
+        self.assertEqual(count, 3)
+        self.assertEqual(t._do_load_char.call_count, 2)
+
     def test_recheck_throttled_within_interval(self):
         # 距上次检测不足 TEAM_RECHECK_INTERVAL → 短路, 不重复识别
         t = make_reload_task()

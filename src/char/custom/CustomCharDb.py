@@ -266,6 +266,20 @@ class CustomCharDb:
             if self._normalize_current_data():
                 self._save_locked()
 
+    def restore_lw_legacy_template_impl_ids(self) -> list[str]:
+        """Restore known LW template IDs from the migration backup, once."""
+        # [lw] The source v7 migration could run before LW legacy IDs were registered.
+        from src.lw.custom_char_recovery import restore_legacy_template_impl_ids
+
+        with self._lock:
+            restored_names = restore_legacy_template_impl_ids(
+                self._data,
+                f"{self.db_path}.pre-v7.bak",
+            )
+            if restored_names:
+                self._save_locked()
+            return restored_names
+
     def find_character_id_by_name(self, char_name: str) -> str | None:
         target = self._as_text(char_name).strip()
         if self._is_blank_text(target):

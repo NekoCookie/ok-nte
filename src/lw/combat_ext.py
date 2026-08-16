@@ -50,6 +50,8 @@ class CombatExtMixin(_TaskProxy):
     # 需覆盖开战入场动画(~1.5s), 期间队伍栏头像识别不全会得到无效快照
     LOAD_CHARS_SNAPSHOT_RETRY_WINDOW = 2.5
     LOAD_CHARS_SNAPSHOT_RETRY_INTERVAL = 0.08
+    INITIAL_ROSTER_PORTRAIT_THRESHOLD = 0.8
+    TEAM_SHRINK_RETAINED_SLOT_THRESHOLD = 0.7
     COMBAT_START_RESOURCE_SETTLE_TIMEOUT = 0.6
     COMBAT_START_RESOURCE_SETTLE_INTERVAL = 0.08
     COMBAT_START_RESOURCE_STABLE_FRAMES = 2
@@ -733,6 +735,11 @@ class CombatExtMixin(_TaskProxy):
             confirm_interval=self.TEAM_CHANGE_CONFIRM_INTERVAL,
             reliable_expansion=reliable_expansion,
         )
+        if count < self.team_size and self._reject_shrink_with_visible_removed_slot(
+            count,
+            log_candidate=status == "candidate",
+        ):
+            return False
         if status == "candidate":
             self.log_info(f"team size change candidate during action {self.team_size} -> {count}")
             return False
@@ -905,27 +912,56 @@ class CombatExtMixin(_TaskProxy):
             confirm_interval=self.TEAM_CHANGE_CONFIRM_INTERVAL,
             reliable_expansion=reliable_expansion,
         )
+        if count < self.team_size and self._reject_shrink_with_visible_removed_slot(
+            count,
+            log_candidate=status == "candidate",
+        ):
+            return True
         if status == "ignored_expansion":
             self.log_info(
                 f"team size expansion ignored during combat {self.team_size} -> {count}"
             )
             return True
 
-        if status == "candidate" and count < self.team_size:
-            # 首次检测到减员即 dump 各槽匹配分: 擦边(0.6x)=抖动误判, 归零(<0.3)=真减员
-            try:
-                scores = self.lw_dump_char_slot_scores()
-                fmt = ", ".join(f"槽{i + 1}={s:.2f}" for i, s in enumerate(scores))
-                self.log_info(
-                    f"team shrink candidate {self.team_size} -> {count} @current{current_index}, "
-                    f"各槽头像匹配分[{fmt}] (>=0.70命中算有人; 0.00=低于0.30)"
-                )
-            except Exception as e:
-                self.log_info(f"team shrink diag failed: {e}")
-
         if change is not None:
             self.log_info(f"team size changed during combat {self.team_size} -> {count}")
             raise TeamReloadRequested(change)
+        return True
+
+    def _reject_shrink_with_visible_removed_slot(
+        self,
+        observed_count: int,
+        *,
+        log_candidate: bool = False,
+    ) -> bool:
+        """Keep the roster when an allegedly removed portrait is still visible."""
+
+        try:
+            scores = self.lw_dump_char_slot_scores()
+        except Exception as error:
+            self.log_info(f"team shrink portrait verification failed: {error}")
+            return False
+
+        retained_slots = [
+            index
+            for index in range(observed_count, self.team_size)
+            if safe_get(scores, index, 0.0) >= self.TEAM_SHRINK_RETAINED_SLOT_THRESHOLD
+        ]
+        if not retained_slots:
+            if log_candidate:
+                score_text = ", ".join(f"slot{i + 1}={score:.2f}" for i, score in enumerate(scores))
+                self.log_info(
+                    f"team shrink candidate {self.team_size} -> {observed_count}; "
+                    f"portrait scores [{score_text}]"
+                )
+            return False
+
+        self._roster_monitor().clear_size()
+        slot_text = ", ".join(str(index + 1) for index in retained_slots)
+        self.log_info(
+            f"team shrink ignored {self.team_size} -> {observed_count}; "
+            f"removed slot portrait still visible: {slot_text}"
+        )
         return True
 
     # ---------- 队伍加载(弱识别防抖) ----------
@@ -987,6 +1023,29 @@ class CombatExtMixin(_TaskProxy):
                 return False
         return True
 
+    def _expand_initial_snapshot_from_portraits(self, count: int, fixed_slots) -> int:
+        """Cross-check a first roster snapshot against custom portrait recognition."""
+
+        if self.team_size or fixed_slots:
+            return count
+
+        expanded_count = count
+        for index in range(count, 4):
+            char = self._do_load_char(index, fixed_slots)
+            if (
+                self._is_unknown_char(char)
+                or char.confidence < self.INITIAL_ROSTER_PORTRAIT_THRESHOLD
+            ):
+                break
+            expanded_count = index + 1
+
+        if expanded_count != count:
+            self.log_info(
+                f"load_chars initial snapshot expanded by portrait recognition "
+                f"{count} -> {expanded_count}"
+            )
+        return expanded_count
+
     def lw_load_chars(self, preserve_on_weak=True) -> bool:
         """load_chars 的唯一实现：快照重试 + unknown 防抖重试/保留旧队伍。"""
         ret = False
@@ -997,9 +1056,9 @@ class CombatExtMixin(_TaskProxy):
             return ret
 
         current_index, count = snapshot
-        self.log_info(f"load_chars count {count} current_index {current_index}")
-
         fixed_slots = self._get_fixed_slots()
+        count = self._expand_initial_snapshot_from_portraits(count, fixed_slots)
+        self.log_info(f"load_chars count {count} current_index {current_index}")
         resnap_weak_single_unknown = True
         while True:
             restart_with_new_snapshot = False
