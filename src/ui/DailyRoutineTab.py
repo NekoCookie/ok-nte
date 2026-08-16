@@ -1,3 +1,4 @@
+from ok import og
 from ok.gui.common.design_system import DesignToken, configure_page_layout
 from ok.gui.common.style_sheet import StyleSheet
 from ok.gui.tasks.TaskCard import TaskCard
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     CheckBox,
     ExpandLayout,
+    FluentIcon,
     HorizontalSeparator,
     PushButton,
     ScrollArea,
