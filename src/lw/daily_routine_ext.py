@@ -103,8 +103,11 @@ class DailyRoutineExtMixin:
             for result in retry_plan:
                 self.lw_switch_to_daily_account(result.account_uid)
                 self._active_retry_task_ids = frozenset(result.failed)
-                self.do_run()
-                self.lw_record_current_routine_result(result.account_name, result.account_uid)
+                try:
+                    self.do_run()
+                finally:
+                    # Keep retry failures associated with the account being retried.
+                    self.lw_record_current_routine_result(result.account_name, result.account_uid)
         finally:
             self._active_retry_task_ids = frozenset()
             if return_account is not None:

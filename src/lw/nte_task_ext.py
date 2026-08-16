@@ -114,8 +114,11 @@ class NTETaskExtMixin(_TaskProxy):
         second_account_uid, first_account_uid = switch_account(self)
         set_current_daily_account(second_account_uid)
         record_account_result("账号 1", first_account_uid)
-        self.do_run()
-        record_account_result("账号 2", second_account_uid)
+        try:
+            self.do_run()
+        finally:
+            # Preserve the known account identity even when the second run aborts.
+            record_account_result("账号 2", second_account_uid)
         if switch.config.get(SwitchAccountTask.CONF_SWITCH_BACK):
             # original 为 None(面板打开时已展开, 没读到折叠态原UID)时退化为"切到另一个"
             self.log_info(

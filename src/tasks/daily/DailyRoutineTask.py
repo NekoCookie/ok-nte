@@ -375,8 +375,10 @@ class DailyRoutineTask(DailyRoutineExtMixin, NTEOneTimeTask, BaseNTETask):
                     shift_id(task)
         except TaskDisabledException:
             raise
-        except Exception as error:
-            self.log_error(f"任务运行失败: {task.name}", error)
+        except Exception as task_error:
+            # [lw] Keep the exception available for the LW failure-details hook.
+            error = task_error
+            self.log_error(f"任务运行失败: {task.name}", task_error)
             result = False
 
         if not result:

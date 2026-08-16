@@ -1,5 +1,6 @@
 import inspect
 import unittest
+from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -9,6 +10,7 @@ from src.lw.daily_routine_ui_ext import DailyRoutineTabExtMixin
 from src.tasks.AnomalyHunter import AnomalyHunter
 from src.tasks.AnomalyTask import AnomalyTask
 from src.tasks.BaseNTETask import BaseNTETask
+from src.tasks.SwitchAccountTask import SwitchAccountTask
 from src.tasks.daily.DailyRoutineTask import (
     DailyRoutineTask,
     routine_has_active_tasks,
@@ -328,6 +330,30 @@ class TestDailyRoutineStart(unittest.TestCase):
         first.do_run.assert_called_once_with()
         second.do_run.assert_called_once_with()
 
+    def test_daily_routine_keeps_exception_for_lw_failure_recording(self):
+        task = object.__new__(DailyRoutineTask)
+        task.task_status = {"success": [], "failed": [], "skipped": [], "pending": ["coffee"]}
+        task.task_failure_details = {}
+        task.current_task_key = None
+        task.log_info = Mock()
+        task.log_error = Mock()
+        task.screenshot = Mock()
+        task.info_set = Mock()
+        task.ensure_main = Mock()
+        task.lw_is_retrying_task = Mock(return_value=False)
+        task.lw_record_task_failure = Mock()
+        task._active_task_context = lambda *_args: nullcontext()
+        task.task_for_id = Mock()
+        task.task_for_id.return_value = Mock(do_run=Mock(side_effect=RuntimeError("boom")))
+
+        task._execute_routine_item({"id": "coffee", "enabled": True})
+
+        self.assertEqual(task.task_status["failed"], ["coffee"])
+        failure = task.lw_record_task_failure.call_args.args
+        self.assertEqual(failure[0], "coffee")
+        self.assertIsInstance(failure[2], RuntimeError)
+
+
     def test_active_task_context_delegates_sleep_checks(self):
         task = object.__new__(DailyRoutineTask)
         task._active_routine_task = None
@@ -515,6 +541,42 @@ class TestDailyRoutineStart(unittest.TestCase):
             [call.args for call in task.lw_record_current_routine_result.call_args_list],
             [("账号 1", "1001"), ("账号 2", "1002")],
         )
+
+    def test_account_cycle_records_second_account_when_run_raises(self):
+        task = object.__new__(DailyRoutineTask)
+        switch = Mock()
+        switch.config = {SwitchAccountTask.CONF_CYCLE_WITH_DAILY: True}
+        task.get_task_by_class = Mock(return_value=switch)
+        task.log_info = Mock()
+        task.account_results = []
+        task.task_failure_details = {}
+        task._recorded_status_id = None
+        task.task_status = {"success": ["daily_claim"], "failed": [], "skipped": [], "pending": []}
+        task._current_daily_account_uid = "1001"
+
+        def fail_second_run():
+            task.task_status = {
+                "success": [],
+                "failed": ["daily_anomaly"],
+                "skipped": [],
+                "pending": [],
+            }
+            raise RuntimeError("second account failed")
+
+        task.do_run = Mock(side_effect=fail_second_run)
+
+        with patch(
+            "src.tasks.SwitchAccountTask.switch_account",
+            return_value=("1002", "1001"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "second account failed"):
+                task.lw_daily_account_cycle()
+
+        self.assertEqual(
+            [(result.account_name, result.account_uid, result.failed) for result in task.account_results],
+            [("账号 1", "1001", ()), ("账号 2", "1002", ("daily_anomaly",))],
+        )
+        self.assertTrue(task.lw_can_retry_failed_items())
 
 
 class TestFurnitureTask(unittest.TestCase):
