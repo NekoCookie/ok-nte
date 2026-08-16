@@ -14,7 +14,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.char.Requiem import Requiem
-from src.combat.planner import ActionResult
+from src.combat.planner import ActionResult, CombatPlanner
 
 
 class FakeClock:
@@ -134,6 +134,19 @@ class TestRequiemSkillClassification(unittest.TestCase):
             cooldown=r.REAL_SKILL_CD,
             max_duration=r.REAL_SKILL_RETRY_MAX_DURATION,
         )
+
+    def test_real_skill_overlap_skips_field_time_fallback(self):
+        r = make_requiem(self.clock, skill_kind="real", in_long_cd=True)
+        r.is_dead = False
+        r.has_intro = False
+        planner = CombatPlanner(r.task)
+        planner.reset([r])
+
+        result = planner.perform_current_char(r)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.name, "Requiem_real_skill")
+        r.continues_normal_attack.assert_not_called()
 
     # ---- 进的是短CD(被闪避打断的假成功)→ 不切, 修掉"短CD误当放成功" ----
     def test_real_skill_short_cd_does_not_switch(self):

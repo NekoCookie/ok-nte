@@ -821,12 +821,14 @@ class Requiem(MainDps):
         if engage > 0:
             self.engage_before_skill(engage)
         if self._try_land_real_skill():
-            return  # 一次就放进长CD(常见路径)→ 已 overlap
+            return True  # 一次就放进长CD(常见路径)→ 已 overlap
         # 通用 click_skill 已完成必要的打断恢复；复查最终长短 CD 决定是否下场。
         if self._real_skill_in_long_cd():
             self._mark_real_skill_overlap("settled")
+            return True
         else:
             self.logger.info("requiem REAL skill 未放进长CD(被打断/没放出), 不切, 下轮重试")
+            return False
 
     def _skills_disabled_for_test(self, task=None):
         """读"安魂曲配置"的"禁用技能大招(测试)"开关: 开=只站场打 combo, 方便单独测手感/闪避。"""
