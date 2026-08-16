@@ -43,6 +43,26 @@ class TestCharImplDb(unittest.TestCase):
                     "combo_id": "char_requiem",
                     "feature_ids": [],
                 },
+                "char_main_dps": {
+                    "name": "Main DPS",
+                    "combo_id": "template_main_dps",
+                    "feature_ids": [],
+                },
+                "char_buff_support": {
+                    "name": "Buff Support",
+                    "combo_id": "template_buff_support",
+                    "feature_ids": [],
+                },
+                "char_heal_support": {
+                    "name": "Heal Support",
+                    "combo_id": "template_heal_support",
+                    "feature_ids": [],
+                },
+                "char_sakiri_support": {
+                    "name": "Sakiri Support",
+                    "combo_id": "template_sakiri_buff_support",
+                    "feature_ids": [],
+                },
             },
             "features": {},
             "fixed_team": {
@@ -61,6 +81,22 @@ class TestCharImplDb(unittest.TestCase):
         self.assertEqual(persisted["characters"]["char_builtin"]["impl_id"], "builtin:zero")
         self.assertEqual(persisted["characters"]["char_custom"]["impl_id"], "combo_text")
         self.assertEqual(persisted["characters"]["char_requiem"]["impl_id"], "builtin:requiem")
+        self.assertEqual(
+            persisted["characters"]["char_main_dps"]["impl_id"],
+            "builtin:template_main_dps",
+        )
+        self.assertEqual(
+            persisted["characters"]["char_buff_support"]["impl_id"],
+            "builtin:template_buff_support",
+        )
+        self.assertEqual(
+            persisted["characters"]["char_heal_support"]["impl_id"],
+            "builtin:template_heal_support",
+        )
+        self.assertEqual(
+            persisted["characters"]["char_sakiri_support"]["impl_id"],
+            "builtin:template_sakiri_buff_support",
+        )
         self.assertNotIn("combo_id", persisted["characters"]["char_builtin"])
         self.assertEqual(database.get_fixed_team()["slots"][0]["impl_id"], "builtin:zero")
 

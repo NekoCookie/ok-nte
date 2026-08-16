@@ -130,21 +130,9 @@ at `HEAD` only and was not changed as part of this sync.
 | Old local contract | `lw_char_dict` extended the removed `CharFactory.char_dict`, and existing user databases used `char_requiem` and template combo IDs. |
 | New RU contract | `CharRegistry.register()` is the extension API; persisted characters reference `impl_id` values such as `builtin:requiem`. |
 | Migration | `register_lw_char_implementations()` uses the registry API; the registry extension point and the five LW legacy-ID mappings are explicitly marked `[lw]`. |
-| Regression | `TestCharImplDb` migrates the legacy DB, resolves Requiem in the scanned registry, and checks its display name. `TestLWCustomCharRecovery` additionally restores an already-v7 blank LW assignment only from an ID-and-name-matched pre-v7 record, then proves the repair is one-time. |
-| Commit | `6818c49`, `7d37ed9`, `cf24d1f` |
-| Status | automated verification corrected; real-window acceptance is recorded in C-05a |
-
-### C-05a: Corrective acceptance for an already-migrated LW character database
-
-| Field | Evidence |
-| --- | --- |
-| Fault found after merge | A database migrated before the LW legacy template mappings were available retained schema v7 while clearing `impl_id` for the LW templates. The template source remained registered, but matched characters loaded as `BaseChar`. A later source-only mapping check could not repair the persisted blank value. |
-| Required result | When a current record has a blank implementation and its same-ID, same-name pre-v7 backup record names a known LW legacy template, restore that exact template once. Do not infer from a character name, modify nonblank choices, or repeat the repair after a later user edit. |
-| Migration | `src/lw/custom_char_recovery.py` owns the backup-constrained repair. `CustomCharDb` retains one `[lw]` persistence connection and `CustomCharManager` performs it during validation. |
-| Automated regression | `TestLWCustomCharRecovery` covers the identity constraint, no overwrite of an existing assignment, and the one-time marker. `TestTeamChangeCheck` covers opening roster portrait expansion and rejection of the observed false `3 -> 2` shrink when slot 3 still scores `0.86`. Full suite: `610` tests passed. |
-| Required real-window scenario | Restart the GUI, then run one combat with 早雾 + 残虹 + 安魂曲. The initial roster must contain all three with 早雾 shown as 早雾辅助; a transient `3 -> 2` observation must not reload while the third portrait remains at or above `0.70`. |
-| Commit | `cf24d1f` |
-| Status | automated verified; real-window pending |
+| Regression | `TestCharImplDb` migrates a legacy database containing every LW legacy ID, including the four role templates and Requiem; it asserts every persisted `impl_id` and the scanned Requiem registry/display name. |
+| Commit | `6818c49`, `7d37ed9` |
+| Status | verified |
 
 ### C-06: Combat snapshot and action-loop hooks
 
@@ -293,7 +281,7 @@ until the individual contracts and regression evidence are added below it.
 | Planner documentation | `docs/development/combat-planner.md` | Check changed planner APIs, examples, and associated tests | verified; current file matches `f608673^2`, see C-07 |
 | Localization | 13 `i18n/*/LC_MESSAGES/ok.po` or `ok.mo` paths | Verify no LW-visible strings were lost and generated catalogs match sources | verified; see L-01 |
 | Bootstrap and dependencies | `main.py`, `main_debug.py`, `pyproject.toml`, `uv.lock` | Verify startup and dependency contract changes against LW initialization | verified; see B-01 |
-| Character core | `src/char/BaseChar.py`, `Hotori.py`, `Nanally.py`, `Requiem.py`, `core/CharFactory.py`, `core/CharRegistry.py`, `custom/CustomCharDbMigrator.py` | Map character lifecycle, role registration, custom-character schema, and all LW callers | automated verified; C-05a real-window acceptance pending |
+| Character core | `src/char/BaseChar.py`, `Hotori.py`, `Nanally.py`, `Requiem.py`, `core/CharFactory.py`, `core/CharRegistry.py`, `custom/CustomCharDbMigrator.py` | Map character lifecycle, role registration, custom-character schema, and all LW callers | verified; see C-01, C-03 to C-05, and C-08 |
 | Combat core | `src/combat/BaseCombatTask.py`, `planner/core.py`, `planner/types.py` | Map session lifecycle, planner action/result contracts, interrupt and team-reload behavior | verified; see C-07 and C-09 |
 | Runtime infrastructure | `src/config.py`, `src/globals.py`, `src/interaction/NTEInteraction.py` | Check registration, global lifecycle, interaction semantics, and LW connections | verified; see R-01 and R-02; config is audited at HEAD because its worktree has user changes |
 | LW layer | `src/lw/chars.py`, `combat_ext.py`, `dsd_farm_ext.py`, `nte_task_ext.py` | Reapply each required LW behavior on current RU public APIs; no stale private calls or dual paths | verified; see L-02 and C-01 to C-09 |
@@ -309,7 +297,6 @@ matrix and must themselves obey the LW/RU boundary before the ledger can close.
 | --- | --- | --- | --- |
 | Account-aware daily summary and retry | `src/lw/daily_routine_ext.py`, `src/tasks/daily/DailyRoutineTask.py`, `src/tasks/daily/FurnitureTask.py`, `src/ui/DailyRoutineTab.py` | Move remaining daily-specific behavior behind `src/lw/` adapters or mark minimal RU connection points with `[lw]`; retain current tests | verified; see P-01 |
 | Interface-break repair | `src/lw/combat_ext.py`, `src/lw/fish_catch_ext.py` | Keep I-01 and I-02 regression coverage during later migration work | verified |
-| Persisted LW character-template recovery | `src/lw/custom_char_recovery.py`, `src/char/custom/CustomCharDb.py`, `src/char/custom/CustomCharManager.py`, `src/lw/combat_ext.py` | Preserve and recover backup-proven template IDs; verify first roster loading and false-shrink rejection in the stated real-window scenario | automated verified; C-05a real-window pending |
 
 ## Required evidence before closure
 
