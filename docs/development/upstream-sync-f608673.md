@@ -2,8 +2,11 @@
 
 ## Status
 
-**Complete.** Every acceptance-matrix row is marked `verified`; V-01 records the
-final full regression run. The user-modified `src/config.py` worktree was audited
+**Complete with corrective record I-03.** The original matrix lacked the Requiem
+planner-action result contract, so its earlier `verified` status did not prove the
+user-visible overlap handoff. I-03 records the missed behavior and its regression.
+Future syncs must use `upstream-sync-template.md` and cannot treat a green full
+suite as blanket completion. The user-modified `src/config.py` worktree was audited
 at `HEAD` only and was not changed as part of this sync.
 
 ## Immutable scope
@@ -37,6 +40,7 @@ at `HEAD` only and was not changed as part of this sync.
 | --- | --- | --- | --- | --- | --- | --- |
 | I-01 | `CustomCharManager._find_character_id_by_name` was removed by RU character-manager refactor | Auto-combat stopped twice with `AttributeError` after the first support skill | `CombatExtMixin` now uses the public `get_all_characters()` snapshot and stable `char_id` | `TestTeamChangeCheck` verifies the private API is not called | `ad031e6` | verified |
 | I-02 | `game_filters.isolate_cd_to_black` was renamed/removed | Static upstream-break scan found the stale fishing CD OCR reference | Use `isolate_text_to_black` | `test_fish_catching` executes the OCR branch and asserts the processor | `ad031e6` | verified |
+| I-03 | Requiem true-skill overlap changed from a direct call into a planner action | The prior implementation had no return-value consumer. During planner migration `cast_real_skill()` still returned `None`, so the RU planner correctly treated the action as failed and ran `planner_field_time` for about 1.3 to 2.5 seconds before switching. | Return `True` only after the real skill enters long CD and the overlap window is set; return `False` for short CD or failed casts. This preserves the current RU planner contract without restoring a legacy switch path. | `TestRequiemSkill.test_real_skill_overlap_skips_field_time_fallback`; 607-test full suite | `2bfad64` | verified |
 
 ## Contract records
 
