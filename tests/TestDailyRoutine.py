@@ -659,6 +659,19 @@ class TestFurnitureTask(unittest.TestCase):
         self.assertTrue(task.prepare_retry())
         self.assertEqual(task._retry_furniture, (Labels.anomaly_mammon,))
 
+    def test_ru_mammon_switch_is_preserved_by_lw_furniture_wrapper(self):
+        task = object.__new__(FurnitureTask)
+        task.LW_SUPPORTED_FURNITURE = (Labels.anomaly_fluff,)
+        task.config = {task.CONF_MAMMON: True}
+
+        self.assertEqual(
+            task._lw_configured_furniture(),
+            (Labels.anomaly_fluff, Labels.anomaly_mammon),
+        )
+
+        task.config[task.CONF_MAMMON] = False
+        self.assertEqual(task._lw_configured_furniture(), (Labels.anomaly_fluff,))
+
     def test_furniture_retry_does_not_extend_the_ru_claim_signature(self):
         self.assertEqual(
             list(inspect.signature(FurnitureTask.claim_anomaly_furniture).parameters), ["self"]
