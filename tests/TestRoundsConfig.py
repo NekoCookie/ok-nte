@@ -1,6 +1,7 @@
 import unittest
 
-from src.tasks.BaseNTETask import BaseNTETask, RoundState
+from src.tasks.BaseNTETask import BaseNTETask
+from src.tasks.mixin.RoundMixin import RoundState
 
 
 class TestRoundsConfig(unittest.TestCase):
@@ -35,7 +36,7 @@ class TestRoundsConfig(unittest.TestCase):
         self.assertEqual(task.info[task.INFO_FAILED_REASON], "目标未找到")
         self.assertIn(("info", "第 1 轮: 开始", {}), task.logs)
         self.assertIn(("error", "第 2 轮: 失败：目标未找到", {}), task.logs)
-        self.assertEqual(task.logs[-1], ("info", "测试任务结束，成功 1/3", {"notify": True}))
+        self.assertEqual(task.logs[-1], ("info", "测试任务结束, 成功 1/3", {"notify": True}))
 
     def test_begin_round_updates_a_changed_round_limit_without_resetting_counts(self):
         task = self._make_task()

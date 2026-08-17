@@ -233,6 +233,12 @@
             "file_name": "images/1.png",
             "width": 2560,
             "height": 1440
+        },
+        {
+            "id": 43,
+            "file_name": "images/0.png",
+            "width": 2560,
+            "height": 1440
         }
     ],
     "annotations": [
@@ -1019,7 +1025,7 @@
         {
             "id": 61,
             "image_id": 14,
-            "category_id": 42,
+            "category_id": 82,
             "bbox": [
                 26,
                 22,
@@ -1032,7 +1038,7 @@
         {
             "id": 62,
             "image_id": 28,
-            "category_id": 62,
+            "category_id": 84,
             "bbox": [
                 513,
                 339,
@@ -1292,7 +1298,7 @@
         {
             "id": 82,
             "image_id": 34,
-            "category_id": 82,
+            "category_id": 62,
             "bbox": [
                 64,
                 27,
@@ -1300,6 +1306,19 @@
                 77
             ],
             "area": 5390,
+            "iscrowd": 0
+        },
+        {
+            "id": 83,
+            "image_id": 43,
+            "category_id": 83,
+            "bbox": [
+                91,
+                1165,
+                65,
+                64
+            ],
+            "area": 4160,
             "iscrowd": 0
         }
     ],
@@ -1510,11 +1529,6 @@
             "supercategory": ""
         },
         {
-            "id": 42,
-            "name": "in_domain",
-            "supercategory": ""
-        },
-        {
             "id": 43,
             "name": "launcher_start_game",
             "supercategory": ""
@@ -1611,7 +1625,7 @@
         },
         {
             "id": 62,
-            "name": "heist_exit",
+            "name": "exit_2",
             "supercategory": ""
         },
         {
@@ -1711,7 +1725,17 @@
         },
         {
             "id": 82,
-            "name": "in_domain_2",
+            "name": "exit_1",
+            "supercategory": ""
+        },
+        {
+            "id": 83,
+            "name": "volleyball_restart",
+            "supercategory": ""
+        },
+        {
+            "id": 84,
+            "name": "heist_exit_panel",
             "supercategory": ""
         }
     ]

@@ -1,4 +1,3 @@
-import time
 
 import cv2
 import numpy as np
@@ -217,6 +216,7 @@ class AnomalyHunter(NTEOneTimeTask, BaseCombatTask):
         self.sleep(0.5)
 
     def enter_hunter(self, target: str):
+        self.sleep(3)
         self.walk_until_interac_or_combat(script=self.WALK_METHOD.get(target, ["w"]))
         if self.is_in_team() and self.find_interac():
             self.wait_until(
@@ -284,30 +284,8 @@ class AnomalyHunter(NTEOneTimeTask, BaseCombatTask):
                 ):
                     return result
 
-    def rotate_and_find_treasure(self, check_boss=False):
-        if result := self.find_boss_treasure():
-            return result
-        if check_boss:
-            if self.wait_until(self.is_boss, time_out=1):
-                return
-
-        def sleep(sec):
-            deadline = time.time() + sec
-            while time.time() < deadline:
-                if check_boss and self.is_boss():
-                    return True
-                self.sleep(0.1)
-
-        for i in range(4):
-            self.log_info(f"Boss宝箱查找次数：{i + 1}/4")
-            self.send_key("a")
-            if sleep(0.3):
-                return
-            self.middle_click()
-            if sleep(1):
-                return
-            if result := self.find_boss_treasure():
-                return result
+    def rotate_and_find_treasure(self):
+        return self.rotate_and_find(self.find_boss_treasure, self.is_boss)
 
     def walk_to_boss_treasure(self):
         if self.rotate_and_find_treasure():
@@ -336,7 +314,7 @@ class AnomalyHunter(NTEOneTimeTask, BaseCombatTask):
 
     def do_combat_and_claim(self):
         self.log_info("战斗前检查是否有上次未领取的BOSS宝箱")
-        if self.rotate_and_find_treasure(check_boss=True):
+        if self.rotate_and_find_treasure():
             self.log_info("发现BOSS宝箱, 跳过战斗")
         else:
             self.log_info("未发现BOSS宝箱, 调用战斗模块")
@@ -364,24 +342,3 @@ class AnomalyHunter(NTEOneTimeTask, BaseCombatTask):
                 pre_action=lambda: self.operate_click(0.609, 0.659, after_sleep=2),
             ):
                 return True
-
-    def exit_anomaly(self):
-        deadline = time.time() + 10
-        while time.time() < deadline:
-            if self.is_in_team():
-                if self.find_best_match_in_box(
-                    self.box_of_screen(0.004, 0.012, 0.061, 0.082),
-                    [Labels.in_domain, Labels.in_domain_2],
-                    threshold=0.7
-                ):
-                    self.send_key("esc", after_sleep=2)
-                else:
-                    return True
-            else:
-                if self.wait_click_confirm(
-                    lambda: self.send_key("esc", interval=1),
-                    range=(0.637, 0.607, 0.697, 0.709),
-                    raise_if_not_found=False,
-                    time_out=1,
-                ):
-                    self.sleep(2)

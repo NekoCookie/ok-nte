@@ -108,7 +108,7 @@ or consequences are not associated with this software.
 * **[Mirror酱](https://mirrorchyan.com/zh/projects?rid=ok-nte&channel=stable)**: 国内镜像，下载可能需要购买其平台的
   CD-KEY。
 * **[百度网盘](https://pan.baidu.com/s/102Mh1djq2B1T-cIJhct9Gg?pwd=okww)**: 免费下载
-* **[夸克网盘](https://pan.quark.cn/s/418018ddf7a0)**: 免费下载
+* **[夸克网盘](https://pan.quark.cn/s/24433f3febc1)**: 免费下载
 
 ### 方式二：从源码运行 (适合开发者)
 
@@ -126,13 +126,13 @@ or consequences are not associated with this software.
    # or
    pip install -r requirements.txt
    ```
-   
+
    **💡 提示**：每次更新代码后，建议重新运行此命令以确保依赖库为最新版本。
 4. **运行程序**：
    ```bash
    # 运行正式版
    python main.py
-   
+
    # 运行调试版 (会输出更详细的日志)
    python main_debug.py
    ```
@@ -145,7 +145,7 @@ or consequences are not associated with this software.
 
 > [!IMPORTANT]
 > 在启动自动化前，请务必检查并确认以下设置：
-> 
+>
 > * **图形设置**
 >     * **游戏亮度**：使用游戏 **默认亮度**。
 >     * **UI 设置**：**禁止** 所有会导致 UI 与默认不同的设置

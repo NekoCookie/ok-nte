@@ -1313,3 +1313,15 @@ msgstr "Auto Hide and Seek"
 
 msgid "徊影憧憧活动自动挂机: 自动点击开始匹配, 对局结束自动开始下一局"
 msgstr "Automate the Hiding Shadows event: start matchmaking automatically and start the next round when a match ends."
+
+msgid "排球之星"
+msgstr "Star of Volleyball"
+
+msgid "刷经验"
+msgstr "Farm EXP"
+
+msgid "点按G"
+msgstr "Tap G"
+
+msgid "挑战玛门"
+msgstr "Challenge Mammon"

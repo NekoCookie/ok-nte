@@ -22,7 +22,7 @@ class FurnitureTaskExtMixin:
         """Claim each selected furniture item independently and retain failure details."""
 
         self.log_info("正在领取异象家具奖励")
-        furniture_list = self._retry_furniture or self.LW_SUPPORTED_FURNITURE
+        furniture_list = self._retry_furniture or self._lw_configured_furniture()
         self._retry_furniture = ()
         self.furniture_results = {}
         self.failure_details = []
@@ -54,6 +54,20 @@ class FurnitureTaskExtMixin:
         else:
             self.log_error("异象家具奖励未能全部领取成功")
         return all_claimed
+
+    def _lw_configured_furniture(self):
+        """Return the RU-selected furniture list without extending its task API."""
+
+        furniture = list(self.LW_SUPPORTED_FURNITURE)
+        config = getattr(self, "config", None)
+        mammon_key = getattr(self, "CONF_MAMMON", "挑战玛门")
+        if (
+            config is not None
+            and config.get(mammon_key, True)
+            and Labels.anomaly_mammon not in furniture
+        ):
+            furniture.append(Labels.anomaly_mammon)
+        return tuple(furniture)
 
     def lw_record_furniture_claim_failure(self, reason):
         self._claim_failure_reason = reason

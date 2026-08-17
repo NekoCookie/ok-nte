@@ -242,7 +242,7 @@ class AnomalyTask(NTEOneTimeTask, BaseCombatTask):
         completed_count = 0
         while completed_count < total_count:
             double = completed_count < double_count
-            self.wait_until(lambda: self.find_one(Labels.in_domain), time_out=30)
+            self.wait_until(self.find_exit, time_out=30)
             self.wait_in_team()
             self.sleep(1)
             if not self.do_combat_and_claim(double):
@@ -284,15 +284,6 @@ class AnomalyTask(NTEOneTimeTask, BaseCombatTask):
             time_out=10,
         )
 
-    def exit_anomaly(self):
-        # [lw] 搜索框必须大于95x95的按钮模板, 否则matchTemplate直接崩溃; 上游新range已满足该约束, 采用上游
-        self.wait_click_confirm(
-            lambda: self.send_key("esc", interval=2),
-            range=(0.619, 0.609, 0.709, 0.708),
-            settle_time=0.4,
-        )
-        self.wait_in_team_and_world()
-
     def do_combat_and_claim(self, double: bool):
         self.log_info("开始执行战斗流程")
         self.walk_until_combat(run=True, delay=1)
@@ -303,16 +294,9 @@ class AnomalyTask(NTEOneTimeTask, BaseCombatTask):
         def action(count):
             self.walk_to_treasure()
             self.send_interac(handle_claim=False)
-            claims = self.find_all_claim()
-            self.log_info(f"发现 {len(claims)} 个领取奖励")
-            if not claims:
-                self.log_warning("未找到领取奖励按钮")
-                key = "a" if count % 2 else "d"
-                self.send_key(key, down_time=0.5, after_sleep=1)
-                self.next_frame()
-                return False
-            return claims
+            return self.find_all_claim()
 
+        self.rotate_and_find_treasure()
         claims = self.retry_on_action(action)
         if not claims:
             return False

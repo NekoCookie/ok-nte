@@ -1044,3 +1044,15 @@ msgstr "Esconde-esconde automático"
 
 msgid "徊影憧憧活动自动挂机: 自动点击开始匹配, 对局结束自动开始下一局"
 msgstr "Automatiza o evento Hiding Shadows: inicia a partida automaticamente e começa a próxima rodada quando a atual termina."
+
+msgid "排球之星"
+msgstr "Estrela do Vôlei"
+
+msgid "刷经验"
+msgstr "Farmar EXP"
+
+msgid "点按G"
+msgstr "Pressionar G"
+
+msgid "挑战玛门"
+msgstr "Desafiar Mammon"
