@@ -2,7 +2,11 @@
 
 Copy this file to `upstream-sync-<merge>.md` before a large RU sync. A sync is not
 complete until every behavior row is `verified`; a green full suite alone is not a
-completion signal.
+completion signal. Each new upstream parent `U` requires a new copy of this
+ledger. A completed ledger is immutable evidence for its recorded `B/L/U/M`
+scope; it is not a completion certificate for later upstream commits. If the
+ledger is created after a merge, label additions as corrective records and do
+not treat them as a substitute for the pre-merge behavior manifest.
 
 ## Scope and provenance
 
