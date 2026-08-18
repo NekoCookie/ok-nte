@@ -167,6 +167,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     #   实战调优参数 = 反击/后摇/主动闪避/轮数/技能前平A/脱战复查/让路 那几个秒数与比例旋钮;
     #   测试开关与测试键 = 各测试开关(闪避反击测试/禁用技能大招)与测试键(首平A/模拟闪避)。
     CONF_GROUP_TRIGGER = "▸ 基础触发设置(展开)"   # 分组折叠开关: 触发键/宏模式/触发方式/输入方式
+    CONF_GROUP_SUPPORT_PREEMPTION = "▸ 辅助资源提权(展开)"
+    CONF_SUPPORT_SKILL_PREEMPTION = "辅助E是否提权"
+    CONF_SUPPORT_ULTIMATE_PREEMPTION = "辅助Q是否提权"
     CONF_GROUP_DODGE = "▸ 闪避反击设置(展开)"     # 分组折叠开关: 展开=闪避方式(下拉)+选闪双4a时的时序
     CONF_GROUP_TUNING = "▸ 实战调优参数(展开)"    # 分组折叠开关
     CONF_GROUP_TEST = "▸ 测试开关与测试键(展开)"   # 分组折叠开关
@@ -250,6 +253,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_MACRO_MODE: self.MODE_SCHEME_LS,
                 self.CONF_TRIGGER_MODE: self.TRIGGER_HOLD,
                 self.CONF_INPUT_MODE: self.INPUT_BG,
+                # 辅助资源提权组: 默认保持当前行为; 可分别关闭 Q/E 的环合前抢占。
+                self.CONF_GROUP_SUPPORT_PREEMPTION: False,
+                self.CONF_SUPPORT_SKILL_PREEMPTION: True,
+                self.CONF_SUPPORT_ULTIMATE_PREEMPTION: True,
                 # 闪避反击设置组(折叠)→ 闪避方式(下拉)→ 选"闪双4a"才显示7个时序
                 self.CONF_GROUP_DODGE: False,
                 self.CONF_DODGE_STYLE: self.STYLE_SCHEME_B,
@@ -341,6 +348,15 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                         True: [
                             self.CONF_TRIGGER_KEY, self.CONF_MACRO_MODE,
                             self.CONF_TRIGGER_MODE, self.CONF_INPUT_MODE,
+                        ],
+                    },
+                },
+                # 顶层折叠: 分别控制辅助 E/Q 是否发布 LW preemptive claim。
+                self.CONF_GROUP_SUPPORT_PREEMPTION: {
+                    "sub_configs": {
+                        True: [
+                            self.CONF_SUPPORT_SKILL_PREEMPTION,
+                            self.CONF_SUPPORT_ULTIMATE_PREEMPTION,
                         ],
                     },
                 },
@@ -481,6 +497,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_FREE_BREAK2_JUMP_HOLD: "方案二 跳A(空格+左键同按)按住毫秒",
                 self.CONF_FREE_BREAK2_WAIT: "方案二 跳A打断→combo第一下 的间隔毫秒(可填0)",
                 self.CONF_GROUP_TRIGGER: "▸ 分组折叠: 展开基础触发设置(触发键/宏模式/触发方式/输入方式)",
+                self.CONF_GROUP_SUPPORT_PREEMPTION: "▸ 分组折叠: 展开辅助 Q/E 的资源提权开关",
+                self.CONF_SUPPORT_SKILL_PREEMPTION: "开=辅助 E 就绪时在环合前抢占; 关=仅按普通评分参与切人",
+                self.CONF_SUPPORT_ULTIMATE_PREEMPTION: "开=辅助 Q 待铺时在环合前抢占; 关=仅按普通评分参与切人",
                 self.CONF_GROUP_TUNING: "▸ 分组折叠: 展开实战调优参数(反击平A/后摇/主动闪避/轮数/技能前平A/脱战复查/让路)",
                 self.CONF_GROUP_TEST: "▸ 分组折叠: 展开测试开关与测试键(闪避反击测试/禁用技能大招/首平A/模拟闪避)",
                 self.CONF_GROUP_GAMEPAD: "▸ 分组折叠: 展开实体手柄与虚拟手柄共存测试",

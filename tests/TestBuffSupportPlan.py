@@ -199,6 +199,30 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         self.assertTrue(c._execute_support_skill(None))
         c._cast_skill_if_about_ready.assert_called_once()
 
+    def test_disabled_support_skill_preemption_keeps_normal_claim(self):
+        c = make_buff(ult_ready=False, skill_ready=True, buff_pending=False)
+        c.task = mock.MagicMock()
+        c.task.get_task_by_class.return_value = mock.Mock(
+            config={"辅助E是否提权": False, "辅助Q是否提权": True}
+        )
+
+        claim = list(c.combat_plan(None).claims)[0]
+
+        self.assertEqual(claim.level, FieldClaimLevel.HIGH)
+        self.assertFalse(is_lw_preemptive_field_claim(claim))
+
+    def test_disabled_support_ultimate_preemption_keeps_normal_claim(self):
+        c = make_buff(ult_ready=True, skill_ready=False, buff_pending=True)
+        c.task = mock.MagicMock()
+        c.task.get_task_by_class.return_value = mock.Mock(
+            config={"辅助E是否提权": True, "辅助Q是否提权": False}
+        )
+
+        claim = list(c.combat_plan(None).claims)[0]
+
+        self.assertEqual(claim.level, FieldClaimLevel.HIGH)
+        self.assertFalse(is_lw_preemptive_field_claim(claim))
+
 
 class TestBuffSupportMixedTeamScoring(unittest.TestCase):
     def _task(self):

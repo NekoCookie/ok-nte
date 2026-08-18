@@ -41,6 +41,22 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         copyfile.assert_not_called()
         parent_load.assert_called_once_with()
 
+    def test_support_preemption_group_defaults_to_enabled_q_and_e(self):
+        task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
+        task.config_type = {}
+        task.config_description = {}
+
+        with mock.patch.object(BaseNTETask, "__init__", return_value=None):
+            RequiemCombatConfigTask.__init__(task)
+
+        self.assertFalse(task.default_config[task.CONF_GROUP_SUPPORT_PREEMPTION])
+        self.assertTrue(task.default_config[task.CONF_SUPPORT_SKILL_PREEMPTION])
+        self.assertTrue(task.default_config[task.CONF_SUPPORT_ULTIMATE_PREEMPTION])
+        self.assertEqual(
+            task.config_type[task.CONF_GROUP_SUPPORT_PREEMPTION]["sub_configs"][True],
+            [task.CONF_SUPPORT_SKILL_PREEMPTION, task.CONF_SUPPORT_ULTIMATE_PREEMPTION],
+        )
+
 
 class TestRequiemCombatConfigTaskExchangePaths(unittest.TestCase):
     def make_task(self):
