@@ -166,7 +166,6 @@ class DSDFarmExtMixin(_TaskProxy):
             settle_time=0.5,
             raise_if_not_found=False,
         )
-        self.monitor_and_sync_cursor()
         self.sleep(0.1)
         if not result:
             self.log_warning_gated("travel button still visible, teleport did not complete")

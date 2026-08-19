@@ -79,3 +79,15 @@ as completion evidence.
   `blocked`.
 - The final merge must include the provenance audit output and a clean review of
   user-owned files, local configs, logs, screenshots, and generated data.
+
+## Post-merge corrective acceptance
+
+| ID | Behavior | Trigger and input | Required result or timing | Required state and side effects | Automated regression | Real-window scenario | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| B-11 | 999 teleport recovery after combat | A completed combat calls the configured bonfire teleport | A completed travel-button click returns success without entering the alternating `s`/`w` recovery loop | The current RU `CursorSync` remains the only cursor synchronization path; no stale LW API exception is converted into a teleport failure | `tests.test_dsd_farm_recovery.TestClickTravalButton` (24 passed) | Run one 999 round through post-combat teleport and confirm the configured bonfire is reached without corrective movement | open |
+
+| C-11 | Cursor synchronization API migration | `DSDFarmExtMixin.click_traval_button` runs on the current `NTEInteraction` | Use the current background `CursorSync` lifecycle and do not call removed `monitor_and_sync_cursor` | No RU compatibility alias or duplicate cursor implementation is retained | Test fixture no longer defines the removed method; runtime symbol check reports absent | Covered by B-11 real-window scenario | verified |
+
+| I-06 | `src/lw/dsd_farm_ext.py` stale cursor hook removal | Post-merge 999 teleport failure exposed `monitor_and_sync_cursor` as an `AttributeError` | Remove only the obsolete LW call and keep RU travel-button confirmation and bounded retry behavior unchanged | The single production path is `NTEInteraction.CursorSync`; no old API alias remains | `tests.test_dsd_farm_recovery` | Covered by B-11 real-window scenario | verified |
+
+| V-05 | 999 teleport regression | Focused test and syntax checks after the correction | Focused 999 recovery tests pass and changed Python files compile | Diff contains no stale `monitor_and_sync_cursor` production reference | `tests.test_dsd_farm_recovery`; `py_compile` for changed modules; stale-reference scan | B-11 | verified |

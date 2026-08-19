@@ -51,9 +51,6 @@ class _ClickStub(DSDFarmExtMixin, _BaseClick):
     def sleep(self, seconds):
         pass
 
-    def monitor_and_sync_cursor(self, **kwargs):
-        pass
-
     def log_warning_gated(self, msg):
         self.warnings.append(msg)
 
@@ -66,6 +63,7 @@ class TestClickTravalButton(unittest.TestCase):
 
     def test_returns_true_when_travel_button_disappeared(self):
         task = _ClickStub([Box(0, 0, 10, 10, name="travel"), None])
+        self.assertFalse(hasattr(task, "monitor_and_sync_cursor"))
         self.assertTrue(task.click_traval_button())
         self.assertEqual(len(task.warnings), 0)
 
