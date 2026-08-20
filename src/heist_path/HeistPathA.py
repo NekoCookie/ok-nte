@@ -1,6 +1,7 @@
 import time
 
 from src.heist_path.HeistPath import HeistPath
+from src.lw.heist_ext import path1_initial_move_durations
 
 
 class HeistPathA(HeistPath):
@@ -37,6 +38,8 @@ class HeistPathA(HeistPath):
 
     def goto_lg1(self):
         self.log_round_info("寻路到LG1")
+        # [lw] 游戏更新可能改变开局位移距离; 时长从安魂曲配置读取供手动校准。
+        initial_w_duration, initial_d_duration = path1_initial_move_durations(self.task)
         self.switch_to_runner(check_switched=True)
         self.sleep(0.81)
         self.send_key_down("w")
@@ -44,9 +47,9 @@ class HeistPathA(HeistPath):
         self.send_key_down("lshift")
         self.sleep(0.16)
         self.send_key_up("lshift")
-        self.sleep(2.68)
+        self.sleep(initial_w_duration)
         self.send_key_down("d")
-        self.sleep(2.55)
+        self.sleep(initial_d_duration)
         self.send_key_up("d")
         self.sleep(0.37)
         self.wait_and_interact(direction="w", is_lock=True)
