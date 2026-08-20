@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from threading import Event
 
 from ok import TaskDisabledException
-from ok.util.config import Config
-from ok.util.file import get_relative_path, read_json_file
 from qfluentwidgets import FluentIcon
 
 from src import text_white_color
@@ -15,13 +13,6 @@ from src.heist_path.HeistPathA import HeistPathA
 from src.heist_path.HeistPathB import HeistPathB
 from src.heist_path.HeistPathC import HeistPathC
 from src.Labels import Labels
-from src.lw.heist_ext import (
-    CONF_PATH1_INITIAL_D as HEIST_PATH1_INITIAL_D_CONFIG,
-    CONF_PATH1_INITIAL_W as HEIST_PATH1_INITIAL_W_CONFIG,
-    PATH1_INITIAL_D_DEFAULT,
-    PATH1_INITIAL_W_DEFAULT,
-    path1_initial_move_durations,
-)
 from src.tasks.NTEOneTimeTask import NTEOneTimeTask
 from src.tasks.trigger.SkipDialogTask import SkipDialogTask
 from src.utils import game_filters as gf
@@ -148,9 +139,6 @@ class AutoHeistTask(NTEOneTimeTask, BaseCombatTask):
     CONF_RUNNER = "跑图角色"
     CONF_AVOIDER = "避战角色"
     CONF_AVOID_MTH = "避战方法"
-    # [lw] Path 1 opening movement tuning belongs to the Pink Paw Heist task.
-    CONF_PATH1_INITIAL_W = HEIST_PATH1_INITIAL_W_CONFIG
-    CONF_PATH1_INITIAL_D = HEIST_PATH1_INITIAL_D_CONFIG
     ROLE_FIGHTER = "fighter"
     ROLE_RUNNER = "runner"
     ROLE_AVOIDER = "avoider"
@@ -186,8 +174,6 @@ class AutoHeistTask(NTEOneTimeTask, BaseCombatTask):
                 self.CONF_RUNNER: ["3"],
                 self.CONF_AVOIDER: ["2"],
                 self.CONF_AVOID_MTH: self.AVOID_METHOD_DASH,
-                self.CONF_PATH1_INITIAL_W: PATH1_INITIAL_W_DEFAULT,
-                self.CONF_PATH1_INITIAL_D: PATH1_INITIAL_D_DEFAULT,
             }
         )
         self.config_description.update(
@@ -196,8 +182,6 @@ class AutoHeistTask(NTEOneTimeTask, BaseCombatTask):
                 self.CONF_FIGHTER: "选1~2个",
                 self.CONF_RUNNER: "选1个",
                 self.CONF_AVOIDER: "选0~1个",
-                self.CONF_PATH1_INITIAL_W: "路径1开局首个 W 从疾跑开始到按下 D 的秒数; 默认 2.68",
-                self.CONF_PATH1_INITIAL_D: "路径1开局首个 D 持续的秒数; 默认 2.55",
             }
         )
 
@@ -231,34 +215,6 @@ class AutoHeistTask(NTEOneTimeTask, BaseCombatTask):
         self._interaction_watch_active = False
         self._interaction_watch_found = False
         self._aborting_heist = False
-
-    def load_config(self):
-        """Load Path 1 timing settings and migrate their short-lived Requiem location once."""
-        # [lw] Preserve values adjusted before these settings moved into the heist task.
-        current_file = get_relative_path(Config.config_folder, f"{self.__class__.__name__}.json")
-        current_config = read_json_file(current_file)
-        super().load_config()
-        if isinstance(current_config, dict) and any(
-            key in current_config for key in (self.CONF_PATH1_INITIAL_W, self.CONF_PATH1_INITIAL_D)
-        ):
-            return
-
-        legacy_file = get_relative_path(Config.config_folder, "RequiemCombatConfigTask.json")
-        legacy_config = read_json_file(legacy_file)
-        if not isinstance(legacy_config, dict):
-            return
-
-        initial_w, initial_d = path1_initial_move_durations(legacy_config)
-        migrated = False
-        for key, value in (
-            (self.CONF_PATH1_INITIAL_W, initial_w),
-            (self.CONF_PATH1_INITIAL_D, initial_d),
-        ):
-            if key in legacy_config:
-                self.config[key] = value
-                migrated = True
-        if migrated:
-            self.logger.info("migrated Path 1 opening timings from Requiem config")
 
     def run(self):
         super().run()

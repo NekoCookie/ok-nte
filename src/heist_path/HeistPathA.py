@@ -38,8 +38,8 @@ class HeistPathA(HeistPath):
 
     def goto_lg1(self):
         self.log_round_info("寻路到LG1")
-        # [lw] 游戏更新可能改变开局位移距离; 时长从粉爪配置读取供手动校准。
-        initial_w_duration, initial_d_duration = path1_initial_move_durations(self.task.config)
+        # [lw] 游戏更新可能改变开局位移距离; 时长从安魂曲配置读取供手动校准。
+        initial_w_duration, initial_d_duration = path1_initial_move_durations(self.task)
         self.switch_to_runner(check_switched=True)
         self.sleep(0.81)
         self.send_key_down("w")

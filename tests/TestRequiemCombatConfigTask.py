@@ -57,6 +57,23 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             [task.CONF_SUPPORT_SKILL_PREEMPTION, task.CONF_SUPPORT_ULTIMATE_PREEMPTION],
         )
 
+    def test_heist_path_group_keeps_existing_opening_timing(self):
+        task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
+        task.config_type = {}
+        task.config_description = {}
+
+        with mock.patch.object(BaseNTETask, "__init__", return_value=None):
+            RequiemCombatConfigTask.__init__(task)
+
+        self.assertFalse(task.default_config[task.CONF_GROUP_HEIST_PATH])
+        self.assertEqual(task.default_config[task.CONF_HEIST_PATH1_INITIAL_W], 2.68)
+        self.assertEqual(task.default_config[task.CONF_HEIST_PATH1_INITIAL_D], 2.55)
+        self.assertEqual(
+            task.config_type[task.CONF_GROUP_HEIST_PATH]["sub_configs"][True],
+            [task.CONF_HEIST_PATH1_INITIAL_W, task.CONF_HEIST_PATH1_INITIAL_D],
+        )
+
+
 class TestRequiemCombatConfigTaskExchangePaths(unittest.TestCase):
     def make_task(self):
         return RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
