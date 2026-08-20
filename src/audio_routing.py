@@ -33,6 +33,30 @@ _SOUND_ITEM_COLUMNS = "Command-LineFriendlyID,ItemID,DeviceState,Direction,Proce
 _RESET_PATCH_ATTR = "_background_audio_routing_reset_patched"
 
 
+# [lw] Focus-loss diagnostics for the locally configured background audio route.
+def _foreground_window_context() -> str:
+    """Return non-sensitive information about the current foreground window."""
+    try:
+        import win32gui
+        import win32process
+
+        foreground_hwnd = win32gui.GetForegroundWindow()
+        if not foreground_hwnd:
+            return "none"
+        _, process_id = win32process.GetWindowThreadProcessId(foreground_hwnd)
+        try:
+            process_name = psutil.Process(process_id).name()
+        except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
+            process_name = "<unavailable>"
+        window_class = win32gui.GetClassName(foreground_hwnd)
+        return (
+            f"hwnd=0x{foreground_hwnd:x} pid={process_id} "
+            f"process={process_name} class={window_class}"
+        )
+    except Exception as exc:
+        return f"unavailable ({type(exc).__name__})"
+
+
 def create_background_audio_routing_config_option() -> ConfigOption:
     device_options = _initial_device_options()
     connect_background_audio_router()
@@ -388,6 +412,12 @@ class _BackgroundAudioRouter:
         recently_checked = now - self.last_mute_check <= _WINDOW_ROUTE_CHECK_INTERVAL_SECONDS
         if not visible_changed and recently_checked:
             return
+        if visible_changed:
+            # [lw] Log focus loss without recording window titles or executable paths.
+            logger.info(
+                "background audio routing foreground change: "
+                f"game_foreground={visible} foreground={_foreground_window_context()}"
+            )
         self._last_visible = visible
         self.last_mute_check = now
         self.request_route(visible)
