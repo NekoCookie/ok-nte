@@ -173,10 +173,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_GROUP_DODGE = "▸ 闪避反击设置(展开)"     # 分组折叠开关: 展开=闪避方式(下拉)+选闪双4a时的时序
     CONF_GROUP_TUNING = "▸ 实战调优参数(展开)"    # 分组折叠开关
     CONF_GROUP_TEST = "▸ 测试开关与测试键(展开)"   # 分组折叠开关
-    # [lw] 粉爪路径1开局的 W/D 时序; 游戏版本变化时可手动校准, 默认保持原路线值。
-    CONF_GROUP_HEIST_PATH = "▸ 粉爪路径1开局调优(展开)"
-    CONF_HEIST_PATH1_INITIAL_W = "粉爪路径1开局W时长(s)"
-    CONF_HEIST_PATH1_INITIAL_D = "粉爪路径1开局D时长(s)"
     # [lw] 虚拟手柄共存实验: 不读取/隐藏实体手柄, 虚拟手柄摇杆始终中立, 只周期按 A。
     CONF_GROUP_GAMEPAD = "▸ 虚拟手柄共存测试(展开)"
     CONF_GAMEPAD_TEST = "启用虚拟手柄A键脉冲"
@@ -307,9 +303,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_DODGE_TEST_KEY: "7",
                 self.CONF_FREE_BREAK_TEST_KEY: "8",
                 self.CONF_FREE_SKILL_KEY: "e",
-                self.CONF_GROUP_HEIST_PATH: False,
-                self.CONF_HEIST_PATH1_INITIAL_W: 2.68,
-                self.CONF_HEIST_PATH1_INITIAL_D: 2.55,
                 # [lw] 实验功能默认关闭，避免未验证双手柄兼容性时影响游戏输入。
                 self.CONF_GROUP_GAMEPAD: False,
                 self.CONF_GAMEPAD_TEST: False,
@@ -413,15 +406,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                         ],
                     },
                 },
-                # [lw] 粉爪路线调优独立折叠, 不影响安魂曲战斗参数。
-                self.CONF_GROUP_HEIST_PATH: {
-                    "sub_configs": {
-                        True: [
-                            self.CONF_HEIST_PATH1_INITIAL_W,
-                            self.CONF_HEIST_PATH1_INITIAL_D,
-                        ],
-                    },
-                },
                 # [lw] 单独折叠，避免实验功能裸露在安魂曲配置最外层。
                 self.CONF_GROUP_GAMEPAD: {
                     "sub_configs": {
@@ -518,9 +502,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_SUPPORT_ULTIMATE_PREEMPTION: "开=辅助 Q 待铺时在环合前抢占; 关=仅按普通评分参与切人",
                 self.CONF_GROUP_TUNING: "▸ 分组折叠: 展开实战调优参数(反击平A/后摇/主动闪避/轮数/技能前平A/脱战复查/让路)",
                 self.CONF_GROUP_TEST: "▸ 分组折叠: 展开测试开关与测试键(闪避反击测试/禁用技能大招/首平A/模拟闪避)",
-                self.CONF_GROUP_HEIST_PATH: "▸ 分组折叠: 展开粉爪路径1开局 W/D 时长调优",
-                self.CONF_HEIST_PATH1_INITIAL_W: "首个 W 从疾跑开始到按下 D 的秒数; 默认 2.68",
-                self.CONF_HEIST_PATH1_INITIAL_D: "首个 D 持续的秒数; 默认 2.55",
                 self.CONF_GROUP_GAMEPAD: "▸ 分组折叠: 展开实体手柄与虚拟手柄共存测试",
                 self.CONF_GAMEPAD_TEST: "开=虚拟Xbox手柄每隔数秒按一次A；不接管、不隐藏实体手柄",
                 self.CONF_GAMEPAD_INTERVAL: "虚拟手柄两次A键测试脉冲之间的秒数",

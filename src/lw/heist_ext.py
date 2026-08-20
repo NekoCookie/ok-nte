@@ -1,25 +1,22 @@
 """LW configuration adapters for Pink Paw Heist routes."""
 
-from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
-
-
 PATH1_INITIAL_W_DEFAULT = 2.68
 PATH1_INITIAL_D_DEFAULT = 2.55
+CONF_PATH1_INITIAL_W = "粉爪路径1开局W时长(s)"
+CONF_PATH1_INITIAL_D = "粉爪路径1开局D时长(s)"
 
 
-def path1_initial_move_durations(task):
+def path1_initial_move_durations(config):
     """Return the configurable Path 1 opening W and D durations in seconds."""
-    config_task = task.get_task_by_class(RequiemCombatConfigTask)
-    config = getattr(config_task, "config", None)
     return (
         _read_duration(
             config,
-            RequiemCombatConfigTask.CONF_HEIST_PATH1_INITIAL_W,
+            CONF_PATH1_INITIAL_W,
             PATH1_INITIAL_W_DEFAULT,
         ),
         _read_duration(
             config,
-            RequiemCombatConfigTask.CONF_HEIST_PATH1_INITIAL_D,
+            CONF_PATH1_INITIAL_D,
             PATH1_INITIAL_D_DEFAULT,
         ),
     )
