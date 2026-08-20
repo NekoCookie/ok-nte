@@ -424,6 +424,27 @@ class TestDailyRoutineStart(unittest.TestCase):
         self.assertIn("gift_a: 未找到目标", failed_summary)
         self.assertIn("账号 B", failed_summary)
 
+    def test_daily_routine_failure_details_text_lists_account_task_and_reason(self):
+        task = object.__new__(DailyRoutineTask)
+        task._task_display_name = lambda task_id: {"gift": "羁遇赠礼"}[task_id]
+        task.account_results = [
+            DailyRoutineAccountResult(
+                "账号 A",
+                "1001",
+                (),
+                ("gift",),
+                (),
+                (("gift", ("gift_a: 未找到目标", "TimeoutError: 等待超时")),),
+            )
+        ]
+
+        details = task.lw_failure_details_text()
+
+        self.assertIn("账号: 账号 A", details)
+        self.assertIn("任务: 羁遇赠礼", details)
+        self.assertIn("gift_a: 未找到目标", details)
+        self.assertIn("TimeoutError: 等待超时", details)
+
     def test_daily_routine_retry_runs_only_failed_task_ids(self):
         task = object.__new__(DailyRoutineTask)
         task.scene = Mock()
@@ -683,6 +704,11 @@ class _RetryTabHarness(DailyRoutineTabExtMixin):
         self._routine_task_value = routine_task
         self._controller = controller
         self.retry_button = Mock()
+        self.failure_details_button = Mock()
+
+    @staticmethod
+    def tr(text):
+        return text
 
     def _routine_task(self):
         return self._routine_task_value
@@ -695,11 +721,13 @@ class TestDailyRoutineRetryUi(unittest.TestCase):
     def test_retry_button_requires_a_stopped_task_with_latest_failures(self):
         routine_task = Mock(enabled=False)
         routine_task.lw_can_retry_failed_items.return_value = True
+        routine_task.lw_can_view_failure_details.return_value = True
         tab = _RetryTabHarness(routine_task, Mock())
 
         self.assertTrue(tab.lw_retry_button_enabled())
         tab.lw_sync_retry_button()
         tab.retry_button.setEnabled.assert_called_once_with(True)
+        tab.failure_details_button.setEnabled.assert_called_once_with(True)
 
         routine_task.enabled = True
         self.assertFalse(tab.lw_retry_button_enabled())
@@ -714,6 +742,23 @@ class TestDailyRoutineRetryUi(unittest.TestCase):
 
         routine_task.lw_start_retry_failed_items.assert_called_once_with(controller)
         tab.retry_button.setEnabled.assert_called_once_with(False)
+
+    @patch("src.lw.daily_routine_ui_ext.show_dialog_and_wait")
+    def test_failure_details_button_opens_copyable_failure_summary(self, show_dialog):
+        routine_task = Mock(enabled=False)
+        routine_task.lw_can_view_failure_details.return_value = True
+        routine_task.lw_failure_details_text.return_value = "账号: 账号 A\n任务: 羁遇赠礼"
+        tab = _RetryTabHarness(routine_task, Mock())
+
+        tab.lw_show_failure_details()
+
+        show_dialog.assert_called_once_with(
+            "失败原因详情",
+            "账号: 账号 A\n任务: 羁遇赠礼",
+            parent=tab,
+            rich_text=False,
+            open_external_links=False,
+        )
 
 
 class _SwitchAccountTabHarness(DailyRoutineTabExtMixin):

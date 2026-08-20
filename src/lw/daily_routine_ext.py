@@ -87,6 +87,30 @@ class DailyRoutineExtMixin:
             for result in (self.account_results[0], *retry_results)
         )
 
+    def lw_can_view_failure_details(self):
+        """Return whether the latest run has failures that can be inspected."""
+
+        return any(result.failed for result in self.account_results)
+
+    def lw_failure_details_text(self):
+        """Build a stable, copyable summary of the latest failed routine items."""
+
+        lines = []
+        for result in self.account_results:
+            if not result.failed:
+                continue
+            lines.append(f"账号: {result.account_name}")
+            details_by_task = dict(result.failure_details)
+            for task_id in result.failed:
+                lines.append(f"任务: {self._task_display_name(task_id)}")
+                details = details_by_task.get(task_id, ())
+                if details:
+                    lines.extend(f"  {detail}" for detail in details)
+                else:
+                    lines.append("  任务返回失败, 未记录更具体原因")
+
+        return "\n".join(lines) or "当前没有失败项"
+
     def lw_set_current_daily_account(self, account_uid):
         self._current_daily_account_uid = account_uid or None
 

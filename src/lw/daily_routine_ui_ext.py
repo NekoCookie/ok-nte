@@ -6,6 +6,7 @@ from ok.gui.tasks.TaskCard import TaskCard
 from qfluentwidgets import FluentIcon, PushButton
 
 from src.tasks.SwitchAccountTask import SwitchAccountTask
+from src.ui.util import show_dialog_and_wait
 
 
 class DailyRoutineTabExtMixin:
@@ -34,6 +35,15 @@ class DailyRoutineTabExtMixin:
         self.retry_button.setEnabled(False)
         action_layout.addWidget(self.retry_button)
         self.retry_button.clicked.connect(self.lw_retry_failed_items)
+
+        self.failure_details_button = PushButton(
+            FluentIcon.INFO,
+            self.tr("查看失败原因"),
+            self.action_bar,
+        )
+        self.failure_details_button.setEnabled(False)
+        action_layout.addWidget(self.failure_details_button)
+        self.failure_details_button.clicked.connect(self.lw_show_failure_details)
         communicate.task.connect(self.lw_sync_retry_button)
 
     def lw_retry_button_enabled(self, routine_task=None):
@@ -51,9 +61,29 @@ class DailyRoutineTabExtMixin:
         if routine_task.lw_start_retry_failed_items(self.lw_retry_start_controller()):
             self.retry_button.setEnabled(False)
 
+    def lw_show_failure_details(self):
+        routine_task = self._routine_task()
+        if routine_task is None or not routine_task.lw_can_view_failure_details():
+            return
+        show_dialog_and_wait(
+            self.tr("失败原因详情"),
+            routine_task.lw_failure_details_text(),
+            parent=self,
+            rich_text=False,
+            open_external_links=False,
+        )
+
     def lw_retry_start_controller(self):
         return og.app.start_controller
 
     def lw_sync_retry_button(self, task=None):
         if task is None or task is self._routine_task():
-            self.retry_button.setEnabled(self.lw_retry_button_enabled())
+            routine_task = self._routine_task()
+            self.retry_button.setEnabled(self.lw_retry_button_enabled(routine_task))
+            self.failure_details_button.setEnabled(
+                bool(
+                    routine_task
+                    and not routine_task.enabled
+                    and routine_task.lw_can_view_failure_details()
+                )
+            )
