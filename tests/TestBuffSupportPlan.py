@@ -211,6 +211,20 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         self.assertEqual(claim.level, FieldClaimLevel.HIGH)
         self.assertFalse(is_lw_preemptive_field_claim(claim))
 
+    def test_disabled_support_skill_switch_keeps_skill_without_switch_intent(self):
+        c = make_buff(ult_ready=False, skill_ready=True, buff_pending=False)
+        c.task = mock.MagicMock()
+        c.task.get_task_by_class.return_value = mock.Mock(
+            config={"辅助技能就绪是否切人": False}
+        )
+
+        plan = c.combat_plan(None)
+        skill = actions_by_slot(plan)[ActionSlot.SKILL]
+
+        self.assertEqual(list(plan.claims), [])
+        self.assertFalse(skill.priority_ready(None))
+        self.assertTrue(skill.can_execute(None))
+
     def test_disabled_support_ultimate_preemption_keeps_normal_claim(self):
         c = make_buff(ult_ready=True, skill_ready=False, buff_pending=True)
         c.task = mock.MagicMock()
@@ -258,6 +272,18 @@ class TestBuffSupportMixedTeamScoring(unittest.TestCase):
         decision = self._decision(support, ru_main)
         self.assertIs(decision.target, support)
         self.assertEqual(decision.priority, 999600)
+
+    def test_disabled_ready_support_skill_does_not_switch_to_support(self):
+        task = self._task()
+        task.get_task_by_class.return_value = mock.Mock(
+            config={"辅助技能就绪是否切人": False}
+        )
+        support = make_planner_buff(1, task, skill_ready=True)
+        ru_main = PlannerStubChar(2, PlannerRole.MAIN_DPS, FieldPreference.MAIN_DPS)
+
+        decision = self._decision(support, ru_main)
+
+        self.assertIsNot(decision.target, support)
 
     def test_due_probe_beats_ru_main_dps_field_time(self):
         task = self._task()

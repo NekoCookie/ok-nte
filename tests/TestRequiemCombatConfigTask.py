@@ -50,11 +50,16 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             RequiemCombatConfigTask.__init__(task)
 
         self.assertFalse(task.default_config[task.CONF_GROUP_SUPPORT_PREEMPTION])
+        self.assertTrue(task.default_config[task.CONF_SUPPORT_SKILL_SWITCH])
         self.assertTrue(task.default_config[task.CONF_SUPPORT_SKILL_PREEMPTION])
         self.assertTrue(task.default_config[task.CONF_SUPPORT_ULTIMATE_PREEMPTION])
         self.assertEqual(
             task.config_type[task.CONF_GROUP_SUPPORT_PREEMPTION]["sub_configs"][True],
-            [task.CONF_SUPPORT_SKILL_PREEMPTION, task.CONF_SUPPORT_ULTIMATE_PREEMPTION],
+            [
+                task.CONF_SUPPORT_SKILL_SWITCH,
+                task.CONF_SUPPORT_SKILL_PREEMPTION,
+                task.CONF_SUPPORT_ULTIMATE_PREEMPTION,
+            ],
         )
 
     def test_coaxis_group_contains_requested_defaults(self):

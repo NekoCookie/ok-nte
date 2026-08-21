@@ -122,8 +122,8 @@ class MainDps(BaseChar):
 class BuffSupport(ResourceSupportMixin, BaseChar):
     """增益辅助模板：确认有资源时先入场铺 buff，再把输出窗口交给主 C。"""
 
-    def _support_preemption_enabled(self, config_key):
-        """读取安魂曲配置的辅助资源抢占开关; 旧配置或非安魂曲队伍保持原行为。"""
+    def _support_setting_enabled(self, config_key):
+        """读取安魂曲配置的辅助调度开关; 旧配置或非安魂曲队伍保持原行为。"""
         task = getattr(self, "task", None)
         get_task_by_class = getattr(task, "get_task_by_class", None)
         if not callable(get_task_by_class):
@@ -136,6 +136,13 @@ class BuffSupport(ResourceSupportMixin, BaseChar):
         if not hasattr(config, "get"):
             return True
         return bool(config.get(config_key, True))
+
+    def should_switch_for_ready_skill(self):
+        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
+
+        return self._support_setting_enabled(
+            RequiemCombatConfigTask.CONF_SUPPORT_SKILL_SWITCH
+        )
 
     def describe_role(self):
         return RoleProfile(
@@ -165,7 +172,7 @@ class BuffSupport(ResourceSupportMixin, BaseChar):
         from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 
         if self.ultimate_buff_pending():
-            if self._support_preemption_enabled(
+            if self._support_setting_enabled(
                 RequiemCombatConfigTask.CONF_SUPPORT_ULTIMATE_PREEMPTION
             ):
                 return [
@@ -173,7 +180,9 @@ class BuffSupport(ResourceSupportMixin, BaseChar):
                 ]
             return [FieldClaim.high(source=self, reason="support ultimate buff pending")]
         if self.has_skill_resource():
-            if self._support_preemption_enabled(
+            if not self.should_switch_for_ready_skill():
+                return []
+            if self._support_setting_enabled(
                 RequiemCombatConfigTask.CONF_SUPPORT_SKILL_PREEMPTION
             ):
                 return [

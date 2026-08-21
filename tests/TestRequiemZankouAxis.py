@@ -165,19 +165,11 @@ class TestRequiemZankouAxis(unittest.TestCase):
             {"ZankouMainDps_ultimate", "ZankouMainDps_coordinated_axis"},
         )
         self.assertFalse(any(action.slot == ActionSlot.SKILL for action in zankou_plan.actions))
-        zankou.find_ult_purple = mock.MagicMock(return_value=True)
-        zankou.ultimate_available = mock.MagicMock(return_value=True)
-        zankou.click_with_interval = mock.MagicMock()
-        zankou.task.wait_until = mock.MagicMock()
+        zankou.find_ult_purple = mock.MagicMock()
         zankou_entry = zankou_plan.entry()
         self.assertEqual(next(zankou_entry).name, "ZankouMainDps_ultimate")
-        self.assertEqual(zankou_entry.send(True).name, "ZankouMainDps_ultimate")
         self.assertEqual(zankou_entry.send(True).name, "ZankouMainDps_coordinated_axis")
-        zankou.task.wait_until.assert_called_once_with(
-            zankou.ultimate_available,
-            post_action=zankou.click_with_interval,
-            time_out=3,
-        )
+        zankou.find_ult_purple.assert_not_called()
 
     def test_combat_switch_requires_both_exact_main_dps_templates(self):
         requiem, zankou, context = make_combat_pair(combat_enabled=True)

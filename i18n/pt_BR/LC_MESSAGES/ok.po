@@ -1125,3 +1125,15 @@ msgstr "Ativar eixo coordenado em combate"
 
 msgid "开=两个主C模板同队时自动进入实战合轴; 关=仅保留按键测试"
 msgstr "Ligado = usar automaticamente o eixo em combate quando os dois DPS principais estiverem na equipe; desligado = manter apenas o teste de tecla"
+
+msgid "辅助技能就绪是否切人"
+msgstr "Trocar quando a habilidade de suporte estiver pronta"
+
+msgid "▸ 分组折叠: 展开辅助技能切人以及 Q/E 资源提权开关"
+msgstr "▸ Grupo recolhível: troca por habilidade de suporte e prioridade de recursos Q/E"
+
+msgid "开=辅助 E 推算就绪时允许主动切人; 关=不因辅助 E 就绪切人"
+msgstr "Ligado = permitir troca ativa quando o recálculo estimado do E de suporte terminar; desligado = não trocar apenas pelo E de suporte estar pronto"
+
+msgid "开=允许切人时, 辅助 E 就绪会在环合前抢占; 关=仅按普通评分切人"
+msgstr "Ligado = com troca permitida, o E de suporte pronto antecede reações coordenadas; desligado = trocar somente pela pontuação normal"

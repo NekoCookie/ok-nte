@@ -41,14 +41,7 @@ class ZankouMainDps(Zankou):
         )
 
         def entry():
-            if self.find_ult_purple():
-                yield ultimate
-                self.task.wait_until(
-                    self.ultimate_available,
-                    post_action=self.click_with_interval,
-                    time_out=3,
-                )
-                yield ultimate.repeat_for_entry()
+            yield ultimate
             yield coaxis
 
         return self.plan(ultimate, coaxis, entry=entry)

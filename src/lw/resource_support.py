@@ -117,8 +117,14 @@ class ResourceSupportMixin:
         """技能是否可用于普通切人评分；下场不可见时允许按周期入场探测。"""
 
         return (
-            self.has_skill_resource() or self.needs_resource_probe()
+            (self.should_switch_for_ready_skill() and self.has_skill_resource())
+            or self.needs_resource_probe()
         ) and not self.recently_used_resource()
+
+    def should_switch_for_ready_skill(self):
+        """技能确认就绪时是否允许主动切入; 资源模板默认保持原行为。"""
+
+        return True
 
     def resource_field_claims(self, needs_probe):
         """角色模板按自身定位声明资源入场诉求。"""

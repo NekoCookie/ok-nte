@@ -206,6 +206,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     #   测试开关与测试键 = 各测试开关(闪避反击测试/禁用技能大招)与测试键(首平A/模拟闪避)。
     CONF_GROUP_TRIGGER = "▸ 基础触发设置(展开)"   # 分组折叠开关: 触发键/宏模式/触发方式/输入方式
     CONF_GROUP_SUPPORT_PREEMPTION = "▸ 辅助资源提权(展开)"
+    CONF_SUPPORT_SKILL_SWITCH = "辅助技能就绪是否切人"
     CONF_SUPPORT_SKILL_PREEMPTION = "辅助E是否提权"
     CONF_SUPPORT_ULTIMATE_PREEMPTION = "辅助Q是否提权"
     # [lw] Requiem and Zankou main-DPS axis settings, folded away by default.
@@ -302,8 +303,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_MACRO_MODE: self.MODE_SCHEME_LS,
                 self.CONF_TRIGGER_MODE: self.TRIGGER_HOLD,
                 self.CONF_INPUT_MODE: self.INPUT_BG,
-                # 辅助资源提权组: 默认保持当前行为; 可分别关闭 Q/E 的环合前抢占。
+                # 辅助资源调度组: 默认保持当前行为; 可关闭 E 主动切人或 Q/E 环合前抢占。
                 self.CONF_GROUP_SUPPORT_PREEMPTION: False,
+                self.CONF_SUPPORT_SKILL_SWITCH: True,
                 self.CONF_SUPPORT_SKILL_PREEMPTION: True,
                 self.CONF_SUPPORT_ULTIMATE_PREEMPTION: True,
                 # [lw] Pair-axis testing and default-off automatic-combat integration.
@@ -415,6 +417,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_GROUP_SUPPORT_PREEMPTION: {
                     "sub_configs": {
                         True: [
+                            self.CONF_SUPPORT_SKILL_SWITCH,
                             self.CONF_SUPPORT_SKILL_PREEMPTION,
                             self.CONF_SUPPORT_ULTIMATE_PREEMPTION,
                         ],
@@ -573,8 +576,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_FREE_BREAK2_JUMP_HOLD: "方案二 跳A(空格+左键同按)按住毫秒",
                 self.CONF_FREE_BREAK2_WAIT: "方案二 跳A打断→combo第一下 的间隔毫秒(可填0)",
                 self.CONF_GROUP_TRIGGER: "▸ 分组折叠: 展开基础触发设置(触发键/宏模式/触发方式/输入方式)",
-                self.CONF_GROUP_SUPPORT_PREEMPTION: "▸ 分组折叠: 展开辅助 Q/E 的资源提权开关",
-                self.CONF_SUPPORT_SKILL_PREEMPTION: "开=辅助 E 就绪时在环合前抢占; 关=仅按普通评分参与切人",
+                self.CONF_GROUP_SUPPORT_PREEMPTION: "▸ 分组折叠: 展开辅助技能切人以及 Q/E 资源提权开关",
+                self.CONF_SUPPORT_SKILL_SWITCH: "开=辅助 E 推算就绪时允许主动切人; 关=不因辅助 E 就绪切人",
+                self.CONF_SUPPORT_SKILL_PREEMPTION: "开=允许切人时, 辅助 E 就绪会在环合前抢占; 关=仅按普通评分切人",
                 self.CONF_SUPPORT_ULTIMATE_PREEMPTION: "开=辅助 Q 待铺时在环合前抢占; 关=仅按普通评分参与切人",
                 self.CONF_GROUP_COAXIS: "▸ 分组折叠: 展开安魂曲主C与残虹主C的合轴触发键和时序",
                 self.CONF_COAXIS_COMBAT_ENABLE: "开=两个主C模板同队时自动进入实战合轴; 关=仅保留按键测试",

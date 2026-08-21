@@ -1394,3 +1394,15 @@ msgstr "Enable coordinated axis in combat"
 
 msgid "开=两个主C模板同队时自动进入实战合轴; 关=仅保留按键测试"
 msgstr "On = automatically use the combat axis when both main-DPS templates are in the team; off = keep only the hotkey test"
+
+msgid "辅助技能就绪是否切人"
+msgstr "Switch when support skill is ready"
+
+msgid "▸ 分组折叠: 展开辅助技能切人以及 Q/E 资源提权开关"
+msgstr "▸ Folded group: support skill switching and Q/E resource preemption settings"
+
+msgid "开=辅助 E 推算就绪时允许主动切人; 关=不因辅助 E 就绪切人"
+msgstr "On = allow proactive switching when the support E's estimated cooldown is ready; off = do not switch because support E is ready"
+
+msgid "开=允许切人时, 辅助 E 就绪会在环合前抢占; 关=仅按普通评分切人"
+msgstr "On = when switching is allowed, ready support E preempts coordinated reactions; off = switch through normal scoring only"
