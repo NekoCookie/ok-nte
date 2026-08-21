@@ -215,6 +215,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_COAXIS_ZANKOU_SWITCH_KEY = "残虹切换键"
     CONF_COAXIS_REQUIEM_INTERVAL = "安魂曲普攻间隔(s)"
     CONF_COAXIS_REQUIEM_DURATION = "安魂曲普攻时长(s)"
+    CONF_COAXIS_ZANKOU_SWITCH_DELAY = "切到残虹后等待(s)"
     CONF_COAXIS_ZANKOU_HOLD_DURATION = "残虹长按普攻时长(s)"
     CONF_COAXIS_ZANKOU_NORMAL_DELAY = "残虹接平A延迟(s)"
     CONF_GROUP_DODGE = "▸ 闪避反击设置(展开)"     # 分组折叠开关: 展开=闪避方式(下拉)+选闪双4a时的时序
@@ -311,6 +312,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_ZANKOU_SWITCH_KEY: "2",
                 self.CONF_COAXIS_REQUIEM_INTERVAL: 0.2,
                 self.CONF_COAXIS_REQUIEM_DURATION: 2.0,
+                self.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.5,
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_NORMAL_DELAY: 0.2,
                 # 闪避反击设置组(折叠)→ 闪避方式(下拉)→ 选"闪双4a"才显示7个时序
@@ -425,6 +427,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                             self.CONF_COAXIS_ZANKOU_SWITCH_KEY,
                             self.CONF_COAXIS_REQUIEM_INTERVAL,
                             self.CONF_COAXIS_REQUIEM_DURATION,
+                            self.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
                             self.CONF_COAXIS_ZANKOU_HOLD_DURATION,
                             self.CONF_COAXIS_ZANKOU_NORMAL_DELAY,
                         ],
@@ -576,6 +579,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_ZANKOU_SWITCH_KEY: "残虹在队伍中的数字切换键; 默认2",
                 self.CONF_COAXIS_REQUIEM_INTERVAL: "安魂曲合轴阶段每次普攻的间隔秒数, 最低按0.02s执行",
                 self.CONF_COAXIS_REQUIEM_DURATION: "安魂曲持续普攻这么久后切到残虹",
+                self.CONF_COAXIS_ZANKOU_SWITCH_DELAY: "按下残虹切换键后等待这么久再长按普攻",
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: "残虹合轴阶段长按普攻的持续秒数",
                 self.CONF_COAXIS_ZANKOU_NORMAL_DELAY: "残虹松开长按后等待这么久再接一下平A, 然后切回安魂曲",
                 self.CONF_GROUP_TUNING: "▸ 分组折叠: 展开实战调优参数(反击平A/后摇/主动闪避/轮数/技能前平A/脱战复查/让路)",
@@ -767,6 +771,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             requiem_attack_duration=max(
                 0.0,
                 self._conf_num(self.CONF_COAXIS_REQUIEM_DURATION, 2.0),
+            ),
+            zankou_switch_delay=max(
+                0.0,
+                self._conf_num(self.CONF_COAXIS_ZANKOU_SWITCH_DELAY, 0.5),
             ),
             zankou_hold_duration=max(
                 0.0,

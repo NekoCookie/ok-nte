@@ -1373,3 +1373,9 @@ msgstr "How long Zankou holds the basic-attack button during the coordinated axi
 
 msgid "残虹松开长按后等待这么久再接一下平A, 然后切回安魂曲"
 msgstr "Wait this long after Zankou releases the hold, tap one basic attack, then switch to Requiem"
+
+msgid "切到残虹后等待(s)"
+msgstr "Wait after switching to Zankou (s)"
+
+msgid "按下残虹切换键后等待这么久再长按普攻"
+msgstr "Wait this long after pressing the Zankou switch key before holding basic attack"

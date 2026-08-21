@@ -14,6 +14,7 @@ class CoordinatedAxisSettings:
     zankou_switch_key: str = "2"
     requiem_attack_interval: float = 0.2
     requiem_attack_duration: float = 2.0
+    zankou_switch_delay: float = 0.5
     zankou_hold_duration: float = 2.0
     zankou_normal_attack_delay: float = 0.2
 
@@ -77,7 +78,7 @@ class RequiemZankouAxisTester:
             return False
         if not self.io.send_key(self.settings.zankou_switch_key):
             return False
-        if not self._wait(self.SWITCH_SETTLE_SECONDS):
+        if not self._wait(self.settings.zankou_switch_delay):
             return False
 
         self.io.attack_down()

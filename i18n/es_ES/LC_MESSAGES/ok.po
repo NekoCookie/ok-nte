@@ -1373,3 +1373,9 @@ msgstr "Tiempo que Zankou mantiene pulsado el ataque durante el eje coordinado"
 
 msgid "残虹松开长按后等待这么久再接一下平A, 然后切回安魂曲"
 msgstr "Espera tras soltar el ataque de Zankou, da un ataque básico y cambia a Réquiem"
+
+msgid "切到残虹后等待(s)"
+msgstr "Espera tras cambiar a Zankou (s)"
+
+msgid "按下残虹切换键后等待这么久再长按普攻"
+msgstr "Espera este tiempo después de pulsar la tecla de Zankou antes de mantener el ataque básico"

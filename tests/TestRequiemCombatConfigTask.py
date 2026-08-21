@@ -71,6 +71,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_SWITCH_KEY], "2")
         self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_INTERVAL], 0.2)
         self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_DURATION], 2.0)
+        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_SWITCH_DELAY], 0.5)
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_HOLD_DURATION], 2.0)
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_NORMAL_DELAY], 0.2)
         self.assertEqual(task.default_config[task.CONF_FREE_BREAK_TEST_KEY], "9")
@@ -82,6 +83,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
                 task.CONF_COAXIS_ZANKOU_SWITCH_KEY,
                 task.CONF_COAXIS_REQUIEM_INTERVAL,
                 task.CONF_COAXIS_REQUIEM_DURATION,
+                task.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
                 task.CONF_COAXIS_ZANKOU_HOLD_DURATION,
                 task.CONF_COAXIS_ZANKOU_NORMAL_DELAY,
             ],
@@ -110,6 +112,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             task.CONF_COAXIS_ZANKOU_SWITCH_KEY: "1",
             task.CONF_COAXIS_REQUIEM_INTERVAL: 0.25,
             task.CONF_COAXIS_REQUIEM_DURATION: 2.5,
+            task.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.45,
             task.CONF_COAXIS_ZANKOU_HOLD_DURATION: 1.5,
             task.CONF_COAXIS_ZANKOU_NORMAL_DELAY: 0.35,
         }
@@ -133,6 +136,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertEqual(settings.zankou_switch_key, "1")
         self.assertEqual(settings.requiem_attack_interval, 0.25)
         self.assertEqual(settings.requiem_attack_duration, 2.5)
+        self.assertEqual(settings.zankou_switch_delay, 0.45)
         self.assertEqual(settings.zankou_hold_duration, 1.5)
         self.assertEqual(settings.zankou_normal_attack_delay, 0.35)
         self.assertFalse(task._macro_running)
