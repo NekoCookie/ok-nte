@@ -11,6 +11,7 @@ from src.char.custom.CustomCharDb import DB_SCHEMA_VERSION, CustomCharDb
 from src.char.custom.CustomCharDbMigrator import MigrationContext
 from src.char.Requiem import Requiem
 from src.char.Zero import Zero
+from src.lw.zankou_main_dps import ZankouMainDps
 
 
 class TestCharImplDb(unittest.TestCase):
@@ -114,6 +115,17 @@ class TestCharImplDb(unittest.TestCase):
         self.assertIs(entry.char_cls, Requiem)
         self.assertEqual(entry.cn_name, "安魂曲主C")
         self.assertIs(get_char_implementation_class("builtin:requiem"), Requiem)
+
+    def test_lw_zankou_main_dps_is_available_through_the_current_registry(self):
+        entry = char_registry.get("builtin:zankou_main_dps")
+
+        self.assertIsNotNone(entry)
+        self.assertIs(entry.char_cls, ZankouMainDps)
+        self.assertEqual(entry.cn_name, "残虹主C")
+        self.assertIs(
+            get_char_implementation_class("builtin:zankou_main_dps"),
+            ZankouMainDps,
+        )
 
     def test_external_registry_generates_id_from_class_name(self):
         external_dir = Path(self.temp_dir) / "external_chars"

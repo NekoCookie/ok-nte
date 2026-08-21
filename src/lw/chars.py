@@ -1,5 +1,6 @@
 from src.char.Requiem import Requiem
 from src.lw.combat_templates import BuffSupport, HealSupport, MainDps, SakiriBuffSupport
+from src.lw.zankou_main_dps import ZankouMainDps
 
 
 def register_lw_char_implementations(registry):
@@ -28,4 +29,9 @@ def register_lw_char_implementations(registry):
         "builtin:requiem",
         Requiem,
         cn_name="安魂曲主C",
+    )
+    registry.register(
+        "builtin:zankou_main_dps",
+        ZankouMainDps,
+        cn_name="残虹主C",
     )

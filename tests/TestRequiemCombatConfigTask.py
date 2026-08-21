@@ -57,6 +57,99 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             [task.CONF_SUPPORT_SKILL_PREEMPTION, task.CONF_SUPPORT_ULTIMATE_PREEMPTION],
         )
 
+    def test_coaxis_group_contains_requested_defaults(self):
+        task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
+        task.config_type = {}
+        task.config_description = {}
+
+        with mock.patch.object(BaseNTETask, "__init__", return_value=None):
+            RequiemCombatConfigTask.__init__(task)
+
+        self.assertFalse(task.default_config[task.CONF_GROUP_COAXIS])
+        self.assertEqual(task.default_config[task.CONF_COAXIS_TRIGGER_KEY], "8")
+        self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_SWITCH_KEY], "1")
+        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_SWITCH_KEY], "2")
+        self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_INTERVAL], 0.2)
+        self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_DURATION], 2.0)
+        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_HOLD_DURATION], 2.0)
+        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_NORMAL_DELAY], 0.2)
+        self.assertEqual(task.default_config[task.CONF_FREE_BREAK_TEST_KEY], "9")
+        self.assertEqual(
+            task.config_type[task.CONF_GROUP_COAXIS]["sub_configs"][True],
+            [
+                task.CONF_COAXIS_TRIGGER_KEY,
+                task.CONF_COAXIS_REQUIEM_SWITCH_KEY,
+                task.CONF_COAXIS_ZANKOU_SWITCH_KEY,
+                task.CONF_COAXIS_REQUIEM_INTERVAL,
+                task.CONF_COAXIS_REQUIEM_DURATION,
+                task.CONF_COAXIS_ZANKOU_HOLD_DURATION,
+                task.CONF_COAXIS_ZANKOU_NORMAL_DELAY,
+            ],
+        )
+
+    def test_coaxis_trigger_starts_standalone_test_only_on_press_edge(self):
+        task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
+        task.config = {task.CONF_COAXIS_TRIGGER_KEY: "8"}
+        task._coaxis_key_was_down = False
+        task._macro_running = False
+        task._run_coaxis_test = mock.MagicMock(return_value=True)
+        task._is_key_pressed = mock.MagicMock(side_effect=[True, True, False])
+
+        self.assertTrue(task._poll_coaxis_trigger())
+        task._run_coaxis_test.assert_called_once_with()
+        self.assertFalse(task._poll_coaxis_trigger())
+        self.assertFalse(task._poll_coaxis_trigger())
+        task._run_coaxis_test.assert_called_once_with()
+
+    def test_coaxis_test_builds_lw_tester_without_combat_state(self):
+        task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
+        task.config = {
+            task.CONF_INPUT_MODE: task.INPUT_BG,
+            task.CONF_COAXIS_TRIGGER_KEY: "8",
+            task.CONF_COAXIS_REQUIEM_SWITCH_KEY: "3",
+            task.CONF_COAXIS_ZANKOU_SWITCH_KEY: "1",
+            task.CONF_COAXIS_REQUIEM_INTERVAL: 0.25,
+            task.CONF_COAXIS_REQUIEM_DURATION: 2.5,
+            task.CONF_COAXIS_ZANKOU_HOLD_DURATION: 1.5,
+            task.CONF_COAXIS_ZANKOU_NORMAL_DELAY: 0.35,
+        }
+        task._macro_running = False
+        task._coaxis_running = False
+        task._prepare_input = mock.MagicMock()
+        task._mouse_up = mock.MagicMock()
+        task._is_key_pressed = mock.MagicMock(return_value=False)
+
+        with mock.patch(
+            "src.tasks.trigger.RequiemCombatConfigTask.RequiemZankouAxisTester"
+        ) as tester_class:
+            self.assertTrue(task._run_coaxis_test())
+
+        tester_class.return_value.run.assert_called_once_with()
+        task._prepare_input.assert_called_once_with()
+        task._mouse_up.assert_called_once_with()
+        settings = tester_class.call_args.args[1]
+        self.assertEqual(settings.trigger_key, "8")
+        self.assertEqual(settings.requiem_switch_key, "3")
+        self.assertEqual(settings.zankou_switch_key, "1")
+        self.assertEqual(settings.requiem_attack_interval, 0.25)
+        self.assertEqual(settings.requiem_attack_duration, 2.5)
+        self.assertEqual(settings.zankou_hold_duration, 1.5)
+        self.assertEqual(settings.zankou_normal_attack_delay, 0.35)
+        self.assertFalse(task._macro_running)
+        self.assertFalse(task._coaxis_running)
+
+    def test_coaxis_switch_key_uses_background_input_when_selected(self):
+        task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
+        task._bg = True
+        task._itx = mock.MagicMock()
+
+        with mock.patch("src.tasks.trigger.RequiemCombatConfigTask.time.sleep") as sleep:
+            self.assertTrue(task._coaxis_send_key("3"))
+
+        task._itx.send_key_down.assert_called_once_with("3")
+        sleep.assert_called_once_with(0.02)
+        task._itx.send_key_up.assert_called_once_with("3")
+
 
 class TestRequiemCombatConfigTaskExchangePaths(unittest.TestCase):
     def make_task(self):

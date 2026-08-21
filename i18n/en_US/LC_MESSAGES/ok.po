@@ -1325,3 +1325,51 @@ msgstr "Tap G"
 
 msgid "挑战玛门"
 msgstr "Challenge Mammon"
+
+msgid "▸ 安魂曲残虹合轴(展开)"
+msgstr "▸ Requiem-Zankou coordinated axis (expand)"
+
+msgid "合轴触发键"
+msgstr "Coordinated-axis trigger key"
+
+msgid "安魂曲切换键"
+msgstr "Requiem switch key"
+
+msgid "残虹切换键"
+msgstr "Zankou switch key"
+
+msgid "安魂曲普攻间隔(s)"
+msgstr "Requiem basic-attack interval (s)"
+
+msgid "安魂曲普攻时长(s)"
+msgstr "Requiem basic-attack duration (s)"
+
+msgid "残虹长按普攻时长(s)"
+msgstr "Zankou hold-attack duration (s)"
+
+msgid "残虹接平A延迟(s)"
+msgstr "Zankou follow-up basic-attack delay (s)"
+
+msgid "▸ 分组折叠: 展开安魂曲主C与残虹主C的合轴触发键和时序"
+msgstr "▸ Group: expand Requiem Main DPS and Zankou Main DPS coordinated-axis keys and timings"
+
+msgid "按一下开始重复合轴测试, 再按一下停止; 默认8"
+msgstr "Press once to start the repeating coordinated-axis test; press again to stop; default: 8"
+
+msgid "安魂曲在队伍中的数字切换键; 默认1"
+msgstr "Number key for Requiem's team slot; default: 1"
+
+msgid "残虹在队伍中的数字切换键; 默认2"
+msgstr "Number key for Zankou's team slot; default: 2"
+
+msgid "安魂曲合轴阶段每次普攻的间隔秒数, 最低按0.02s执行"
+msgstr "Interval between Requiem basic attacks during the coordinated axis; minimum: 0.02 s"
+
+msgid "安魂曲持续普攻这么久后切到残虹"
+msgstr "How long Requiem uses basic attacks before switching to Zankou"
+
+msgid "残虹合轴阶段长按普攻的持续秒数"
+msgstr "How long Zankou holds the basic-attack button during the coordinated axis"
+
+msgid "残虹松开长按后等待这么久再接一下平A, 然后切回安魂曲"
+msgstr "Wait this long after Zankou releases the hold, tap one basic attack, then switch to Requiem"

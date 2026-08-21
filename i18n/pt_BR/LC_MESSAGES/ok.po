@@ -1056,3 +1056,51 @@ msgstr "Pressionar G"
 
 msgid "挑战玛门"
 msgstr "Desafiar Mammon"
+
+msgid "▸ 安魂曲残虹合轴(展开)"
+msgstr "▸ Eixo coordenado Réquiem-Zankou (expandir)"
+
+msgid "合轴触发键"
+msgstr "Tecla de acionamento do eixo coordenado"
+
+msgid "安魂曲切换键"
+msgstr "Tecla para trocar para Réquiem"
+
+msgid "残虹切换键"
+msgstr "Tecla para trocar para Zankou"
+
+msgid "安魂曲普攻间隔(s)"
+msgstr "Intervalo do ataque básico de Réquiem (s)"
+
+msgid "安魂曲普攻时长(s)"
+msgstr "Duração do ataque básico de Réquiem (s)"
+
+msgid "残虹长按普攻时长(s)"
+msgstr "Duração do ataque segurado de Zankou (s)"
+
+msgid "残虹接平A延迟(s)"
+msgstr "Atraso do ataque básico final de Zankou (s)"
+
+msgid "▸ 分组折叠: 展开安魂曲主C与残虹主C的合轴触发键和时序"
+msgstr "▸ Grupo: expandir teclas e tempos do eixo coordenado dos DPS principais Réquiem e Zankou"
+
+msgid "按一下开始重复合轴测试, 再按一下停止; 默认8"
+msgstr "Pressione uma vez para repetir o teste do eixo coordenado e novamente para parar; padrão: 8"
+
+msgid "安魂曲在队伍中的数字切换键; 默认1"
+msgstr "Tecla numérica de Réquiem na equipe; padrão: 1"
+
+msgid "残虹在队伍中的数字切换键; 默认2"
+msgstr "Tecla numérica de Zankou na equipe; padrão: 2"
+
+msgid "安魂曲合轴阶段每次普攻的间隔秒数, 最低按0.02s执行"
+msgstr "Intervalo entre ataques básicos de Réquiem durante o eixo coordenado; mínimo: 0,02 s"
+
+msgid "安魂曲持续普攻这么久后切到残虹"
+msgstr "Tempo que Réquiem ataca antes de trocar para Zankou"
+
+msgid "残虹合轴阶段长按普攻的持续秒数"
+msgstr "Tempo que Zankou mantém o ataque pressionado durante o eixo coordenado"
+
+msgid "残虹松开长按后等待这么久再接一下平A, 然后切回安魂曲"
+msgstr "Aguarde após soltar o ataque de Zankou, dê um ataque básico e troque para Réquiem"

@@ -10,6 +10,10 @@ from ok.util.config import Config
 from ok.util.file import get_relative_path
 
 from src.combat import requiem_combo
+from src.lw.requiem_zankou_axis import (
+    CoordinatedAxisSettings,
+    RequiemZankouAxisTester,
+)
 from src.lw.virtual_gamepad import (
     VirtualGamepadPulseTester,
     VirtualGamepadUnavailableError,
@@ -40,6 +44,40 @@ class _MacroIO:
 
     def sleep_ms(self, ms):
         time.sleep(ms / 1000.0)
+
+
+class _CoaxisIO:
+    """[lw] Adapt task input primitives to the standalone coordinated-axis tester."""
+
+    ATTACK_DOWN_SECONDS = 0.02
+
+    def __init__(self, task):
+        self._task = task
+
+    def enabled(self):
+        return self._task.enabled
+
+    def trigger_pressed(self, key):
+        return self._task._is_key_pressed(key)
+
+    def send_key(self, key):
+        return self._task._coaxis_send_key(key)
+
+    def tap_attack(self):
+        self._task._mouse_down()
+        try:
+            time.sleep(self.ATTACK_DOWN_SECONDS)
+        finally:
+            self._task._mouse_up()
+
+    def attack_down(self):
+        self._task._mouse_down()
+
+    def attack_up(self):
+        self._task._mouse_up()
+
+    def log(self, message):
+        self._task.log_info(message)
 
 
 class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
@@ -170,6 +208,15 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_GROUP_SUPPORT_PREEMPTION = "▸ 辅助资源提权(展开)"
     CONF_SUPPORT_SKILL_PREEMPTION = "辅助E是否提权"
     CONF_SUPPORT_ULTIMATE_PREEMPTION = "辅助Q是否提权"
+    # [lw] Requiem and Zankou main-DPS axis settings, folded away by default.
+    CONF_GROUP_COAXIS = "▸ 安魂曲残虹合轴(展开)"
+    CONF_COAXIS_TRIGGER_KEY = "合轴触发键"
+    CONF_COAXIS_REQUIEM_SWITCH_KEY = "安魂曲切换键"
+    CONF_COAXIS_ZANKOU_SWITCH_KEY = "残虹切换键"
+    CONF_COAXIS_REQUIEM_INTERVAL = "安魂曲普攻间隔(s)"
+    CONF_COAXIS_REQUIEM_DURATION = "安魂曲普攻时长(s)"
+    CONF_COAXIS_ZANKOU_HOLD_DURATION = "残虹长按普攻时长(s)"
+    CONF_COAXIS_ZANKOU_NORMAL_DELAY = "残虹接平A延迟(s)"
     CONF_GROUP_DODGE = "▸ 闪避反击设置(展开)"     # 分组折叠开关: 展开=闪避方式(下拉)+选闪双4a时的时序
     CONF_GROUP_TUNING = "▸ 实战调优参数(展开)"    # 分组折叠开关
     CONF_GROUP_TEST = "▸ 测试开关与测试键(展开)"   # 分组折叠开关
@@ -257,6 +304,15 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_GROUP_SUPPORT_PREEMPTION: False,
                 self.CONF_SUPPORT_SKILL_PREEMPTION: True,
                 self.CONF_SUPPORT_ULTIMATE_PREEMPTION: True,
+                # [lw] Standalone pair-axis test; it does not read or change combat plans.
+                self.CONF_GROUP_COAXIS: False,
+                self.CONF_COAXIS_TRIGGER_KEY: "8",
+                self.CONF_COAXIS_REQUIEM_SWITCH_KEY: "1",
+                self.CONF_COAXIS_ZANKOU_SWITCH_KEY: "2",
+                self.CONF_COAXIS_REQUIEM_INTERVAL: 0.2,
+                self.CONF_COAXIS_REQUIEM_DURATION: 2.0,
+                self.CONF_COAXIS_ZANKOU_HOLD_DURATION: 2.0,
+                self.CONF_COAXIS_ZANKOU_NORMAL_DELAY: 0.2,
                 # 闪避反击设置组(折叠)→ 闪避方式(下拉)→ 选"闪双4a"才显示7个时序
                 self.CONF_GROUP_DODGE: False,
                 self.CONF_DODGE_STYLE: self.STYLE_SCHEME_B,
@@ -301,7 +357,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_DISABLE_SKILLS: False,
                 self.CONF_FIRST_ATTACK_TEST_KEY: "6",
                 self.CONF_DODGE_TEST_KEY: "7",
-                self.CONF_FREE_BREAK_TEST_KEY: "8",
+                self.CONF_FREE_BREAK_TEST_KEY: "9",
                 self.CONF_FREE_SKILL_KEY: "e",
                 # [lw] 实验功能默认关闭，避免未验证双手柄兼容性时影响游戏输入。
                 self.CONF_GROUP_GAMEPAD: False,
@@ -357,6 +413,20 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                         True: [
                             self.CONF_SUPPORT_SKILL_PREEMPTION,
                             self.CONF_SUPPORT_ULTIMATE_PREEMPTION,
+                        ],
+                    },
+                },
+                # [lw] Pair axis timings and its toggle key stay in one folded group.
+                self.CONF_GROUP_COAXIS: {
+                    "sub_configs": {
+                        True: [
+                            self.CONF_COAXIS_TRIGGER_KEY,
+                            self.CONF_COAXIS_REQUIEM_SWITCH_KEY,
+                            self.CONF_COAXIS_ZANKOU_SWITCH_KEY,
+                            self.CONF_COAXIS_REQUIEM_INTERVAL,
+                            self.CONF_COAXIS_REQUIEM_DURATION,
+                            self.CONF_COAXIS_ZANKOU_HOLD_DURATION,
+                            self.CONF_COAXIS_ZANKOU_NORMAL_DELAY,
                         ],
                     },
                 },
@@ -500,6 +570,14 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_GROUP_SUPPORT_PREEMPTION: "▸ 分组折叠: 展开辅助 Q/E 的资源提权开关",
                 self.CONF_SUPPORT_SKILL_PREEMPTION: "开=辅助 E 就绪时在环合前抢占; 关=仅按普通评分参与切人",
                 self.CONF_SUPPORT_ULTIMATE_PREEMPTION: "开=辅助 Q 待铺时在环合前抢占; 关=仅按普通评分参与切人",
+                self.CONF_GROUP_COAXIS: "▸ 分组折叠: 展开安魂曲主C与残虹主C的合轴触发键和时序",
+                self.CONF_COAXIS_TRIGGER_KEY: "按一下开始重复合轴测试, 再按一下停止; 默认8",
+                self.CONF_COAXIS_REQUIEM_SWITCH_KEY: "安魂曲在队伍中的数字切换键; 默认1",
+                self.CONF_COAXIS_ZANKOU_SWITCH_KEY: "残虹在队伍中的数字切换键; 默认2",
+                self.CONF_COAXIS_REQUIEM_INTERVAL: "安魂曲合轴阶段每次普攻的间隔秒数, 最低按0.02s执行",
+                self.CONF_COAXIS_REQUIEM_DURATION: "安魂曲持续普攻这么久后切到残虹",
+                self.CONF_COAXIS_ZANKOU_HOLD_DURATION: "残虹合轴阶段长按普攻的持续秒数",
+                self.CONF_COAXIS_ZANKOU_NORMAL_DELAY: "残虹松开长按后等待这么久再接一下平A, 然后切回安魂曲",
                 self.CONF_GROUP_TUNING: "▸ 分组折叠: 展开实战调优参数(反击平A/后摇/主动闪避/轮数/技能前平A/脱战复查/让路)",
                 self.CONF_GROUP_TEST: "▸ 分组折叠: 展开测试开关与测试键(闪避反击测试/禁用技能大招/首平A/模拟闪避)",
                 self.CONF_GROUP_GAMEPAD: "▸ 分组折叠: 展开实体手柄与虚拟手柄共存测试",
@@ -523,6 +601,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         self._fk_was_down = False     # 闪避后首平A测试键的前态(边沿检测)
         self._dtk_was_down = False    # 闪避反击模拟测试键(7)的前态(边沿检测)
         self._fbk_was_down = False    # 免费技能后接combo测试键的前态(边沿检测)
+        self._coaxis_key_was_down = False  # [lw] Pair-axis toggle edge state.
+        self._coaxis_running = False       # [lw] Standalone axis test state.
         self._gamepad_tester = None     # [lw] 延迟创建，默认关闭时不加载 vgamepad
         self._next_gamepad_pulse_at = 0.0
         self._gamepad_error_reported = False
@@ -556,9 +636,12 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             self._key_was_down = False
             self._macro_running = False
             self._last_seen_dodge = None
+            self._coaxis_key_was_down = False
+            self._coaxis_running = False
             return False
 
         self._poll_gamepad_test()
+        self._poll_coaxis_trigger()
 
         # 闪避反击模拟测试键(7, 边沿触发): 假装出现声音, 走一整轮完整流程(含初始闪避)。
         dtk = self.config.get(self.CONF_DODGE_TEST_KEY)
@@ -574,6 +657,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
 
         # 免费技能后接combo测试键(边沿触发): 发技能键放(免费)技能 → delay → 闪避打断a5 → wait → combo。
         fbk = self.config.get(self.CONF_FREE_BREAK_TEST_KEY)
+        if self._same_key(fbk, self.config.get(self.CONF_COAXIS_TRIGGER_KEY)):
+            fbk = None
         if fbk:
             fbdown = self._is_key_pressed(fbk)
             fbedge = fbdown and not self._fbk_was_down
@@ -632,6 +717,98 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             return True
         self._key_was_down = True
         self._run_macro()
+        return True
+
+    @staticmethod
+    def _same_key(first, second):
+        return bool(
+            str(first or "").strip()
+            and str(first or "").strip().casefold() == str(second or "").strip().casefold()
+        )
+
+    def _poll_coaxis_trigger(self):
+        """[lw] Start the standalone coordinated-axis loop on a trigger-key edge."""
+
+        key = self.config.get(self.CONF_COAXIS_TRIGGER_KEY)
+        if not key:
+            self._coaxis_key_was_down = False
+            return False
+        key_down = self._is_key_pressed(key)
+        edge = key_down and not self._coaxis_key_was_down
+        self._coaxis_key_was_down = key_down
+        if not edge:
+            return False
+        if self._macro_running:
+            return False
+        return self._run_coaxis_test()
+
+    def _run_coaxis_test(self):
+        """[lw] Run the input-only tester; no combat planner or character state is used."""
+
+        bg_mode = self.config.get(self.CONF_INPUT_MODE) == self.INPUT_BG
+        if not bg_mode and not self.is_foreground():
+            self.log_info("安魂曲残虹合轴测试: 前台输入模式要求游戏位于前台")
+            return False
+
+        requiem_switch_key = str(
+            self.config.get(self.CONF_COAXIS_REQUIEM_SWITCH_KEY, "1")
+        ).strip() or "1"
+        zankou_switch_key = str(
+            self.config.get(self.CONF_COAXIS_ZANKOU_SWITCH_KEY, "2")
+        ).strip() or "2"
+        settings = CoordinatedAxisSettings(
+            trigger_key=str(self.config.get(self.CONF_COAXIS_TRIGGER_KEY, "8")),
+            requiem_switch_key=requiem_switch_key,
+            zankou_switch_key=zankou_switch_key,
+            requiem_attack_interval=max(
+                0.02,
+                self._conf_num(self.CONF_COAXIS_REQUIEM_INTERVAL, 0.2),
+            ),
+            requiem_attack_duration=max(
+                0.0,
+                self._conf_num(self.CONF_COAXIS_REQUIEM_DURATION, 2.0),
+            ),
+            zankou_hold_duration=max(
+                0.0,
+                self._conf_num(self.CONF_COAXIS_ZANKOU_HOLD_DURATION, 2.0),
+            ),
+            zankou_normal_attack_delay=max(
+                0.0,
+                self._conf_num(self.CONF_COAXIS_ZANKOU_NORMAL_DELAY, 0.2),
+            ),
+        )
+        self._prepare_input()
+        self._macro_running = True
+        self._coaxis_running = True
+        try:
+            RequiemZankouAxisTester(_CoaxisIO(self), settings).run()
+            return True
+        finally:
+            self._mouse_up()
+            self._coaxis_running = False
+            self._macro_running = False
+            self._coaxis_key_was_down = self._is_key_pressed(settings.trigger_key)
+
+    def _coaxis_send_key(self, key):
+        """[lw] Send a configured switch key through the selected input mode."""
+
+        if getattr(self, "_bg", False):
+            self._itx.send_key_down(key)
+            try:
+                time.sleep(0.02)
+            finally:
+                self._itx.send_key_up(key)
+            return True
+
+        vk_code = self._get_vk_code(key)
+        if vk_code is None:
+            self.log_info(f"安魂曲残虹合轴测试: 无法识别切换键 {key}")
+            return False
+        win32api.keybd_event(vk_code, 0, 0, 0)
+        try:
+            time.sleep(0.02)
+        finally:
+            win32api.keybd_event(vk_code, 0, win32con.KEYEVENTF_KEYUP, 0)
         return True
 
     def _poll_gamepad_test(self):

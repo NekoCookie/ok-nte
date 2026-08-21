@@ -250,6 +250,18 @@ at `HEAD` only and was not changed as part of this sync.
 | Commit | `2fde742` |
 | Status | verified |
 
+### P-02: Zankou main-DPS template and standalone coordinated-axis test
+
+| Field | Evidence |
+| --- | --- |
+| Scope | This post-merge LW feature adds a selectable Zankou main-DPS implementation and an input-only Requiem/Zankou timing test. It intentionally does not integrate the test loop with automatic-combat character state or planner dispatch. |
+| RU contract | `src/char/Zankou.py` remains unchanged and continues to own Zankou's role, action plan, ultimate flow, and skill combo. `src/char/Requiem.py` and `src/combat/planner/` are also unchanged. |
+| Required LW behavior | `builtin:zankou_main_dps` appears as `残虹主C` and uses the current RU Zankou logic. With the Requiem config trigger task enabled, pressing the configurable key (default `8`) starts a repeating test: switch to Requiem, basic attack at the configured interval for the configured duration, switch to Zankou, hold attack, wait, tap one basic attack, and switch back. Pressing the trigger again stops the loop. The switch keys default to `1` and `2` and are configurable because this test does not perform character recognition. |
+| Boundary | `src/lw/zankou_main_dps.py` subclasses RU Zankou without overriding combat methods. `src/lw/requiem_zankou_axis.py` owns all loop state and timing. `RequiemCombatConfigTask` contains the minimal `[lw]` input adapter, folded configuration, and trigger connection. The tester always releases the attack button on interruption or exit. |
+| Regression | `TestRequiemZankouAxis` proves inherited RU method identity, the configured one-round input order, and held-button release on the stop edge. `TestRequiemCombatConfigTask` proves defaults, folded layout, edge-trigger dispatch, input-mode-aware switch keys, and construction of the LW tester without combat state. `TestCharImplDb` proves registry resolution. Focused tests passed (40 tests); the full suite passed (636 tests) on 2026-08-22. All seven PO/MO catalogs contain compiled translations for the 16 new visible strings. |
+| Manual validation | A real game window is still required to tune the default switch-settle delay and confirm that the game accepts the selected foreground/background input mode. This is the purpose of the standalone trigger and is not represented as automatic-combat integration. |
+| Status | verified; real-window timing remains user validation |
+
 ### R-01: Window layout and focus-stability extension boundary
 
 | Field | Evidence |
@@ -296,6 +308,7 @@ matrix and must themselves obey the LW/RU boundary before the ledger can close.
 | Change | Files | Required action | Status |
 | --- | --- | --- | --- |
 | Account-aware daily summary and retry | `src/lw/daily_routine_ext.py`, `src/tasks/daily/DailyRoutineTask.py`, `src/tasks/daily/FurnitureTask.py`, `src/ui/DailyRoutineTab.py` | Move remaining daily-specific behavior behind `src/lw/` adapters or mark minimal RU connection points with `[lw]`; retain current tests | verified; see P-01 |
+| Zankou main-DPS template and standalone coordinated-axis test | `src/lw/chars.py`, `src/lw/zankou_main_dps.py`, `src/lw/requiem_zankou_axis.py`, `src/tasks/trigger/RequiemCombatConfigTask.py`, `i18n/*/LC_MESSAGES/ok.po`, `i18n/*/LC_MESSAGES/ok.mo` | Keep RU Zankou/Requiem/planner unchanged; isolate the test loop in `src/lw/`; prove input release and registry/config contracts | verified; see P-02 |
 | Interface-break repair | `src/lw/combat_ext.py`, `src/lw/fish_catch_ext.py` | Keep I-01 and I-02 regression coverage during later migration work | verified |
 
 ## Required evidence before closure
