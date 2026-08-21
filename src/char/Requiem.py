@@ -9,6 +9,12 @@ from src.lw.combat_templates import MainDps
 from src.combat import requiem_combo
 from src.combat.planner import ActionSlot, ActionTag
 from src.Labels import Labels
+from src.lw.requiem_zankou_axis import (
+    REQUIEM_IMPL_ID,
+    ZANKOU_MAIN_DPS_IMPL_ID,
+    coordinated_axis_partner,
+    perform_requiem_combat_axis,
+)
 from src.sound_trigger.SoundCombatContext import SoundCombatContext
 
 
@@ -202,6 +208,13 @@ class Requiem(MainDps):
         窗口外续打 各是独立声明动作, execute 复用现有方法(combo 时序、cast_real_skill、续打状态机
         一行不改), entry generator 编排分支顺序。双4a 是原子动作、整段包进一个
         LEGACY_COMBO action(planner 为 combo 迁移预留的槽), 不拆内部跳A时序。"""
+        # [lw] The optional Requiem/Zankou combat axis is implemented in src/lw.
+        coaxis_partner = coordinated_axis_partner(
+            self,
+            context,
+            self_impl_id=REQUIEM_IMPL_ID,
+            partner_impl_id=ZANKOU_MAIN_DPS_IMPL_ID,
+        )
         ultimate = self.planner_action(
             tags={ActionTag.ULTIMATE_ACTION},
             slot=ActionSlot.ULTIMATE,
@@ -229,7 +242,7 @@ class Requiem(MainDps):
             can_execute=lambda _: self.skill_available() and not self.is_real_skill_now(),
             priority_ready=lambda _: False,  # 免费技中途放, 不主动抢切人
         )
-        combo = self.planner_action(
+        double_4a = self.planner_action(
             tags={ActionTag.LEGACY_COMBO, ActionTag.DAMAGE, ActionTag.FIELD_TIME},
             slot=ActionSlot.LEGACY_COMBO,
             execute=lambda _: self.idle_normal_attack(),
@@ -237,6 +250,20 @@ class Requiem(MainDps):
             reason="requiem double-4a combo",
             priority_ready=lambda _: False,  # combo 靠 field_time 站场, 不主动抢切人
         )
+        field_action = double_4a
+        if coaxis_partner is not None:
+            field_action = self.planner_action(
+                tags={ActionTag.LEGACY_COMBO, ActionTag.DAMAGE, ActionTag.FIELD_TIME},
+                slot=ActionSlot.LEGACY_COMBO,
+                execute=lambda axis_context: perform_requiem_combat_axis(
+                    self,
+                    axis_context,
+                    coaxis_partner,
+                ),
+                name=f"{self}_coordinated_axis",
+                reason="requiem no-resource coordinated axis",
+                priority_ready=lambda _: False,
+            )
         combo_continue = self.planner_action(
             tags={ActionTag.LEGACY_COMBO},
             slot=ActionSlot.LEGACY_COMBO,
@@ -258,7 +285,7 @@ class Requiem(MainDps):
                 return
             # 测试开关: 禁用技能大招, 只站场打 combo(单独测手感/闪避)
             if self._skills_disabled_for_test():
-                yield combo
+                yield double_4a
                 return
             # 目标存活门: 别对尸体开大或放真技能(白扔长CD); 已脱战抛 NotInCombat 收手
             self._check_combat_alive()
@@ -271,10 +298,10 @@ class Requiem(MainDps):
                     return  # 免费技: 留场接平A
             if used_ultimate:
                 return
-            yield combo  # 双4a
+            yield field_action  # 双4a, 或实战开关启用后的无资源合轴
 
         return self.plan(
-            ultimate, real_skill, free_skill, combo, combo_continue, entry=entry
+            ultimate, real_skill, free_skill, field_action, combo_continue, entry=entry
         )
 
     def _execute_free_skill(self, context=None):

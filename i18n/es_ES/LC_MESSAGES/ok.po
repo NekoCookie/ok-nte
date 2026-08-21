@@ -1388,3 +1388,9 @@ msgstr "Intervalo compartido de ataque básico de Réquiem y Zankou durante el e
 
 msgid "残虹长按结束后按共享间隔持续普攻这么久, 然后切回安魂曲"
 msgstr "Tras el ataque mantenido de Zankou, repite ataques básicos al intervalo compartido durante este tiempo y cambia a Réquiem"
+
+msgid "实战启用合轴"
+msgstr "Activar el eje coordinado en combate"
+
+msgid "开=两个主C模板同队时自动进入实战合轴; 关=仅保留按键测试"
+msgstr "Activado = usar automáticamente el eje en combate cuando ambos DPS principales estén en el equipo; desactivado = conservar solo la prueba de tecla"

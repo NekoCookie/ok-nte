@@ -66,6 +66,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             RequiemCombatConfigTask.__init__(task)
 
         self.assertFalse(task.default_config[task.CONF_GROUP_COAXIS])
+        self.assertFalse(task.default_config[task.CONF_COAXIS_COMBAT_ENABLE])
         self.assertEqual(task.default_config[task.CONF_COAXIS_TRIGGER_KEY], "8")
         self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_SWITCH_KEY], "1")
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_SWITCH_KEY], "2")
@@ -78,6 +79,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertEqual(
             task.config_type[task.CONF_GROUP_COAXIS]["sub_configs"][True],
             [
+                task.CONF_COAXIS_COMBAT_ENABLE,
                 task.CONF_COAXIS_TRIGGER_KEY,
                 task.CONF_COAXIS_REQUIEM_SWITCH_KEY,
                 task.CONF_COAXIS_ZANKOU_SWITCH_KEY,

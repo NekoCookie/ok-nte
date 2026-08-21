@@ -1,14 +1,22 @@
 """Regression tests for the standalone Requiem and Zankou coordinated-axis test."""
 
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
+from src.char.Requiem import Requiem
 from src.char.Zankou import Zankou
+from src.combat.planner import ActionSlot
 from src.lw.requiem_zankou_axis import (
     CoordinatedAxisSettings,
+    REQUIEM_IMPL_ID,
     RequiemZankouAxisTester,
+    ZANKOU_MAIN_DPS_IMPL_ID,
+    perform_requiem_combat_axis,
+    perform_zankou_combat_axis,
 )
 from src.lw.zankou_main_dps import ZankouMainDps
+from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 
 
 class FakeClock:
@@ -54,10 +62,132 @@ class FakeAxisIO:
         self.events.append(("log", message))
 
 
+class FakeCombatChar:
+    def __init__(self, config_task):
+        self.task = SimpleNamespace(get_task_by_class=lambda _: config_task)
+        self.clock = 0.0
+        self.events = []
+        self.last_switch_time = 0.0
+
+    def now(self):
+        return self.clock
+
+    def normal_attack(self):
+        self.events.append(("tap", self.clock))
+
+    def sleep(self, duration):
+        self.events.append(("sleep", duration))
+        self.clock += duration
+
+    def heavy_attack(self, duration):
+        self.events.append(("hold", duration))
+        self.clock += duration
+
+def make_config_task(combat_enabled=True, **overrides):
+    config = {
+        RequiemCombatConfigTask.CONF_COAXIS_COMBAT_ENABLE: combat_enabled,
+        RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_INTERVAL: 0.2,
+        RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_DURATION: 0.45,
+        RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.5,
+        RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_HOLD_DURATION: 1.8,
+        RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 0.45,
+    }
+    config.update(overrides)
+    return SimpleNamespace(
+        config=config,
+        CONF_COAXIS_COMBAT_ENABLE=RequiemCombatConfigTask.CONF_COAXIS_COMBAT_ENABLE,
+        CONF_COAXIS_REQUIEM_INTERVAL=RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_INTERVAL,
+        CONF_COAXIS_REQUIEM_DURATION=RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_DURATION,
+        CONF_COAXIS_ZANKOU_SWITCH_DELAY=(
+            RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_SWITCH_DELAY
+        ),
+        CONF_COAXIS_ZANKOU_HOLD_DURATION=(
+            RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_HOLD_DURATION
+        ),
+        CONF_COAXIS_ZANKOU_NORMAL_DURATION=(
+            RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_NORMAL_DURATION
+        ),
+    )
+
+
+def make_combat_pair(combat_enabled=True):
+    config_task = make_config_task(combat_enabled=combat_enabled)
+    task = SimpleNamespace(chars=[], get_task_by_class=lambda _: config_task)
+    requiem = Requiem.__new__(Requiem)
+    requiem.index = 0
+    requiem.impl_id = REQUIEM_IMPL_ID
+    requiem.is_dead = False
+    requiem.task = task
+    requiem._pending_double_4a = None
+    zankou = ZankouMainDps.__new__(ZankouMainDps)
+    zankou.index = 1
+    zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
+    zankou.is_dead = False
+    zankou.task = task
+    task.chars = [requiem, zankou]
+    context = SimpleNamespace(chars=task.chars)
+    return requiem, zankou, context
+
+
 class TestRequiemZankouAxis(unittest.TestCase):
-    def test_zankou_main_dps_inherits_current_ru_combat_logic(self):
-        self.assertIs(ZankouMainDps.combat_plan, Zankou.combat_plan)
+    def test_zankou_main_dps_keeps_ru_skill_combo_implementation(self):
         self.assertIs(ZankouMainDps.perform_skill_combo, Zankou.perform_skill_combo)
+
+    def test_combat_switch_off_keeps_original_requiem_and_zankou_plans(self):
+        requiem, zankou, context = make_combat_pair(combat_enabled=False)
+
+        requiem_names = {action.name for action in requiem.combat_plan(context).actions}
+        self.assertIn("Requiem_double_4a", requiem_names)
+        self.assertNotIn("Requiem_coordinated_axis", requiem_names)
+        with mock.patch.object(Zankou, "combat_plan", return_value="ru-plan") as ru_plan:
+            self.assertEqual(zankou.combat_plan(context), "ru-plan")
+        ru_plan.assert_called_once_with(context)
+
+    def test_combat_switch_on_replaces_requiem_fallback_and_removes_zankou_skill(self):
+        requiem, zankou, context = make_combat_pair(combat_enabled=True)
+
+        requiem_plan = requiem.combat_plan(context)
+        requiem_names = {action.name for action in requiem_plan.actions}
+        self.assertIn("Requiem_coordinated_axis", requiem_names)
+        self.assertNotIn("Requiem_double_4a", requiem_names)
+        self.assertEqual(
+            sum(action.slot == ActionSlot.SKILL for action in requiem_plan.actions),
+            2,
+        )
+        requiem._maybe_trigger_g_skill = mock.MagicMock(return_value=False)
+        requiem._skills_disabled_for_test = mock.MagicMock(return_value=True)
+        self.assertEqual(next(requiem_plan.entry()).name, "Requiem_double_4a")
+
+        zankou_plan = zankou.combat_plan(context)
+        zankou_names = {action.name for action in zankou_plan.actions}
+        self.assertEqual(
+            zankou_names,
+            {"ZankouMainDps_ultimate", "ZankouMainDps_coordinated_axis"},
+        )
+        self.assertFalse(any(action.slot == ActionSlot.SKILL for action in zankou_plan.actions))
+        zankou.find_ult_purple = mock.MagicMock(return_value=True)
+        zankou.ultimate_available = mock.MagicMock(return_value=True)
+        zankou.click_with_interval = mock.MagicMock()
+        zankou.task.wait_until = mock.MagicMock()
+        zankou_entry = zankou_plan.entry()
+        self.assertEqual(next(zankou_entry).name, "ZankouMainDps_ultimate")
+        self.assertEqual(zankou_entry.send(True).name, "ZankouMainDps_ultimate")
+        self.assertEqual(zankou_entry.send(True).name, "ZankouMainDps_coordinated_axis")
+        zankou.task.wait_until.assert_called_once_with(
+            zankou.ultimate_available,
+            post_action=zankou.click_with_interval,
+            time_out=3,
+        )
+
+    def test_combat_switch_requires_both_exact_main_dps_templates(self):
+        requiem, zankou, context = make_combat_pair(combat_enabled=True)
+        zankou.impl_id = "builtin:zankou"
+
+        requiem_names = {action.name for action in requiem.combat_plan(context).actions}
+        self.assertIn("Requiem_double_4a", requiem_names)
+        with mock.patch.object(Zankou, "combat_plan", return_value="ru-plan") as ru_plan:
+            self.assertEqual(zankou.combat_plan(context), "ru-plan")
+        ru_plan.assert_called_once_with(context)
 
     def test_one_round_uses_configured_keys_and_attack_sequence(self):
         clock = FakeClock()
@@ -109,6 +239,35 @@ class TestRequiemZankouAxis(unittest.TestCase):
             self.assertFalse(tester.run_round())
 
         self.assertEqual(io.events, [("key", "2"), ("down",), ("up",)])
+
+    def test_combat_actions_use_configured_timings_and_request_each_partner(self):
+        config_task = make_config_task()
+        requiem = FakeCombatChar(config_task)
+        zankou = FakeCombatChar(config_task)
+        requiem_context = SimpleNamespace(request_switch=mock.MagicMock())
+        zankou_context = SimpleNamespace(request_switch=mock.MagicMock())
+
+        self.assertTrue(perform_requiem_combat_axis(requiem, requiem_context, zankou))
+        self.assertEqual(
+            [event for event in requiem.events if event[0] == "tap"],
+            [("tap", 0.0), ("tap", 0.2), ("tap", 0.4)],
+        )
+        requiem_context.request_switch.assert_called_once_with(
+            zankou,
+            reason="requiem coordinated axis complete",
+        )
+
+        self.assertTrue(perform_zankou_combat_axis(zankou, zankou_context, requiem))
+        self.assertEqual(zankou.events[0], ("sleep", 0.5))
+        self.assertIn(("hold", 1.8), zankou.events)
+        self.assertEqual(
+            [(name, round(at, 1)) for name, at in zankou.events if name == "tap"],
+            [("tap", 2.3), ("tap", 2.5), ("tap", 2.7)],
+        )
+        zankou_context.request_switch.assert_called_once_with(
+            requiem,
+            reason="zankou coordinated axis complete",
+        )
 
 
 if __name__ == "__main__":

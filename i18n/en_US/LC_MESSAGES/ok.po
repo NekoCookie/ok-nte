@@ -1388,3 +1388,9 @@ msgstr "Shared basic-attack interval for Requiem and Zankou during the coordinat
 
 msgid "残虹长按结束后按共享间隔持续普攻这么久, 然后切回安魂曲"
 msgstr "After Zankou's held attack ends, repeat basic attacks at the shared interval for this duration, then switch to Requiem"
+
+msgid "实战启用合轴"
+msgstr "Enable coordinated axis in combat"
+
+msgid "开=两个主C模板同队时自动进入实战合轴; 关=仅保留按键测试"
+msgstr "On = automatically use the combat axis when both main-DPS templates are in the team; off = keep only the hotkey test"
