@@ -16,7 +16,7 @@ class CoordinatedAxisSettings:
     requiem_attack_duration: float = 2.0
     zankou_switch_delay: float = 0.5
     zankou_hold_duration: float = 2.0
-    zankou_normal_attack_delay: float = 0.2
+    zankou_normal_attack_duration: float = 2.0
 
 
 class CoordinatedAxisIO(Protocol):
@@ -87,15 +87,17 @@ class RequiemZankouAxisTester:
                 return False
         finally:
             self.io.attack_up()
-        if not self._wait(self.settings.zankou_normal_attack_delay):
+        if not self._run_normal_attack_phase(self.settings.zankou_normal_attack_duration):
             return False
-        self.io.tap_attack()
         if not self.io.send_key(self.settings.requiem_switch_key):
             return False
         return self._wait(self.SWITCH_SETTLE_SECONDS)
 
     def _run_requiem_phase(self) -> bool:
-        deadline = time.monotonic() + self.settings.requiem_attack_duration
+        return self._run_normal_attack_phase(self.settings.requiem_attack_duration)
+
+    def _run_normal_attack_phase(self, duration: float) -> bool:
+        deadline = time.monotonic() + duration
         while time.monotonic() < deadline:
             if not self._should_continue():
                 return False

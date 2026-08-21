@@ -1379,3 +1379,12 @@ msgstr "Wait after switching to Zankou (s)"
 
 msgid "按下残虹切换键后等待这么久再长按普攻"
 msgstr "Wait this long after pressing the Zankou switch key before holding basic attack"
+
+msgid "残虹普攻时长(s)"
+msgstr "Zankou basic-attack duration (s)"
+
+msgid "安魂曲和残虹合轴阶段共用的普攻间隔秒数, 最低按0.02s执行"
+msgstr "Shared basic-attack interval for Requiem and Zankou during the coordinated axis; minimum: 0.02 s"
+
+msgid "残虹长按结束后按共享间隔持续普攻这么久, 然后切回安魂曲"
+msgstr "After Zankou's held attack ends, repeat basic attacks at the shared interval for this duration, then switch to Requiem"

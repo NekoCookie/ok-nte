@@ -73,7 +73,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_DURATION], 2.0)
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_SWITCH_DELAY], 0.5)
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_HOLD_DURATION], 2.0)
-        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_NORMAL_DELAY], 0.2)
+        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_NORMAL_DURATION], 2.0)
         self.assertEqual(task.default_config[task.CONF_FREE_BREAK_TEST_KEY], "9")
         self.assertEqual(
             task.config_type[task.CONF_GROUP_COAXIS]["sub_configs"][True],
@@ -85,7 +85,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
                 task.CONF_COAXIS_REQUIEM_DURATION,
                 task.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
                 task.CONF_COAXIS_ZANKOU_HOLD_DURATION,
-                task.CONF_COAXIS_ZANKOU_NORMAL_DELAY,
+                task.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
             ],
         )
 
@@ -114,7 +114,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             task.CONF_COAXIS_REQUIEM_DURATION: 2.5,
             task.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.45,
             task.CONF_COAXIS_ZANKOU_HOLD_DURATION: 1.5,
-            task.CONF_COAXIS_ZANKOU_NORMAL_DELAY: 0.35,
+            task.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 0.35,
         }
         task._macro_running = False
         task._coaxis_running = False
@@ -138,7 +138,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertEqual(settings.requiem_attack_duration, 2.5)
         self.assertEqual(settings.zankou_switch_delay, 0.45)
         self.assertEqual(settings.zankou_hold_duration, 1.5)
-        self.assertEqual(settings.zankou_normal_attack_delay, 0.35)
+        self.assertEqual(settings.zankou_normal_attack_duration, 0.35)
         self.assertFalse(task._macro_running)
         self.assertFalse(task._coaxis_running)
 

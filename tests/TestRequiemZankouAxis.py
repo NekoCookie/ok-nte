@@ -69,7 +69,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
             requiem_attack_duration=0.45,
             zankou_switch_delay=0.4,
             zankou_hold_duration=1.8,
-            zankou_normal_attack_delay=0.3,
+            zankou_normal_attack_duration=0.45,
         )
         tester = RequiemZankouAxisTester(io, settings)
         tester._trigger_was_down = False
@@ -87,10 +87,12 @@ class TestRequiemZankouAxis(unittest.TestCase):
                 ("down",),
                 ("up",),
                 ("tap",),
+                ("tap",),
+                ("tap",),
                 ("key", "3"),
             ],
         )
-        self.assertAlmostEqual(clock.now, 3.1)
+        self.assertAlmostEqual(clock.now, 3.25)
 
     def test_second_trigger_press_stops_and_releases_held_attack(self):
         clock = FakeClock()
