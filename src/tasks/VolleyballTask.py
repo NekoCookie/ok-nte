@@ -1,3 +1,5 @@
+import re
+
 from ok import TaskDisabledException
 
 from src.Labels import Labels
@@ -14,6 +16,9 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     MODE_EXP = "刷经验"
     MODE_SUP = "辅助扣发球"
     MODES = [MODE_EXP]
+    NEXT_LEVEL_TEXT_RE = re.compile(r"下一关|next(?:\s+level)?", re.IGNORECASE)
+    NEXT_LEVEL_TEXT_ROI = (0.07, 0.72, 0.16, 0.79)
+    NEXT_LEVEL_BUTTON_ROI = (0.025, 0.72, 0.072, 0.79)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -96,10 +101,18 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     def handle_match_end(self):
         match self.config.get(self.CONF_MODE):
             case self.MODE_EXP:
-                if box := self.find_one(Labels.volleyball_restart):
+                if box := self.find_next_level_button():
+                    self.operate_click(box, after_sleep=0.5)
+                elif box := self.find_one(Labels.volleyball_restart):
                     self.operate_click(box, after_sleep=0.5)
             case self.MODE_SUP:
                 pass
+
+    def find_next_level_button(self):
+        text_box = self.box_of_screen(*self.NEXT_LEVEL_TEXT_ROI, name="volleyball_next_text")
+        if self.ocr(box=text_box, match=self.NEXT_LEVEL_TEXT_RE):
+            return self.box_of_screen(*self.NEXT_LEVEL_BUTTON_ROI, name="volleyball_next")
+        return None
 
     def is_service(self):
         from src import text_white_color
