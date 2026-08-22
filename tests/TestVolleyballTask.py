@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import Mock, call, patch
 
+from ok import TaskDisabledException
+
 from src.Labels import Labels
 from src.tasks.VolleyballTask import VolleyballTask
 
@@ -10,41 +12,86 @@ class TestVolleyballTask(unittest.TestCase):
         self.assertIsNotNone(VolleyballTask.LOSE_TEXT_RE.search("LO"))
         self.assertIsNotNone(VolleyballTask.LOSE_TEXT_RE.search("LOSE"))
 
-    def make_task(self, next_button=None, restart_button=None):
+    def make_task(self, mode=None, next_button=None, restart_button=None, stars=0, lost=False):
         class MatchEndTask:
             CONF_MODE = VolleyballTask.CONF_MODE
             MODE_EXP = VolleyballTask.MODE_EXP
+            MODE_AUTO = VolleyballTask.MODE_AUTO
             MODE_SUP = VolleyballTask.MODE_SUP
             INFO_LEVEL_STATUS = VolleyballTask.INFO_LEVEL_STATUS
 
             def __init__(self):
-                self.config = {VolleyballTask.CONF_MODE: VolleyballTask.MODE_EXP}
-                self.find_next_level_button = Mock(return_value=next_button)
-                self.find_one = Mock(return_value=restart_button)
-                self.is_match_lost = Mock(return_value=False)
+                self.config = {VolleyballTask.CONF_MODE: mode or VolleyballTask.MODE_EXP}
+                self.find_one = Mock(
+                    side_effect=lambda label: {
+                        Labels.volleyball_restart: restart_button,
+                        Labels.volleyball_next: next_button,
+                    }[label]
+                )
+                self.get_box_by_name = Mock(return_value="stars_box")
+                self.find_feature = Mock(return_value=[object() for _ in range(stars)])
+                self.is_match_lost = Mock(return_value=lost)
                 self.info_set = Mock()
                 self.handle_match_result = Mock()
+                self.sleep = Mock()
+
+            has_three_stars = VolleyballTask.has_three_stars
 
         task = MatchEndTask()
         return task
 
-    def test_match_end_prefers_next_level_button(self):
+    def test_experience_mode_restarts_without_advancing(self):
         next_button = object()
-        task = self.make_task(next_button=next_button, restart_button=object())
+        restart_button = object()
+        task = self.make_task(next_button=next_button, restart_button=restart_button)
+
+        self.assertTrue(VolleyballTask.handle_match_end(task))
+
+        task.handle_match_result.assert_called_once_with(restart_button, won=True, next_level=False)
+        task.find_one.assert_called_once_with(Labels.volleyball_restart)
+
+    def test_auto_mode_advances_only_after_three_stars(self):
+        next_button = object()
+        task = self.make_task(
+            mode=VolleyballTask.MODE_AUTO,
+            next_button=next_button,
+            restart_button=object(),
+            stars=3,
+        )
 
         self.assertTrue(VolleyballTask.handle_match_end(task))
 
         task.handle_match_result.assert_called_once_with(next_button, won=True, next_level=True)
-        task.find_one.assert_not_called()
+        task.find_one.assert_has_calls(
+            [call(Labels.volleyball_restart), call(Labels.volleyball_next)]
+        )
 
-    def test_match_end_falls_back_to_restart_button(self):
+    def test_auto_mode_restarts_when_not_three_stars(self):
         restart_button = object()
-        task = self.make_task(restart_button=restart_button)
+        task = self.make_task(
+            mode=VolleyballTask.MODE_AUTO,
+            restart_button=restart_button,
+            stars=2,
+        )
 
         self.assertTrue(VolleyballTask.handle_match_end(task))
 
-        task.find_one.assert_called_once_with(Labels.volleyball_restart)
         task.handle_match_result.assert_called_once_with(restart_button, won=True, next_level=False)
+        task.find_one.assert_called_once_with(Labels.volleyball_restart)
+
+    def test_auto_mode_restarts_after_lost_match(self):
+        restart_button = object()
+        task = self.make_task(
+            mode=VolleyballTask.MODE_AUTO,
+            restart_button=restart_button,
+            stars=3,
+            lost=True,
+        )
+
+        self.assertTrue(VolleyballTask.handle_match_end(task))
+
+        task.handle_match_result.assert_called_once_with(restart_button, won=False, next_level=False)
+        task.find_one.assert_called_once_with(Labels.volleyball_restart)
 
     def test_match_loss_restarts_without_marking_final_level(self):
         restart_button = object()
@@ -53,7 +100,11 @@ class TestVolleyballTask(unittest.TestCase):
 
         self.assertTrue(VolleyballTask.handle_match_end(task))
 
-        task.handle_match_result.assert_called_once_with(restart_button, won=False, next_level=False)
+        task.handle_match_result.assert_called_once_with(
+            restart_button,
+            won=False,
+            next_level=False,
+        )
 
     def test_match_end_button_increments_match_count(self):
         class MatchCounter:
@@ -112,6 +163,7 @@ class TestVolleyballTask(unittest.TestCase):
             def __init__(self):
                 self.info_set = Mock()
                 self.click_match_end_button = Mock()
+                self.reset_service_phase = Mock()
 
         task = ResultHandler()
         button = object()
@@ -166,14 +218,23 @@ class TestVolleyballTask(unittest.TestCase):
 
     def test_service_is_handled_after_the_match_has_already_started(self):
         class ServiceTask:
-            SERVICE_RETRY_INTERVAL = VolleyballTask.SERVICE_RETRY_INTERVAL
+            SERVICE_RELEASE_CONFIRM_SECONDS = VolleyballTask.SERVICE_RELEASE_CONFIRM_SECONDS
+            SERVICE_PHASE_WARNING_SECONDS = VolleyballTask.SERVICE_PHASE_WARNING_SECONDS
+            SERVICE_PHASE_HARD_TIMEOUT_SECONDS = VolleyballTask.SERVICE_PHASE_HARD_TIMEOUT_SECONDS
 
             def __init__(self):
-                self._last_serve_time = 0.0
+                self._service_phase_active = False
+                self._service_phase_started_at = 0.0
+                self._service_release_started_at = None
+                self._service_phase_warning_logged = False
                 self.is_service = Mock(return_value=True)
                 self.log_info = Mock()
                 self.send_key = Mock()
                 self.sleep = Mock()
+
+            check_service_phase_timeout = VolleyballTask.check_service_phase_timeout
+            handle_service_release = VolleyballTask.handle_service_release
+            reset_service_phase = VolleyballTask.reset_service_phase
 
         task = ServiceTask()
 
@@ -183,23 +244,111 @@ class TestVolleyballTask(unittest.TestCase):
         task.send_key.assert_has_calls([call("j"), call("k")])
         task.sleep.assert_called_once_with(2.5)
 
-    def test_active_service_waits_before_retrying_the_serve(self):
+    def test_active_service_phase_blocks_duplicate_inputs_after_four_seconds(self):
         class ServiceTask:
-            SERVICE_RETRY_INTERVAL = VolleyballTask.SERVICE_RETRY_INTERVAL
+            SERVICE_RELEASE_CONFIRM_SECONDS = VolleyballTask.SERVICE_RELEASE_CONFIRM_SECONDS
+            SERVICE_PHASE_WARNING_SECONDS = VolleyballTask.SERVICE_PHASE_WARNING_SECONDS
+            SERVICE_PHASE_HARD_TIMEOUT_SECONDS = VolleyballTask.SERVICE_PHASE_HARD_TIMEOUT_SECONDS
 
             def __init__(self):
-                self._last_serve_time = 9.0
+                self._service_phase_active = True
+                self._service_phase_started_at = 9.0
+                self._service_release_started_at = None
+                self._service_phase_warning_logged = False
                 self.is_service = Mock(return_value=True)
                 self.log_info = Mock()
+                self.log_warning = Mock()
                 self.send_key = Mock()
                 self.sleep = Mock()
 
+            check_service_phase_timeout = VolleyballTask.check_service_phase_timeout
+            handle_service_release = VolleyballTask.handle_service_release
+            reset_service_phase = VolleyballTask.reset_service_phase
+
         task = ServiceTask()
 
-        with patch("src.tasks.VolleyballTask.time.monotonic", return_value=10.0):
+        with patch("src.tasks.VolleyballTask.time.monotonic", return_value=13.1):
             self.assertTrue(VolleyballTask.handle_service(task))
 
         task.send_key.assert_not_called()
+
+    def test_service_phase_releases_only_after_stable_non_service(self):
+        class ServiceTask:
+            SERVICE_RELEASE_CONFIRM_SECONDS = VolleyballTask.SERVICE_RELEASE_CONFIRM_SECONDS
+            SERVICE_PHASE_WARNING_SECONDS = VolleyballTask.SERVICE_PHASE_WARNING_SECONDS
+            SERVICE_PHASE_HARD_TIMEOUT_SECONDS = VolleyballTask.SERVICE_PHASE_HARD_TIMEOUT_SECONDS
+
+            def __init__(self):
+                self._service_phase_active = True
+                self._service_phase_started_at = 1.0
+                self._service_release_started_at = None
+                self._service_phase_warning_logged = False
+                self.log_info = Mock()
+                self.log_warning = Mock()
+
+            check_service_phase_timeout = VolleyballTask.check_service_phase_timeout
+            reset_service_phase = VolleyballTask.reset_service_phase
+
+        task = ServiceTask()
+
+        self.assertTrue(VolleyballTask.handle_service_release(task, 2.0))
+        self.assertTrue(VolleyballTask.handle_service_release(task, 2.4))
+        self.assertFalse(VolleyballTask.handle_service_release(task, 2.5))
+        task.log_info.assert_called_once_with("service phase cleared")
+
+    def test_service_phase_stops_after_hard_timeout(self):
+        class ServiceTask:
+            SERVICE_RELEASE_CONFIRM_SECONDS = VolleyballTask.SERVICE_RELEASE_CONFIRM_SECONDS
+            SERVICE_PHASE_WARNING_SECONDS = VolleyballTask.SERVICE_PHASE_WARNING_SECONDS
+            SERVICE_PHASE_HARD_TIMEOUT_SECONDS = VolleyballTask.SERVICE_PHASE_HARD_TIMEOUT_SECONDS
+
+            def __init__(self):
+                self._service_phase_active = True
+                self._service_phase_started_at = 0.0
+                self._service_release_started_at = None
+                self._service_phase_warning_logged = False
+                self.is_service = Mock(return_value=True)
+                self.log_info = Mock()
+                self.log_warning = Mock()
+                self.send_key = Mock()
+                self.sleep = Mock()
+
+            check_service_phase_timeout = VolleyballTask.check_service_phase_timeout
+            handle_service_release = VolleyballTask.handle_service_release
+            reset_service_phase = VolleyballTask.reset_service_phase
+
+        task = ServiceTask()
+
+        with patch(
+            "src.tasks.VolleyballTask.time.monotonic",
+            return_value=VolleyballTask.SERVICE_PHASE_HARD_TIMEOUT_SECONDS,
+        ):
+            with self.assertRaisesRegex(TaskDisabledException, "Serve UI did not clear"):
+                VolleyballTask.handle_service(task)
+
+        task.send_key.assert_not_called()
+
+    def test_play_once_adjusts_position_after_four_hits(self):
+        class PlayTask:
+            CONF_MODE = VolleyballTask.CONF_MODE
+            MODE_EXP = VolleyballTask.MODE_EXP
+            MODE_AUTO = VolleyballTask.MODE_AUTO
+            MODE_SUP = VolleyballTask.MODE_SUP
+            POSITION_ADJUST_AFTER_HITS = VolleyballTask.POSITION_ADJUST_AFTER_HITS
+
+            def __init__(self):
+                self.config = {VolleyballTask.CONF_MODE: VolleyballTask.MODE_AUTO}
+                self._play_count = VolleyballTask.POSITION_ADJUST_AFTER_HITS
+                self.sleep = Mock()
+                self.send_key = Mock()
+
+        task = PlayTask()
+
+        key, switch_key = VolleyballTask.play_once(task, "j", False)
+
+        self.assertEqual((key, switch_key), ("j", False))
+        self.assertEqual(task._play_count, 0)
+        task.send_key.assert_has_calls([call("a", down_time=0.1), call("s", down_time=0.1)])
 
     def test_service_requires_both_serve_action_keys_to_be_highlighted(self):
         task = Mock()

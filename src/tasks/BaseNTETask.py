@@ -1058,6 +1058,7 @@ class BaseNTETask(
             box,
             [Labels.exit_1, Labels.exit_2],
             threshold=0.7,
+            mask_function=exit_mask,
         )
 
     def exit_anomaly(self):
@@ -1094,10 +1095,22 @@ def confirm_mask(image):
     return dilated_mask
 
 
+def exit_mask(image):
+    mask = iu.create_color_mask(image, exit_white_color, to_bgr=False)
+    return iu.morphology_mask(mask, kernel_size=5, to_bgr=False)
+
+
 interac_pink_color = {
     "r": (197, 221),
     "g": (71, 78),
     "b": (119, 133),
+}
+
+
+exit_white_color = {
+    "r": (226, 246),
+    "g": (226, 246),
+    "b": (227, 247),
 }
 
 
