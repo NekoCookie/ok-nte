@@ -3,7 +3,6 @@ from unittest.mock import Mock, call, patch
 
 from ok import TaskDisabledException
 
-from src.Labels import Labels
 from src.tasks.VolleyballTask import VolleyballTask
 
 
@@ -11,8 +10,17 @@ class TestVolleyballTask(unittest.TestCase):
     def test_lose_pattern_accepts_partial_ocr_result(self):
         self.assertIsNotNone(VolleyballTask.LOSE_TEXT_RE.search("LO"))
         self.assertIsNotNone(VolleyballTask.LOSE_TEXT_RE.search("LOSE"))
+        self.assertIsNotNone(VolleyballTask.WIN_TEXT_RE.search("WIN"))
 
-    def make_task(self, mode=None, next_button=None, restart_button=None, stars=0, lost=False):
+    def make_task(
+        self,
+        mode=None,
+        next_button="next_button",
+        restart_button="restart_button",
+        stars=0,
+        lost=False,
+        won=True,
+    ):
         class MatchEndTask:
             CONF_MODE = VolleyballTask.CONF_MODE
             MODE_EXP = VolleyballTask.MODE_EXP
@@ -22,15 +30,12 @@ class TestVolleyballTask(unittest.TestCase):
 
             def __init__(self):
                 self.config = {VolleyballTask.CONF_MODE: mode or VolleyballTask.MODE_EXP}
-                self.find_one = Mock(
-                    side_effect=lambda label: {
-                        Labels.volleyball_restart: restart_button,
-                        Labels.volleyball_next: next_button,
-                    }[label]
+                self.get_match_end_button = Mock(
+                    side_effect=lambda next_level: next_button if next_level else restart_button
                 )
-                self.get_box_by_name = Mock(return_value="stars_box")
-                self.find_feature = Mock(return_value=[object() for _ in range(stars)])
+                self.has_three_stars = Mock(return_value=stars == 3)
                 self.is_match_lost = Mock(return_value=lost)
+                self.is_match_won = Mock(return_value=won)
                 self.info_set = Mock()
                 self.handle_match_result = Mock()
                 self.sleep = Mock()
@@ -48,7 +53,7 @@ class TestVolleyballTask(unittest.TestCase):
         self.assertTrue(VolleyballTask.handle_match_end(task))
 
         task.handle_match_result.assert_called_once_with(restart_button, won=True, next_level=False)
-        task.find_one.assert_called_once_with(Labels.volleyball_restart)
+        task.get_match_end_button.assert_called_once_with(next_level=False)
 
     def test_auto_mode_advances_only_after_three_stars(self):
         next_button = object()
@@ -62,9 +67,7 @@ class TestVolleyballTask(unittest.TestCase):
         self.assertTrue(VolleyballTask.handle_match_end(task))
 
         task.handle_match_result.assert_called_once_with(next_button, won=True, next_level=True)
-        task.find_one.assert_has_calls(
-            [call(Labels.volleyball_restart), call(Labels.volleyball_next)]
-        )
+        task.get_match_end_button.assert_called_once_with(next_level=True)
 
     def test_auto_mode_restarts_when_not_three_stars(self):
         restart_button = object()
@@ -77,7 +80,7 @@ class TestVolleyballTask(unittest.TestCase):
         self.assertTrue(VolleyballTask.handle_match_end(task))
 
         task.handle_match_result.assert_called_once_with(restart_button, won=True, next_level=False)
-        task.find_one.assert_called_once_with(Labels.volleyball_restart)
+        task.get_match_end_button.assert_called_once_with(next_level=False)
 
     def test_auto_mode_restarts_after_lost_match(self):
         restart_button = object()
@@ -91,7 +94,35 @@ class TestVolleyballTask(unittest.TestCase):
         self.assertTrue(VolleyballTask.handle_match_end(task))
 
         task.handle_match_result.assert_called_once_with(restart_button, won=False, next_level=False)
-        task.find_one.assert_called_once_with(Labels.volleyball_restart)
+        task.get_match_end_button.assert_called_once_with(next_level=False)
+
+    def test_result_requires_a_win_or_loss_screen(self):
+        task = self.make_task(won=False)
+
+        self.assertFalse(VolleyballTask.handle_match_end(task))
+
+        task.handle_match_result.assert_not_called()
+        task.get_match_end_button.assert_not_called()
+
+    def test_result_text_without_match_end_actions_is_not_a_match_end(self):
+        task = self.make_task(restart_button=None)
+
+        self.assertFalse(VolleyballTask.handle_match_end(task))
+
+        task.handle_match_result.assert_not_called()
+        task.get_match_end_button.assert_called_once_with(next_level=False)
+
+    def test_auto_mode_never_restarts_a_three_star_win_when_next_is_not_found(self):
+        task = self.make_task(
+            mode=VolleyballTask.MODE_AUTO,
+            next_button=None,
+            stars=3,
+        )
+
+        self.assertFalse(VolleyballTask.handle_match_end(task))
+
+        task.handle_match_result.assert_not_called()
+        task.get_match_end_button.assert_called_once_with(next_level=True)
 
     def test_match_loss_restarts_without_marking_final_level(self):
         restart_button = object()
@@ -104,6 +135,37 @@ class TestVolleyballTask(unittest.TestCase):
             restart_button,
             won=False,
             next_level=False,
+        )
+
+    def test_three_gold_stars_are_required_to_advance(self):
+        task = Mock()
+        task.STAR_ROIS = VolleyballTask.STAR_ROIS
+        task.STAR_GOLD_COLOR = VolleyballTask.STAR_GOLD_COLOR
+        task.STAR_GOLD_THRESHOLD = VolleyballTask.STAR_GOLD_THRESHOLD
+        task.box_of_screen.side_effect = ["star_1", "star_2", "star_3"]
+        task.calculate_color_percentage.side_effect = [0.24, 0.24, 0.24]
+
+        self.assertTrue(VolleyballTask.has_three_stars(task))
+
+        task.box_of_screen.side_effect = ["star_1", "star_2", "star_3"]
+        task.calculate_color_percentage.side_effect = [0.24, 0.02, 0.24]
+        self.assertFalse(VolleyballTask.has_three_stars(task))
+
+    def test_match_end_button_is_located_by_action_text(self):
+        task = Mock()
+        task.RESULT_ACTIONS_ROI = VolleyballTask.RESULT_ACTIONS_ROI
+        task.NEXT_LEVEL_ACTION_RE = VolleyballTask.NEXT_LEVEL_ACTION_RE
+        task.RESTART_ACTION_RE = VolleyballTask.RESTART_ACTION_RE
+        task.box_of_screen.return_value = "actions"
+        task.ocr.return_value = ["restart_button"]
+
+        self.assertEqual(
+            VolleyballTask.get_match_end_button(task, next_level=False),
+            "restart_button",
+        )
+        task.ocr.assert_called_once_with(
+            box="actions",
+            match=VolleyballTask.RESTART_ACTION_RE,
         )
 
     def test_match_end_button_increments_match_count(self):
@@ -172,6 +234,21 @@ class TestVolleyballTask(unittest.TestCase):
 
         task.info_set.assert_called_once_with(VolleyballTask.INFO_LEVEL_STATUS, "本局失败")
         task.click_match_end_button.assert_called_once_with(button, False)
+
+    def test_win_without_advancing_reports_restarting_the_current_level(self):
+        class ResultHandler:
+            INFO_LEVEL_STATUS = VolleyballTask.INFO_LEVEL_STATUS
+
+            def __init__(self):
+                self.info_set = Mock()
+                self.click_match_end_button = Mock()
+                self.reset_service_phase = Mock()
+
+        task = ResultHandler()
+
+        VolleyballTask.handle_match_result(task, object(), won=True, next_level=False)
+
+        task.info_set.assert_called_once_with(VolleyballTask.INFO_LEVEL_STATUS, "重开当前关")
 
     def test_missing_exit_keeps_active_match_state_without_result_button(self):
         task = Mock()

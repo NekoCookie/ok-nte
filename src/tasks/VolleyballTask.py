@@ -3,7 +3,6 @@ import time
 
 from ok import TaskDisabledException
 
-from src.Labels import Labels
 from src.tasks.BaseNTETask import BaseNTETask
 from src.tasks.NTEOneTimeTask import NTEOneTimeTask
 from src.tasks.trigger.SkipDialogTask import SkipDialogTask
@@ -23,7 +22,22 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     INFO_LOSS_COUNT = "输球次数"
     INFO_LEVEL_STATUS = "关卡状态"
     LOSE_TEXT_RE = re.compile(r"L[O0](?:[S5][E3]?)?", re.IGNORECASE)
-    LOSE_TEXT_ROI = (0.65, 0.07, 0.99, 0.27)
+    WIN_TEXT_RE = re.compile(r"W[I1L]N", re.IGNORECASE)
+    NEXT_LEVEL_ACTION_RE = re.compile(r"下一关|NEXT(?:\s+LEVEL)?", re.IGNORECASE)
+    RESTART_ACTION_RE = re.compile(r"重新开始|RESTART", re.IGNORECASE)
+    RESULT_TEXT_ROI = (0.65, 0.07, 0.99, 0.27)
+    RESULT_ACTIONS_ROI = (0.02, 0.70, 0.30, 0.98)
+    STAR_ROIS = (
+        (0.941, 0.521, 0.964, 0.563),
+        (0.941, 0.575, 0.964, 0.617),
+        (0.941, 0.629, 0.964, 0.671),
+    )
+    STAR_GOLD_COLOR = {
+        "r": (230, 255),
+        "g": (170, 255),
+        "b": (0, 140),
+    }
+    STAR_GOLD_THRESHOLD = 0.15
     SERVICE_ACTION_ROIS = (
         (0.978, 0.405, 0.986, 0.421),
         (0.978, 0.437, 0.986, 0.453),
@@ -212,20 +226,29 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         return key, switch_key
 
     def handle_match_end(self):
+        lost = self.is_match_lost()
+        won = not lost and self.is_match_won()
+        if not lost and not won:
+            return False
+
         match self.config.get(self.CONF_MODE):
             case self.MODE_EXP:
-                if box := self.find_one(Labels.volleyball_restart):
-                    self.handle_match_result(box, won=not self.is_match_lost(), next_level=False)
-                    return True
+                if not (restart_box := self.get_match_end_button(next_level=False)):
+                    return False
+                self.handle_match_result(restart_box, won=won, next_level=False)
+                return True
             case self.MODE_AUTO:
-                if box := self.find_one(Labels.volleyball_restart):
+                if won:
                     self.sleep(1)
-                    won = not self.is_match_lost()
-                    next_level = won and self.has_three_stars()
-                    if next_level:
-                        box = self.find_one(Labels.volleyball_next) or box
-                    self.handle_match_result(box, won=won, next_level=next_level)
-                    return True
+                    if self.has_three_stars():
+                        if next_box := self.get_match_end_button(next_level=True):
+                            self.handle_match_result(next_box, won=True, next_level=True)
+                            return True
+                        return False
+                if not (restart_box := self.get_match_end_button(next_level=False)):
+                    return False
+                self.handle_match_result(restart_box, won=won, next_level=False)
+                return True
             case self.MODE_SUP:
                 pass
         return False
@@ -233,7 +256,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     def handle_match_result(self, box, won, next_level):
         self.reset_service_phase()
         if won:
-            status = "进入下一关" if next_level else "已到达最终关"
+            status = "进入下一关" if next_level else "重开当前关"
         else:
             status = "本局失败"
         self.info_set(self.INFO_LEVEL_STATUS, status)
@@ -254,12 +277,32 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
             self.info_set(self.INFO_LOSS_COUNT, self.loss_count)
 
     def has_three_stars(self):
-        stars_box = self.get_box_by_name(Labels.box_volleyball_stars)
-        return len(self.find_feature(Labels.volleyball_star, box=stars_box)) == 3
+        return all(
+            self.calculate_color_percentage(
+                self.STAR_GOLD_COLOR,
+                self.box_of_screen(*star_roi),
+            )
+            >= self.STAR_GOLD_THRESHOLD
+            for star_roi in self.STAR_ROIS
+        )
+
+    def get_match_end_button(self, next_level):
+        if next_level:
+            action_re = self.NEXT_LEVEL_ACTION_RE
+        else:
+            action_re = self.RESTART_ACTION_RE
+        box = self.box_of_screen(*self.RESULT_ACTIONS_ROI, name="volleyball_result_actions")
+        return next(iter(self.ocr(box=box, match=action_re)), None)
 
     def is_match_lost(self):
-        box = self.box_of_screen(*self.LOSE_TEXT_ROI, name="volleyball_lose_text")
-        return bool(self.ocr(box=box, match=self.LOSE_TEXT_RE))
+        return self.has_match_result(self.LOSE_TEXT_RE)
+
+    def is_match_won(self):
+        return self.has_match_result(self.WIN_TEXT_RE)
+
+    def has_match_result(self, result_text_re):
+        box = self.box_of_screen(*self.RESULT_TEXT_ROI, name="volleyball_result_text")
+        return bool(self.ocr(box=box, match=result_text_re))
 
     def is_service(self):
         from src import text_white_color
