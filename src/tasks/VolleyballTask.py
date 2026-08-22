@@ -26,6 +26,11 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     NEXT_LEVEL_TEXT_ROI = (0.07, 0.72, 0.16, 0.79)
     NEXT_LEVEL_BUTTON_ROI = (0.025, 0.72, 0.072, 0.79)
     LOSE_TEXT_ROI = (0.65, 0.07, 0.99, 0.27)
+    SERVICE_ACTION_ROIS = (
+        (0.978, 0.405, 0.986, 0.421),
+        (0.978, 0.437, 0.986, 0.453),
+    )
+    SERVICE_ACTION_WHITE_THRESHOLD = 0.04
     SERVICE_RETRY_INTERVAL = 4.0
 
     def __init__(self, *args, **kwargs):
@@ -90,6 +95,11 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                 if not in_game:
                     self.sleep(0.1)
                     continue
+                if self.handle_service():
+                    self.sleep(0.1)
+                    continue
+                self.sleep(0.1)
+                continue
             elif not in_game:
                 if not self.begin_match():
                     self.sleep(0.1)
@@ -201,11 +211,14 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     def is_service(self):
         from src import text_white_color
 
-        upper = self.box_of_screen(0.947, 0.405, 0.965, 0.419)
-        lower = self.box_of_screen(0.947, 0.514, 0.965, 0.530)
-        upper_white = self.calculate_color_percentage(text_white_color, upper)
-        lower_white = self.calculate_color_percentage(text_white_color, lower)
-        return upper_white > lower_white
+        return all(
+            self.calculate_color_percentage(
+                text_white_color,
+                self.box_of_screen(*roi),
+            )
+            > self.SERVICE_ACTION_WHITE_THRESHOLD
+            for roi in self.SERVICE_ACTION_ROIS
+        )
 
     def is_spike(self):
         box = self.box_of_screen(0.8562, 0.8500, 0.9137, 0.9243, hcenter=True)

@@ -201,6 +201,46 @@ class TestVolleyballTask(unittest.TestCase):
 
         task.send_key.assert_not_called()
 
+    def test_service_requires_both_serve_action_keys_to_be_highlighted(self):
+        task = Mock()
+        task.SERVICE_ACTION_ROIS = VolleyballTask.SERVICE_ACTION_ROIS
+        task.SERVICE_ACTION_WHITE_THRESHOLD = VolleyballTask.SERVICE_ACTION_WHITE_THRESHOLD
+        task.box_of_screen.side_effect = ["toss_key", "serve_key"]
+        task.calculate_color_percentage.side_effect = [0.05, 0.06]
+
+        self.assertTrue(VolleyballTask.is_service(task))
+
+        self.assertEqual(
+            task.box_of_screen.call_args_list,
+            [call(*roi) for roi in task.SERVICE_ACTION_ROIS],
+        )
+
+    def test_service_rejects_a_partially_highlighted_action_pair(self):
+        task = Mock()
+        task.SERVICE_ACTION_ROIS = VolleyballTask.SERVICE_ACTION_ROIS
+        task.SERVICE_ACTION_WHITE_THRESHOLD = VolleyballTask.SERVICE_ACTION_WHITE_THRESHOLD
+        task.box_of_screen.side_effect = ["toss_key", "serve_key"]
+        task.calculate_color_percentage.side_effect = [0.05, 0.0]
+
+        self.assertFalse(VolleyballTask.is_service(task))
+
+    def test_missing_exit_checks_service_but_blocks_regular_controls(self):
+        class StopLoop(Exception):
+            pass
+
+        task = Mock()
+        task.find_exit.return_value = False
+        task.handle_missing_exit.return_value = True
+        task.handle_service.return_value = False
+        task.sleep.side_effect = StopLoop
+
+        with self.assertRaises(StopLoop):
+            VolleyballTask.auto_play(task)
+
+        task.handle_service.assert_called_once_with()
+        task.is_spike.assert_not_called()
+        task.play_once.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
