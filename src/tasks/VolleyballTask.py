@@ -1,4 +1,5 @@
 import re
+import time
 
 from ok import TaskDisabledException
 
@@ -25,6 +26,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     NEXT_LEVEL_TEXT_ROI = (0.07, 0.72, 0.16, 0.79)
     NEXT_LEVEL_BUTTON_ROI = (0.025, 0.72, 0.072, 0.79)
     LOSE_TEXT_ROI = (0.65, 0.07, 0.99, 0.27)
+    SERVICE_RETRY_INTERVAL = 4.0
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -48,6 +50,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self.win_count = 0
         self.loss_count = 0
         self._match_result_recorded = False
+        self._last_serve_time = 0.0
 
     def run(self):
         super().run()
@@ -64,6 +67,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self.win_count = 0
         self.loss_count = 0
         self._match_result_recorded = False
+        self._last_serve_time = 0.0
         self.info_set(self.INFO_MATCH_COUNT, self.match_count)
         self.info_set(self.INFO_WIN_COUNT, self.win_count)
         self.info_set(self.INFO_LOSS_COUNT, self.loss_count)
@@ -81,21 +85,28 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         key = "j"
         in_game = True
         while True:
-            if self.find_exit():
-                if not in_game:
-                    if not self.begin_match():
-                        continue
-                    in_game = True
-
-                if self.is_spike():
-                    self.log_info("in spike")
-                    self.wait_until(lambda: not self.is_spike(), time_out=1)
-                    self.sleep(0.7)
-                    self.send_key("k")
-
-                key, switch_key = self.play_once(key, switch_key)
-            else:
+            if not self.find_exit():
                 in_game = self.handle_missing_exit(in_game, skip_task)
+                if not in_game:
+                    self.sleep(0.1)
+                    continue
+            elif not in_game:
+                if not self.begin_match():
+                    self.sleep(0.1)
+                    continue
+                in_game = True
+
+            if self.handle_service():
+                self.sleep(0.1)
+                continue
+
+            if self.is_spike():
+                self.log_info("in spike")
+                self.wait_until(lambda: not self.is_spike(), time_out=1)
+                self.sleep(0.7)
+                self.send_key("k")
+
+            key, switch_key = self.play_once(key, switch_key)
             self.sleep(0.1)
 
     def begin_match(self):
@@ -107,20 +118,30 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         ):
             return False
         self._match_result_recorded = False
+        self._last_serve_time = 0.0
         self.log_info("game begin")
-        if self.is_service():
-            self.log_info("is service")
-            self.send_key("j")
-            self.sleep(2.5)
-            self.send_key("k")
-        else:
+        if not self.handle_service():
             self.log_info("not service")
+        return True
+
+    def handle_service(self):
+        if not self.is_service():
+            return False
+        now = time.monotonic()
+        if now - self._last_serve_time < self.SERVICE_RETRY_INTERVAL:
+            return True
+        self._last_serve_time = now
+        self.log_info("is service")
+        self.send_key("j")
+        self.sleep(2.5)
+        self.send_key("k")
         return True
 
     def handle_missing_exit(self, in_game, skip_task):
         if self.handle_match_end():
             return False
-        skip_task.check_skip()
+        if not in_game:
+            skip_task.check_skip()
         return in_game
 
     def play_once(self, key, switch_key):

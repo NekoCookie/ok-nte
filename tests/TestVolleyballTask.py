@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, call, patch
 
 from src.Labels import Labels
 from src.tasks.VolleyballTask import VolleyballTask
@@ -129,6 +129,16 @@ class TestVolleyballTask(unittest.TestCase):
         in_game = VolleyballTask.handle_missing_exit(task, True, skip_task)
 
         self.assertTrue(in_game)
+        skip_task.check_skip.assert_not_called()
+
+    def test_missing_exit_checks_for_dialog_skip_before_match_starts(self):
+        task = Mock()
+        task.handle_match_end.return_value = False
+        skip_task = Mock()
+
+        in_game = VolleyballTask.handle_missing_exit(task, False, skip_task)
+
+        self.assertFalse(in_game)
         skip_task.check_skip.assert_called_once_with()
 
     def test_missing_exit_marks_match_inactive_after_result_button_is_handled(self):
@@ -147,14 +157,48 @@ class TestVolleyballTask(unittest.TestCase):
                 self.find_exit = Mock()
                 self.wait_until = Mock(return_value=False)
                 self.log_info = Mock()
-                self.is_service = Mock()
-                self.send_key = Mock()
-                self.sleep = Mock()
+                self.handle_service = Mock()
 
         task = MatchStarter()
 
         self.assertFalse(VolleyballTask.begin_match(task))
-        task.is_service.assert_not_called()
+        task.handle_service.assert_not_called()
+
+    def test_service_is_handled_after_the_match_has_already_started(self):
+        class ServiceTask:
+            SERVICE_RETRY_INTERVAL = VolleyballTask.SERVICE_RETRY_INTERVAL
+
+            def __init__(self):
+                self._last_serve_time = 0.0
+                self.is_service = Mock(return_value=True)
+                self.log_info = Mock()
+                self.send_key = Mock()
+                self.sleep = Mock()
+
+        task = ServiceTask()
+
+        with patch("src.tasks.VolleyballTask.time.monotonic", return_value=10.0):
+            self.assertTrue(VolleyballTask.handle_service(task))
+
+        task.send_key.assert_has_calls([call("j"), call("k")])
+        task.sleep.assert_called_once_with(2.5)
+
+    def test_active_service_waits_before_retrying_the_serve(self):
+        class ServiceTask:
+            SERVICE_RETRY_INTERVAL = VolleyballTask.SERVICE_RETRY_INTERVAL
+
+            def __init__(self):
+                self._last_serve_time = 9.0
+                self.is_service = Mock(return_value=True)
+                self.log_info = Mock()
+                self.send_key = Mock()
+                self.sleep = Mock()
+
+        task = ServiceTask()
+
+        with patch("src.tasks.VolleyballTask.time.monotonic", return_value=10.0):
+            self.assertTrue(VolleyballTask.handle_service(task))
+
         task.send_key.assert_not_called()
 
 
