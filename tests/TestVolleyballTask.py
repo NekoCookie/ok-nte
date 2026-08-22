@@ -6,6 +6,10 @@ from src.tasks.VolleyballTask import VolleyballTask
 
 
 class TestVolleyballTask(unittest.TestCase):
+    def test_lose_pattern_accepts_partial_ocr_result(self):
+        self.assertIsNotNone(VolleyballTask.LOSE_TEXT_RE.search("LO"))
+        self.assertIsNotNone(VolleyballTask.LOSE_TEXT_RE.search("LOSE"))
+
     def make_task(self, next_button=None, restart_button=None):
         class MatchEndTask:
             CONF_MODE = VolleyballTask.CONF_MODE
@@ -17,8 +21,9 @@ class TestVolleyballTask(unittest.TestCase):
                 self.config = {VolleyballTask.CONF_MODE: VolleyballTask.MODE_EXP}
                 self.find_next_level_button = Mock(return_value=next_button)
                 self.find_one = Mock(return_value=restart_button)
+                self.is_match_lost = Mock(return_value=False)
                 self.info_set = Mock()
-                self.click_match_end_button = Mock()
+                self.handle_match_result = Mock()
 
         task = MatchEndTask()
         return task
@@ -29,8 +34,7 @@ class TestVolleyballTask(unittest.TestCase):
 
         self.assertTrue(VolleyballTask.handle_match_end(task))
 
-        task.click_match_end_button.assert_called_once_with(next_button)
-        task.info_set.assert_called_once_with(VolleyballTask.INFO_LEVEL_STATUS, "进入下一关")
+        task.handle_match_result.assert_called_once_with(next_button, won=True, next_level=True)
         task.find_one.assert_not_called()
 
     def test_match_end_falls_back_to_restart_button(self):
@@ -40,26 +44,82 @@ class TestVolleyballTask(unittest.TestCase):
         self.assertTrue(VolleyballTask.handle_match_end(task))
 
         task.find_one.assert_called_once_with(Labels.volleyball_restart)
-        task.click_match_end_button.assert_called_once_with(restart_button)
-        task.info_set.assert_called_once_with(VolleyballTask.INFO_LEVEL_STATUS, "已到达最终关")
+        task.handle_match_result.assert_called_once_with(restart_button, won=True, next_level=False)
+
+    def test_match_loss_restarts_without_marking_final_level(self):
+        restart_button = object()
+        task = self.make_task(restart_button=restart_button)
+        task.is_match_lost.return_value = True
+
+        self.assertTrue(VolleyballTask.handle_match_end(task))
+
+        task.handle_match_result.assert_called_once_with(restart_button, won=False, next_level=False)
 
     def test_match_end_button_increments_match_count(self):
         class MatchCounter:
             INFO_MATCH_COUNT = VolleyballTask.INFO_MATCH_COUNT
+            INFO_WIN_COUNT = VolleyballTask.INFO_WIN_COUNT
+            INFO_LOSS_COUNT = VolleyballTask.INFO_LOSS_COUNT
 
             def __init__(self):
                 self.match_count = 0
+                self.win_count = 0
+                self.loss_count = 0
+                self._match_result_recorded = False
                 self.operate_click = Mock()
                 self.info_set = Mock()
 
         task = MatchCounter()
         button = object()
 
-        VolleyballTask.click_match_end_button(task, button)
+        VolleyballTask.click_match_end_button(task, button, won=False)
 
         task.operate_click.assert_called_once_with(button, after_sleep=0.5)
         self.assertEqual(task.match_count, 1)
-        task.info_set.assert_called_once_with(VolleyballTask.INFO_MATCH_COUNT, 1)
+        self.assertEqual(task.win_count, 0)
+        self.assertEqual(task.loss_count, 1)
+        task.info_set.assert_any_call(VolleyballTask.INFO_MATCH_COUNT, 1)
+        task.info_set.assert_any_call(VolleyballTask.INFO_LOSS_COUNT, 1)
+
+    def test_result_is_not_counted_twice_while_result_page_is_visible(self):
+        class MatchCounter:
+            INFO_MATCH_COUNT = VolleyballTask.INFO_MATCH_COUNT
+            INFO_WIN_COUNT = VolleyballTask.INFO_WIN_COUNT
+            INFO_LOSS_COUNT = VolleyballTask.INFO_LOSS_COUNT
+
+            def __init__(self):
+                self.match_count = 0
+                self.win_count = 0
+                self.loss_count = 0
+                self._match_result_recorded = False
+                self.operate_click = Mock()
+                self.info_set = Mock()
+
+        task = MatchCounter()
+        button = object()
+
+        VolleyballTask.click_match_end_button(task, button, won=True)
+        VolleyballTask.click_match_end_button(task, button, won=True)
+
+        self.assertEqual(task.match_count, 1)
+        self.assertEqual(task.win_count, 1)
+        self.assertEqual(task.loss_count, 0)
+
+    def test_loss_status_is_not_final_level(self):
+        class ResultHandler:
+            INFO_LEVEL_STATUS = VolleyballTask.INFO_LEVEL_STATUS
+
+            def __init__(self):
+                self.info_set = Mock()
+                self.click_match_end_button = Mock()
+
+        task = ResultHandler()
+        button = object()
+
+        VolleyballTask.handle_match_result(task, button, won=False, next_level=False)
+
+        task.info_set.assert_called_once_with(VolleyballTask.INFO_LEVEL_STATUS, "本局失败")
+        task.click_match_end_button.assert_called_once_with(button, False)
 
     def test_missing_exit_keeps_active_match_state_without_result_button(self):
         task = Mock()

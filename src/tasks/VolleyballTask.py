@@ -17,10 +17,14 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     MODE_SUP = "辅助扣发球"
     MODES = [MODE_EXP]
     INFO_MATCH_COUNT = "已打比赛"
+    INFO_WIN_COUNT = "赢球次数"
+    INFO_LOSS_COUNT = "输球次数"
     INFO_LEVEL_STATUS = "关卡状态"
     NEXT_LEVEL_TEXT_RE = re.compile(r"下一关|next(?:\s+level)?", re.IGNORECASE)
+    LOSE_TEXT_RE = re.compile(r"L[O0](?:[S5][E3]?)?", re.IGNORECASE)
     NEXT_LEVEL_TEXT_ROI = (0.07, 0.72, 0.16, 0.79)
     NEXT_LEVEL_BUTTON_ROI = (0.025, 0.72, 0.072, 0.79)
+    LOSE_TEXT_ROI = (0.65, 0.07, 0.99, 0.27)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -41,6 +45,9 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self.instructions = INST if self.is_chinese() else EN_INST
         self.sleep_check_interval = 0.2
         self.match_count = 0
+        self.win_count = 0
+        self.loss_count = 0
+        self._match_result_recorded = False
 
     def run(self):
         super().run()
@@ -54,7 +61,12 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
 
     def do_run(self):
         self.match_count = 0
+        self.win_count = 0
+        self.loss_count = 0
+        self._match_result_recorded = False
         self.info_set(self.INFO_MATCH_COUNT, self.match_count)
+        self.info_set(self.INFO_WIN_COUNT, self.win_count)
+        self.info_set(self.INFO_LOSS_COUNT, self.loss_count)
         self.info_set(self.INFO_LEVEL_STATUS, "进行中")
         return self.auto_play()
 
@@ -94,6 +106,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
             raise_if_not_found=False,
         ):
             return False
+        self._match_result_recorded = False
         self.log_info("game begin")
         if self.is_service():
             self.log_info("is service")
@@ -123,27 +136,46 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         match self.config.get(self.CONF_MODE):
             case self.MODE_EXP:
                 if box := self.find_next_level_button():
-                    self.info_set(self.INFO_LEVEL_STATUS, "进入下一关")
-                    self.click_match_end_button(box)
+                    self.handle_match_result(box, won=not self.is_match_lost(), next_level=True)
                     return True
                 elif box := self.find_one(Labels.volleyball_restart):
-                    self.info_set(self.INFO_LEVEL_STATUS, "已到达最终关")
-                    self.click_match_end_button(box)
+                    self.handle_match_result(box, won=not self.is_match_lost(), next_level=False)
                     return True
             case self.MODE_SUP:
                 pass
         return False
 
-    def click_match_end_button(self, box):
+    def handle_match_result(self, box, won, next_level):
+        if won:
+            status = "进入下一关" if next_level else "已到达最终关"
+        else:
+            status = "本局失败"
+        self.info_set(self.INFO_LEVEL_STATUS, status)
+        self.click_match_end_button(box, won)
+
+    def click_match_end_button(self, box, won):
         self.operate_click(box, after_sleep=0.5)
+        if self._match_result_recorded:
+            return
+        self._match_result_recorded = True
         self.match_count += 1
         self.info_set(self.INFO_MATCH_COUNT, self.match_count)
+        if won:
+            self.win_count += 1
+            self.info_set(self.INFO_WIN_COUNT, self.win_count)
+        else:
+            self.loss_count += 1
+            self.info_set(self.INFO_LOSS_COUNT, self.loss_count)
 
     def find_next_level_button(self):
         text_box = self.box_of_screen(*self.NEXT_LEVEL_TEXT_ROI, name="volleyball_next_text")
         if self.ocr(box=text_box, match=self.NEXT_LEVEL_TEXT_RE):
             return self.box_of_screen(*self.NEXT_LEVEL_BUTTON_ROI, name="volleyball_next")
         return None
+
+    def is_match_lost(self):
+        box = self.box_of_screen(*self.LOSE_TEXT_ROI, name="volleyball_lose_text")
+        return bool(self.ocr(box=box, match=self.LOSE_TEXT_RE))
 
     def is_service(self):
         from src import text_white_color
