@@ -27,7 +27,7 @@ class TestVolleyballTask(unittest.TestCase):
         next_button = object()
         task = self.make_task(next_button=next_button, restart_button=object())
 
-        VolleyballTask.handle_match_end(task)
+        self.assertTrue(VolleyballTask.handle_match_end(task))
 
         task.click_match_end_button.assert_called_once_with(next_button)
         task.info_set.assert_called_once_with(VolleyballTask.INFO_LEVEL_STATUS, "进入下一关")
@@ -37,7 +37,7 @@ class TestVolleyballTask(unittest.TestCase):
         restart_button = object()
         task = self.make_task(restart_button=restart_button)
 
-        VolleyballTask.handle_match_end(task)
+        self.assertTrue(VolleyballTask.handle_match_end(task))
 
         task.find_one.assert_called_once_with(Labels.volleyball_restart)
         task.click_match_end_button.assert_called_once_with(restart_button)
@@ -60,6 +60,42 @@ class TestVolleyballTask(unittest.TestCase):
         task.operate_click.assert_called_once_with(button, after_sleep=0.5)
         self.assertEqual(task.match_count, 1)
         task.info_set.assert_called_once_with(VolleyballTask.INFO_MATCH_COUNT, 1)
+
+    def test_missing_exit_keeps_active_match_state_without_result_button(self):
+        task = Mock()
+        task.handle_match_end.return_value = False
+        skip_task = Mock()
+
+        in_game = VolleyballTask.handle_missing_exit(task, True, skip_task)
+
+        self.assertTrue(in_game)
+        skip_task.check_skip.assert_called_once_with()
+
+    def test_missing_exit_marks_match_inactive_after_result_button_is_handled(self):
+        task = Mock()
+        task.handle_match_end.return_value = True
+        skip_task = Mock()
+
+        in_game = VolleyballTask.handle_missing_exit(task, True, skip_task)
+
+        self.assertFalse(in_game)
+        skip_task.check_skip.assert_not_called()
+
+    def test_match_start_does_not_send_keys_before_exit_is_stable(self):
+        class MatchStarter:
+            def __init__(self):
+                self.find_exit = Mock()
+                self.wait_until = Mock(return_value=False)
+                self.log_info = Mock()
+                self.is_service = Mock()
+                self.send_key = Mock()
+                self.sleep = Mock()
+
+        task = MatchStarter()
+
+        self.assertFalse(VolleyballTask.begin_match(task))
+        task.is_service.assert_not_called()
+        task.send_key.assert_not_called()
 
 
 if __name__ == "__main__":

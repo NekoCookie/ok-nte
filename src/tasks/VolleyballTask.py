@@ -71,16 +71,9 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         while True:
             if self.find_exit():
                 if not in_game:
-                    self.log_info("game begin")
+                    if not self.begin_match():
+                        continue
                     in_game = True
-                    self.wait_until(self.find_exit, settle_time=1, time_out=1.5)
-                    if self.is_service():
-                        self.log_info("is service")
-                        self.send_key("j")
-                        self.sleep(2.5)
-                        self.send_key("k")
-                    else:
-                        self.log_info("not service")
 
                 if self.is_spike():
                     self.log_info("in spike")
@@ -90,10 +83,32 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
 
                 key, switch_key = self.play_once(key, switch_key)
             else:
-                in_game = False
-                self.handle_match_end()
-                skip_task.check_skip()
+                in_game = self.handle_missing_exit(in_game, skip_task)
             self.sleep(0.1)
+
+    def begin_match(self):
+        if not self.wait_until(
+            self.find_exit,
+            settle_time=1,
+            time_out=1.5,
+            raise_if_not_found=False,
+        ):
+            return False
+        self.log_info("game begin")
+        if self.is_service():
+            self.log_info("is service")
+            self.send_key("j")
+            self.sleep(2.5)
+            self.send_key("k")
+        else:
+            self.log_info("not service")
+        return True
+
+    def handle_missing_exit(self, in_game, skip_task):
+        if self.handle_match_end():
+            return False
+        skip_task.check_skip()
+        return in_game
 
     def play_once(self, key, switch_key):
         match self.config.get(self.CONF_MODE):
@@ -110,11 +125,14 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                 if box := self.find_next_level_button():
                     self.info_set(self.INFO_LEVEL_STATUS, "进入下一关")
                     self.click_match_end_button(box)
+                    return True
                 elif box := self.find_one(Labels.volleyball_restart):
                     self.info_set(self.INFO_LEVEL_STATUS, "已到达最终关")
                     self.click_match_end_button(box)
+                    return True
             case self.MODE_SUP:
                 pass
+        return False
 
     def click_match_end_button(self, box):
         self.operate_click(box, after_sleep=0.5)
