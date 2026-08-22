@@ -16,6 +16,8 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     MODE_EXP = "刷经验"
     MODE_SUP = "辅助扣发球"
     MODES = [MODE_EXP]
+    INFO_MATCH_COUNT = "已打比赛"
+    INFO_LEVEL_STATUS = "关卡状态"
     NEXT_LEVEL_TEXT_RE = re.compile(r"下一关|next(?:\s+level)?", re.IGNORECASE)
     NEXT_LEVEL_TEXT_ROI = (0.07, 0.72, 0.16, 0.79)
     NEXT_LEVEL_BUTTON_ROI = (0.025, 0.72, 0.072, 0.79)
@@ -38,6 +40,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         )
         self.instructions = INST if self.is_chinese() else EN_INST
         self.sleep_check_interval = 0.2
+        self.match_count = 0
 
     def run(self):
         super().run()
@@ -50,6 +53,9 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
             raise
 
     def do_run(self):
+        self.match_count = 0
+        self.info_set(self.INFO_MATCH_COUNT, self.match_count)
+        self.info_set(self.INFO_LEVEL_STATUS, "进行中")
         return self.auto_play()
 
     def sleep_check(self):
@@ -102,11 +108,18 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         match self.config.get(self.CONF_MODE):
             case self.MODE_EXP:
                 if box := self.find_next_level_button():
-                    self.operate_click(box, after_sleep=0.5)
+                    self.info_set(self.INFO_LEVEL_STATUS, "进入下一关")
+                    self.click_match_end_button(box)
                 elif box := self.find_one(Labels.volleyball_restart):
-                    self.operate_click(box, after_sleep=0.5)
+                    self.info_set(self.INFO_LEVEL_STATUS, "已到达最终关")
+                    self.click_match_end_button(box)
             case self.MODE_SUP:
                 pass
+
+    def click_match_end_button(self, box):
+        self.operate_click(box, after_sleep=0.5)
+        self.match_count += 1
+        self.info_set(self.INFO_MATCH_COUNT, self.match_count)
 
     def find_next_level_button(self):
         text_box = self.box_of_screen(*self.NEXT_LEVEL_TEXT_ROI, name="volleyball_next_text")
