@@ -34,9 +34,11 @@ class ResourceSupportMixin:
     def ultimate_ready_now(self):
         """统一使用 RU 的大招可用真值；后台角色路径由 ult_ready 模板识别。"""
 
-        return bool(self.ultimate_available())
+        return not self.lw_skills_disabled_for_test() and bool(self.ultimate_available())
 
     def has_resource(self):
+        if self.lw_skills_disabled_for_test():
+            return False
         if not self.team_has_main_dps():
             return super().skill_available() or super().ultimate_available()
         return self.skill_available() or self.ultimate_ready_now()
@@ -45,6 +47,8 @@ class ResourceSupportMixin:
         return self.index in self.task.cds
 
     def has_confirmed_resource(self):
+        if self.lw_skills_disabled_for_test():
+            return False
         if not self.team_has_main_dps() or self.recently_used_resource():
             return False
         if self.is_current_char:
@@ -56,6 +60,8 @@ class ResourceSupportMixin:
     def has_skill_resource(self):
         """技能是否有可靠的就绪锚点；大招继续使用 RU 真值。"""
 
+        if self.lw_skills_disabled_for_test():
+            return False
         if not self.team_has_main_dps() or self.recently_used_resource():
             return False
         if self.is_current_char:
@@ -71,6 +77,8 @@ class ResourceSupportMixin:
         return time.time() - self.last_resource_use < self.RESOURCE_RECHECK_AFTER_USE_INTERVAL
 
     def needs_resource_probe(self):
+        if self.lw_skills_disabled_for_test():
+            return False
         if not self.team_has_main_dps():
             return False
         if self.is_current_char or self.has_confirmed_resource() or self.recently_used_resource():
@@ -134,6 +142,8 @@ class ResourceSupportMixin:
     def combat_plan(self, context):
         """资源型角色共用的大招→技能→资源缓存更新执行骨架。"""
 
+        if self.lw_skills_disabled_for_test():
+            return self.plan()
         if not self.team_has_main_dps():
             return super().combat_plan(context)
 

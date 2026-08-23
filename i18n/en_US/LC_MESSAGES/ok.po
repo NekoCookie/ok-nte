@@ -1427,3 +1427,6 @@ msgstr "Zankou normal-attack duration after sound dodge (s)"
 
 msgid "残虹合轴被声音闪避打断后, 按共享间隔持续普攻这么久, 然后从重击重新开始"
 msgstr "After Zankou's coordinated axis is interrupted by a sound-triggered dodge, keep normal attacking at the shared interval for this long, then restart from the heavy attack"
+
+msgid "开=所有LW角色模板不放E/Q; G和合轴不受影响(测手感/闪避用); 刷本记得关"
+msgstr "On: all LW character templates skip E/Q; G and the coordinated axis are unaffected (for testing attacks and dodges); turn this off for normal combat"

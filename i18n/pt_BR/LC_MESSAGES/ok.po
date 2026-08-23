@@ -1158,3 +1158,6 @@ msgstr "Duracao de ataques normais da Zankou apos esquiva sonora (s)"
 
 msgid "残虹合轴被声音闪避打断后, 按共享间隔持续普攻这么久, 然后从重击重新开始"
 msgstr "Apos o eixo coordenado da Zankou ser interrompido por uma esquiva acionada por som, ataque normalmente pelo intervalo compartilhado durante este tempo e reinicie pelo ataque pesado"
+
+msgid "开=所有LW角色模板不放E/Q; G和合轴不受影响(测手感/闪避用); 刷本记得关"
+msgstr "Ligado: todos os modelos de personagem LW nao usam E/Q; G e eixo coordenado nao sao afetados (para testar ataques e esquivas); desative em combate normal"

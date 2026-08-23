@@ -27,6 +27,7 @@ from src.lw.combat_templates import (
 )
 from src.lw.resource_support import ResourceSupportMixin
 from src.lw.field_claim_ext import is_lw_preemptive_field_claim
+from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 
 
 def make_buff(main_dps=True, ult_ready=False, skill_ready=True, buff_pending=False):
@@ -236,6 +237,20 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
 
         self.assertEqual(claim.level, FieldClaimLevel.HIGH)
         self.assertFalse(is_lw_preemptive_field_claim(claim))
+
+    def test_test_switch_disables_e_q_for_buff_heal_and_sakiri_templates(self):
+        config_task = mock.Mock(
+            config={RequiemCombatConfigTask.CONF_DISABLE_SKILLS: True}
+        )
+        for support_cls in (BuffSupport, HealSupport, SakiriBuffSupport):
+            support = support_cls.__new__(support_cls)
+            support.task = mock.MagicMock()
+            support.task.get_task_by_class.return_value = config_task
+
+            plan = support.combat_plan(None)
+
+            self.assertEqual(list(plan.actions), [])
+            self.assertEqual(list(plan.claims), [])
 
 
 class TestBuffSupportMixedTeamScoring(unittest.TestCase):
@@ -557,6 +572,20 @@ class TestMainDpsPlannerMigration(unittest.TestCase):
         # idle 不主动抢切人(靠 field_time 站场), priority_ready=False
         idle = actions_by_slot(self._main().combat_plan(None))[ActionSlot.LEGACY_COMBO]
         self.assertFalse(idle.priority_ready(None))
+
+    def test_test_switch_disables_e_q_and_keeps_main_dps_normal_attacks(self):
+        c = self._main()
+        c.task = mock.MagicMock()
+        c.task.get_task_by_class.return_value = mock.Mock(
+            config={RequiemCombatConfigTask.CONF_DISABLE_SKILLS: True}
+        )
+
+        plan = c.combat_plan(None)
+        actions = actions_by_slot(plan)
+
+        self.assertFalse(actions[ActionSlot.ULTIMATE].can_execute(None))
+        self.assertFalse(actions[ActionSlot.SKILL].can_execute(None))
+        self.assertEqual(next(plan.entry()).name, "MainDps_idle_combo")
 
 if __name__ == "__main__":
     unittest.main()

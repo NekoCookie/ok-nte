@@ -217,12 +217,12 @@ config = {
         # ["src.tasks.DebugCharTask", "DebugCharTask"],
     ],
     "trigger_tasks": [  # 不断执行的触发式任务
+        ["src.tasks.trigger.RequiemCombatConfigTask", "RequiemCombatConfigTask"],  # [lw]
         ["src.tasks.trigger.AutoCombatTask", "AutoCombatTask"],
         ["src.tasks.trigger.SoundTriggerTask", "SoundTriggerTask"],
         ["src.tasks.trigger.SkipDialogTask", "SkipDialogTask"],
         ["src.tasks.trigger.FastTravelTask", "FastTravelTask"],
         ["src.tasks.trigger.HeistTask", "HeistTask"],
-        ["src.tasks.trigger.RequiemCombatConfigTask", "RequiemCombatConfigTask"],  # [lw]
         ["src.tasks.trigger.NanallySuperJumpTask", "NanallySuperJumpTask"],  # [lw]
         ["src.tasks.trigger.AutoLoginTask", "AutoLoginTask"],
     ],

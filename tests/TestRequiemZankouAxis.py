@@ -171,7 +171,8 @@ class TestRequiemZankouAxis(unittest.TestCase):
         )
         requiem._maybe_trigger_g_skill = mock.MagicMock(return_value=False)
         requiem._skills_disabled_for_test = mock.MagicMock(return_value=True)
-        self.assertEqual(next(requiem_plan.entry()).name, "Requiem_double_4a")
+        self.assertEqual(next(requiem_plan.entry()).name, "Requiem_coordinated_axis")
+        requiem._maybe_trigger_g_skill.assert_called_once_with()
 
         zankou_plan = zankou.combat_plan(context)
         zankou_names = {action.name for action in zankou_plan.actions}
@@ -195,6 +196,16 @@ class TestRequiemZankouAxis(unittest.TestCase):
         with mock.patch.object(Zankou, "combat_plan", return_value="ru-plan") as ru_plan:
             self.assertEqual(zankou.combat_plan(context), "ru-plan")
         ru_plan.assert_called_once_with(context)
+
+    def test_test_switch_disables_zankou_e_q_outside_the_axis(self):
+        _requiem, zankou, context = make_combat_pair(combat_enabled=False)
+        config_task = zankou.task.get_task_by_class(None)
+        config_task.config[RequiemCombatConfigTask.CONF_DISABLE_SKILLS] = True
+
+        plan = zankou.combat_plan(context)
+
+        self.assertEqual([action.name for action in plan.actions], ["ZankouMainDps_test_normal_attacks"])
+        self.assertEqual(next(plan.entry()).name, "ZankouMainDps_test_normal_attacks")
 
     def test_one_round_uses_configured_keys_and_attack_sequence(self):
         clock = FakeClock()

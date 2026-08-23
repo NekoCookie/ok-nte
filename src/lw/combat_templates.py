@@ -9,11 +9,12 @@ from src.combat.planner import (
     RoleProfile,
 )
 from src.combat.planner import Role as PlannerRole
+from src.lw.combat_test_policy import LWCombatTestPolicyMixin
 from src.lw.field_claim_ext import lw_preemptive_field_claim
 from src.lw.resource_support import ResourceSupportMixin
 
 
-class MainDps(BaseChar):
+class MainDps(LWCombatTestPolicyMixin, BaseChar):
     """Generic on-field damage dealer template."""
 
     IDLE_ATTACK_DURATION = 2.5
@@ -36,8 +37,14 @@ class MainDps(BaseChar):
         entry 编排放大招→技能→没招则 idle。让位辅助由 planner 切人评分负责，
         idle 执行体内部也保留让位检查兜底。
         """
-        ultimate = self.click_ultimate_action(reason="main dps ultimate ready")
-        skill = self.click_skill_action(reason="main dps skill ready")
+        ultimate = self.click_ultimate_action(
+            reason="main dps ultimate ready",
+            can_execute=lambda _: not self.lw_skills_disabled_for_test(),
+        )
+        skill = self.click_skill_action(
+            reason="main dps skill ready",
+            can_execute=lambda _: not self.lw_skills_disabled_for_test(),
+        )
         idle = self.planner_action(
             tags={ActionTag.LEGACY_COMBO, ActionTag.DAMAGE, ActionTag.FIELD_TIME},
             slot=ActionSlot.LEGACY_COMBO,
@@ -48,6 +55,9 @@ class MainDps(BaseChar):
         )
 
         def entry():
+            if self.lw_skills_disabled_for_test():
+                yield idle
+                return
             used_ultimate = bool((yield ultimate))
             used_skill = bool((yield skill))
             if not used_ultimate and not used_skill:
@@ -119,7 +129,7 @@ class MainDps(BaseChar):
         super().switch_next_char(post_action=post_action, free_intro=free_intro)
 
 
-class BuffSupport(ResourceSupportMixin, BaseChar):
+class BuffSupport(LWCombatTestPolicyMixin, ResourceSupportMixin, BaseChar):
     """增益辅助模板：确认有资源时先入场铺 buff，再把输出窗口交给主 C。"""
 
     def _support_setting_enabled(self, config_key):
@@ -194,7 +204,7 @@ class BuffSupport(ResourceSupportMixin, BaseChar):
         return []
 
 
-class HealSupport(ResourceSupportMixin, BaseChar):
+class HealSupport(LWCombatTestPolicyMixin, ResourceSupportMixin, BaseChar):
     """治疗模板与增益辅助平级，共用资源检测和执行骨架，但保持最低切人优先级。
 
     只有当主C没爆发、且增益辅助也没资源时，治疗资源才参与 planner 评分。
@@ -259,6 +269,8 @@ class SakiriBuffSupport(BuffSupport):
     SKILL_COOLDOWN = 16.0  # 早雾技能CD 16s
 
     def combat_plan(self, context):
+        if self.lw_skills_disabled_for_test():
+            return self.plan()
         if not self.team_has_main_dps():
             # 无主C体系时使用 RU 早雾(Sakiri)的出招计划，而不是 BaseChar 通用版。
             from src.char.Sakiri import Sakiri

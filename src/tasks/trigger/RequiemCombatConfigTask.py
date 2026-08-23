@@ -124,7 +124,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     # 执行[闪避反击强制平A(CONF_DODGE_COUNTER) → combo前后摇等待(CONF_DODGE_COMBO_WAIT) → 2轮combo],
     # 方便边看边调那两个 0.3s。开启时忽略触发键宏, 只等声音闪避。
     CONF_DODGE_TEST = "闪避反击测试开关"  # 布尔开关(SwitchButton); 改过名, 让旧的下拉字符串值作废
-    # 实战测试开关: 开=安魂曲只站场打 combo、不放技能/大招, 方便单独测 combo 手感 + 闪避。实战读它。
+    # 实战测试开关: 开=所有 LW 角色模板不放 E/Q, 方便单独测普攻手感 + 闪避。实战读它。
     CONF_DISABLE_SKILLS = "禁用技能大招(测试)"  # 布尔开关
     # 实战 combo 中途每隔这么久复查一次脱战: 目标被打死/打空则立即收手, 不再对着尸体空打完整轮 combo
     # (早雾那种"死了秒停手"的体感)。只影响主站场 combo; 双4a 等精调时序段不查, 免插帧扰乱跳A时机。
@@ -550,7 +550,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_G_SKILL_ENABLE: "开=右下G图标从基线(平底锅)变成别的图标时, 最优先按G触发",
                 self.CONF_G_SKILL_DELAY: "按G后等这么久(ms)再交回决策; 用来测按下G的后摇(后面好接大招)",
                 self.CONF_DODGE_TEST: "开=每次声音闪避走一整轮(关自动战斗后调时间用)",
-                self.CONF_DISABLE_SKILLS: "开=安魂曲只站场打combo、不放技能/大招(测手感/闪避用); 刷本记得关",
+                self.CONF_DISABLE_SKILLS: "开=所有LW角色模板不放E/Q; G和合轴不受影响(测手感/闪避用); 刷本记得关",
                 self.CONF_GROUP_DODGE: "▸ 分组折叠: 展开闪避反击设置(闪避方式 + 选闪双4a后的7个时序)",
                 self.CONF_DODGE_STYLE: "闪避反击方式: 方案一 / 闪双4a",
                 self.CONF_D4_FRONT: "双4a 前段平A毫秒(打第一个4a); 太短会接不出第二个4a",

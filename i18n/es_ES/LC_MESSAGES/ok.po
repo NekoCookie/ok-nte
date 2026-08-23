@@ -1427,3 +1427,6 @@ msgstr "Duracion de ataques normales de Zankou tras esquiva por sonido (s)"
 
 msgid "残虹合轴被声音闪避打断后, 按共享间隔持续普攻这么久, 然后从重击重新开始"
 msgstr "Tras interrumpirse el eje coordinado de Zankou por una esquiva activada por sonido, ataca normalmente durante este tiempo con el intervalo compartido y reinicia desde el ataque pesado"
+
+msgid "开=所有LW角色模板不放E/Q; G和合轴不受影响(测手感/闪避用); 刷本记得关"
+msgstr "Activado: todas las plantillas de personaje LW omiten E/Q; G y el eje coordinado no se ven afectados (para probar ataques y esquivas); desactivalo para combate normal"

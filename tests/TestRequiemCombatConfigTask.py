@@ -72,6 +72,9 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
 
         self.assertFalse(task.default_config[task.CONF_GROUP_COAXIS])
         self.assertFalse(task.default_config[task.CONF_COAXIS_COMBAT_ENABLE])
+        self.assertFalse(task.default_config[task.CONF_DISABLE_SKILLS])
+        self.assertIn("不放E/Q", task.config_description[task.CONF_DISABLE_SKILLS])
+        self.assertIn("G和合轴不受影响", task.config_description[task.CONF_DISABLE_SKILLS])
         self.assertEqual(task.default_config[task.CONF_COAXIS_TRIGGER_KEY], "8")
         self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_SWITCH_KEY], "1")
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_SWITCH_KEY], "2")

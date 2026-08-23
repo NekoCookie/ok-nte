@@ -215,14 +215,19 @@ class Requiem(MainDps):
             self_impl_id=REQUIEM_IMPL_ID,
             partner_impl_id=ZANKOU_MAIN_DPS_IMPL_ID,
         )
+        # [lw] The shared test switch suppresses only E/Q; G and a paired axis remain active.
         ultimate = self.planner_action(
             tags={ActionTag.ULTIMATE_ACTION},
             slot=ActionSlot.ULTIMATE,
             execute=lambda _: self.click_ultimate(wait_if_no_cd=self.PRE_SKILL_ULTIMATE_WAIT),
             name=f"{self}_ultimate",
             reason="requiem ultimate ready",
-            can_execute=lambda _: self.ultimate_available(),
-            priority_ready=lambda _: self.ultimate_available(),
+            can_execute=lambda _: (
+                not self._skills_disabled_for_test() and self.ultimate_available()
+            ),
+            priority_ready=lambda _: (
+                not self._skills_disabled_for_test() and self.ultimate_available()
+            ),
         )
         real_skill = self.planner_action(
             tags={ActionTag.SKILL_ACTION, ActionTag.DAMAGE},
@@ -230,8 +235,14 @@ class Requiem(MainDps):
             execute=lambda _: self.cast_real_skill(),
             name=f"{self}_real_skill",
             reason="requiem real skill (damage)",
-            can_execute=lambda _: self.skill_available() and self.is_real_skill_now(),
-            priority_ready=lambda _: self.skill_available(),
+            can_execute=lambda _: (
+                not self._skills_disabled_for_test()
+                and self.skill_available()
+                and self.is_real_skill_now()
+            ),
+            priority_ready=lambda _: (
+                not self._skills_disabled_for_test() and self.skill_available()
+            ),
         )
         free_skill = self.planner_action(
             tags={ActionTag.SKILL_ACTION},
@@ -239,7 +250,11 @@ class Requiem(MainDps):
             execute=self._execute_free_skill,
             name=f"{self}_free_skill",
             reason="requiem free skill",
-            can_execute=lambda _: self.skill_available() and not self.is_real_skill_now(),
+            can_execute=lambda _: (
+                not self._skills_disabled_for_test()
+                and self.skill_available()
+                and not self.is_real_skill_now()
+            ),
             priority_ready=lambda _: False,  # 免费技中途放, 不主动抢切人
         )
         double_4a = self.planner_action(
@@ -283,9 +298,10 @@ class Requiem(MainDps):
             # G技能: 图标变了=就绪, 第一优先级按G(在大招/技能之前); 按了就结束本轮决策。
             if self._maybe_trigger_g_skill():
                 return
-            # 测试开关: 禁用技能大招, 只站场打 combo(单独测手感/闪避)
+            # Test switch only disables E/Q. Keep G and an enabled coordinated axis intact
+            # so the paired normal-attack timing can still be tested in actual combat.
             if self._skills_disabled_for_test():
-                yield double_4a
+                yield field_action
                 return
             # 目标存活门: 别对尸体开大或放真技能(白扔长CD); 已脱战抛 NotInCombat 收手
             self._check_combat_alive()
@@ -858,15 +874,9 @@ class Requiem(MainDps):
             return False
 
     def _skills_disabled_for_test(self, task=None):
-        """读"安魂曲配置"的"禁用技能大招(测试)"开关: 开=只站场打 combo, 方便单独测手感/闪避。"""
-        if task is None:
-            task = self._jump_task()
-        if task is None:
-            return False
-        try:
-            return bool(task.config.get(task.CONF_DISABLE_SKILLS, False))
-        except Exception:
-            return False
+        """Read the shared LW template E/Q test switch."""
+
+        return self.lw_skills_disabled_for_test(task)
 
     def reset_state(self):
         super().reset_state()
