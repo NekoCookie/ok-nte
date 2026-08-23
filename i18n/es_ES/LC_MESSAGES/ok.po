@@ -1406,3 +1406,15 @@ msgstr "Activado = permitir el cambio cuando el enfriamiento estimado de la E de
 
 msgid "开=允许切人时, 辅助 E 就绪会在环合前抢占; 关=仅按普通评分切人"
 msgstr "Activado = si se permite cambiar, la E de apoyo lista se adelanta a las reacciones coordinadas; desactivado = cambiar solo mediante la puntuación normal"
+
+msgid "自动闯关"
+msgstr "Progresión automática"
+
+msgid "发球等待时间"
+msgstr "Tiempo de espera del saque"
+
+msgid "抛球后等待多久再按发球键, 可设置0.5到5.0秒, 默认2.5秒. 运行中修改会在下一次发球时生效"
+msgstr "Cuánto tiempo esperar después del lanzamiento antes de pulsar la tecla de saque. Rango: de 0,5 a 5,0 segundos; valor predeterminado: 2,5 segundos. Los cambios realizados durante la ejecución se aplican al siguiente saque"
+
+msgid "发球等待时间必须在0.5到5.0秒之间"
+msgstr "El tiempo de espera del saque debe estar entre 0,5 y 5,0 segundos"

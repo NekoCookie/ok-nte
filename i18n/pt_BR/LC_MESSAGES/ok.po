@@ -1137,3 +1137,15 @@ msgstr "Ligado = permitir troca ativa quando o recálculo estimado do E de supor
 
 msgid "开=允许切人时, 辅助 E 就绪会在环合前抢占; 关=仅按普通评分切人"
 msgstr "Ligado = com troca permitida, o E de suporte pronto antecede reações coordenadas; desligado = trocar somente pela pontuação normal"
+
+msgid "自动闯关"
+msgstr "Progressão automática"
+
+msgid "发球等待时间"
+msgstr "Tempo de espera do saque"
+
+msgid "抛球后等待多久再按发球键, 可设置0.5到5.0秒, 默认2.5秒. 运行中修改会在下一次发球时生效"
+msgstr "Tempo de espera após lançar a bola antes de pressionar a tecla de saque. Faixa: de 0,5 a 5,0 segundos; padrão: 2,5 segundos. Alterações feitas durante a execução entram em vigor no próximo saque"
+
+msgid "发球等待时间必须在0.5到5.0秒之间"
+msgstr "O tempo de espera do saque deve ficar entre 0,5 e 5,0 segundos"

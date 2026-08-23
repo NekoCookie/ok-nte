@@ -31,6 +31,7 @@ experience farming must restart the current level and must not advance.
 | B-06 | A stuck serve UI fails safely | Serve keys never clear after a serve | Log a warning after the soft timeout and stop the task at the hard timeout | Never unlock merely because time elapsed | `TestVolleyballTask.test_service_phase_stops_after_hard_timeout` | Deliberately hold the serve UI, if reproducible | automated verified; manual pending |
 | B-07 | Match results require real settlement UI | `find_exit()` misses while a match is still active, or a result screen appears | Count and click only when `WIN`/`LOSE` and the required action text are both recognized | A detection gap cannot increment match or win counters | `test_result_requires_a_win_or_loss_screen`, `test_result_text_without_match_end_actions_is_not_a_match_end` | Observe counters during a full active match | automated verified; manual pending |
 | B-08 | Three-star auto mode selects next level | A three-star win in `自动闯关` | Detect all three gold star slots and click OCR-recognized `下一关`; never fall back to restart | Record one win and report `进入下一关` | `test_three_gold_stars_are_required_to_advance`, `test_auto_mode_never_restarts_a_three_star_win_when_next_is_not_found` | Complete the supplied three-star result scenario | automated and supplied-image verified; live click pending |
+| B-09 | Serve timing is adjustable without restarting | User updates `发球等待时间` while the task is running | Each new service phase reads the current value; an already-started `J -> wait -> K` action stays unchanged | Clamp input to `0.5-5.0` seconds, invalid input falls back to `2.5` seconds | `test_serve_delay_is_read_when_each_new_service_phase_starts`, `test_serve_delay_uses_a_safe_range_and_invalid_value_falls_back` | Change the value between two serves | automated verified; manual pending |
 
 ## RU-to-LW contract migration matrix
 
@@ -49,6 +50,7 @@ experience farming must restart the current level and must not advance.
 | I-02 | `src/tasks/BaseNTETask.py` | ESC white mask and dilation | None | One `find_exit()` implementation | `e37b6af` | verified |
 | I-03 | `src/Labels.py`, `assets/coco_annotations.json` | RU volleyball next/star templates | Do not apply unrelated launcher-label migration | Only required volleyball labels and annotations are added | `e37b6af` | verified |
 | I-04 | `src/tasks/VolleyballTask.py`, `src/Labels.py`, `assets/coco_annotations.json` | RU mode split and three-star intent | Replace invalid pure-white template crops with existing OCR, relative boxes, and color-percentage helpers | The invalid template path is removed; one OCR/color result path remains | current fix | verified |
+| I-05 | `src/tasks/VolleyballTask.py`, `i18n/*/LC_MESSAGES/ok.po` | Local serve timing | Read the user-configured delay at the start of every new service phase | One serve action path; no timer override or parallel input path | current configuration change | verified |
 
 ## Verification evidence
 
@@ -60,6 +62,8 @@ experience farming must restart the current level and must not advance.
 | V-04 | B-01 to B-08 | `python -m unittest tests.TestVolleyballTask` | 27 tests passed | pass | verified |
 | V-05 | B-07, B-08 | Supplied 2560x1440 result screenshot through repository OCR/color logic | OCR: `WIN`, `下一关`, `重新开始`, `离开`; gold ratios: `0.238`, `0.241`, `0.238` against threshold `0.15` | pass | verified |
 | V-06 | B-01 to B-08 | `python -m unittest discover -s tests -p '*.py'` | 669 tests passed | pass | verified |
+| V-07 | B-09 | `python -m unittest tests.TestVolleyballTask` | 30 tests passed | pass | verified |
+| V-08 | B-01 to B-09 | `python -m unittest discover -s tests -p '*.py'` | 672 tests passed | pass | verified |
 
 ## Post-migration incident evidence
 

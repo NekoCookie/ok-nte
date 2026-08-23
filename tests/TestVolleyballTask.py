@@ -295,11 +295,16 @@ class TestVolleyballTask(unittest.TestCase):
 
     def test_service_is_handled_after_the_match_has_already_started(self):
         class ServiceTask:
+            CONF_SERVE_DELAY = VolleyballTask.CONF_SERVE_DELAY
+            DEFAULT_SERVE_DELAY = VolleyballTask.DEFAULT_SERVE_DELAY
+            MIN_SERVE_DELAY = VolleyballTask.MIN_SERVE_DELAY
+            MAX_SERVE_DELAY = VolleyballTask.MAX_SERVE_DELAY
             SERVICE_RELEASE_CONFIRM_SECONDS = VolleyballTask.SERVICE_RELEASE_CONFIRM_SECONDS
             SERVICE_PHASE_WARNING_SECONDS = VolleyballTask.SERVICE_PHASE_WARNING_SECONDS
             SERVICE_PHASE_HARD_TIMEOUT_SECONDS = VolleyballTask.SERVICE_PHASE_HARD_TIMEOUT_SECONDS
 
             def __init__(self):
+                self.config = {self.CONF_SERVE_DELAY: 2.8}
                 self._service_phase_active = False
                 self._service_phase_started_at = 0.0
                 self._service_release_started_at = None
@@ -310,6 +315,7 @@ class TestVolleyballTask(unittest.TestCase):
                 self.sleep = Mock()
 
             check_service_phase_timeout = VolleyballTask.check_service_phase_timeout
+            get_serve_delay = VolleyballTask.get_serve_delay
             handle_service_release = VolleyballTask.handle_service_release
             reset_service_phase = VolleyballTask.reset_service_phase
 
@@ -319,7 +325,64 @@ class TestVolleyballTask(unittest.TestCase):
             self.assertTrue(VolleyballTask.handle_service(task))
 
         task.send_key.assert_has_calls([call("j"), call("k")])
-        task.sleep.assert_called_once_with(2.5)
+        task.sleep.assert_called_once_with(2.8)
+
+    def test_serve_delay_is_read_when_each_new_service_phase_starts(self):
+        class ServiceTask:
+            CONF_SERVE_DELAY = VolleyballTask.CONF_SERVE_DELAY
+            DEFAULT_SERVE_DELAY = VolleyballTask.DEFAULT_SERVE_DELAY
+            MIN_SERVE_DELAY = VolleyballTask.MIN_SERVE_DELAY
+            MAX_SERVE_DELAY = VolleyballTask.MAX_SERVE_DELAY
+
+            def __init__(self):
+                self.config = {self.CONF_SERVE_DELAY: 2.5}
+                self._service_phase_active = False
+                self._service_phase_started_at = 0.0
+                self._service_release_started_at = None
+                self._service_phase_warning_logged = False
+                self.is_service = Mock(return_value=True)
+                self.log_info = Mock()
+                self.log_warning = Mock()
+                self.send_key = Mock()
+                self.sleep = Mock()
+
+            get_serve_delay = VolleyballTask.get_serve_delay
+
+        task = ServiceTask()
+
+        with patch("src.tasks.VolleyballTask.time.monotonic", return_value=10.0):
+            VolleyballTask.handle_service(task)
+        task._service_phase_active = False
+        task.config[VolleyballTask.CONF_SERVE_DELAY] = 3.1
+        with patch("src.tasks.VolleyballTask.time.monotonic", return_value=20.0):
+            VolleyballTask.handle_service(task)
+
+        self.assertEqual(task.sleep.call_args_list, [call(2.5), call(3.1)])
+
+    def test_serve_delay_uses_a_safe_range_and_invalid_value_falls_back(self):
+        class DelayTask:
+            CONF_SERVE_DELAY = VolleyballTask.CONF_SERVE_DELAY
+            DEFAULT_SERVE_DELAY = VolleyballTask.DEFAULT_SERVE_DELAY
+            MIN_SERVE_DELAY = VolleyballTask.MIN_SERVE_DELAY
+            MAX_SERVE_DELAY = VolleyballTask.MAX_SERVE_DELAY
+
+            def __init__(self, delay):
+                self.config = {self.CONF_SERVE_DELAY: delay}
+                self.log_warning = Mock()
+
+        for configured_delay, expected_delay in [(0.1, 0.5), (8, 5.0), ("bad", 2.5)]:
+            task = DelayTask(configured_delay)
+            self.assertEqual(VolleyballTask.get_serve_delay(task), expected_delay)
+
+    def test_serve_delay_config_rejects_values_outside_the_safe_range(self):
+        task = object.__new__(VolleyballTask)
+
+        self.assertIsNone(task.validate_config(VolleyballTask.CONF_SERVE_DELAY, 2.5))
+        for invalid_delay in (0.1, 8, "bad"):
+            self.assertEqual(
+                task.validate_config(VolleyballTask.CONF_SERVE_DELAY, invalid_delay),
+                VolleyballTask.SERVE_DELAY_RANGE_ERROR,
+            )
 
     def test_active_service_phase_blocks_duplicate_inputs_after_four_seconds(self):
         class ServiceTask:

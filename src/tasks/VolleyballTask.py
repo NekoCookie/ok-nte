@@ -13,6 +13,7 @@ EN_INST = "Start the mission after entering the game"
 
 class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     CONF_MODE = "模式"
+    CONF_SERVE_DELAY = "发球等待时间"
     MODE_EXP = "刷经验"
     MODE_AUTO = "自动闯关"
     MODE_SUP = "辅助扣发球"
@@ -43,6 +44,10 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         (0.978, 0.437, 0.986, 0.453),
     )
     SERVICE_ACTION_WHITE_THRESHOLD = 0.04
+    DEFAULT_SERVE_DELAY = 2.5
+    MIN_SERVE_DELAY = 0.5
+    MAX_SERVE_DELAY = 5.0
+    SERVE_DELAY_RANGE_ERROR = "发球等待时间必须在0.5到5.0秒之间"
     SERVICE_RELEASE_CONFIRM_SECONDS = 0.5
     SERVICE_PHASE_WARNING_SECONDS = 10.0
     SERVICE_PHASE_HARD_TIMEOUT_SECONDS = 30.0
@@ -54,6 +59,12 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self.default_config.update(
             {
                 self.CONF_MODE: self.MODE_EXP,
+                self.CONF_SERVE_DELAY: self.DEFAULT_SERVE_DELAY,
+            }
+        )
+        self.config_description.update(
+            {
+                self.CONF_SERVE_DELAY: "抛球后等待多久再按发球键, 可设置0.5到5.0秒, 默认2.5秒. 运行中修改会在下一次发球时生效",
             }
         )
         self.config_type.update(
@@ -72,6 +83,16 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self._match_result_recorded = False
         self._play_count = 0
         self.reset_service_phase()
+
+    def validate_config(self, key, value):
+        if key == self.CONF_SERVE_DELAY:
+            try:
+                delay = float(value)
+            except (TypeError, ValueError):
+                return self.SERVE_DELAY_RANGE_ERROR
+            if not self.MIN_SERVE_DELAY <= delay <= self.MAX_SERVE_DELAY:
+                return self.SERVE_DELAY_RANGE_ERROR
+        return super().validate_config(key, value)
 
     def run(self):
         super().run()
@@ -167,9 +188,20 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self._service_phase_warning_logged = False
         self.log_info("new service phase")
         self.send_key("j")
-        self.sleep(2.5)
+        self.sleep(self.get_serve_delay())
         self.send_key("k")
         return True
+
+    def get_serve_delay(self):
+        configured_delay = self.config.get(self.CONF_SERVE_DELAY, self.DEFAULT_SERVE_DELAY)
+        try:
+            delay = float(configured_delay)
+        except (TypeError, ValueError):
+            self.log_warning(
+                f"invalid serve delay {configured_delay!r}; using {self.DEFAULT_SERVE_DELAY:.1f}s"
+            )
+            return self.DEFAULT_SERVE_DELAY
+        return max(self.MIN_SERVE_DELAY, min(delay, self.MAX_SERVE_DELAY))
 
     def handle_service_release(self, now):
         if not self._service_phase_active:
