@@ -204,8 +204,21 @@ class TestRequiemZankouAxis(unittest.TestCase):
 
         plan = zankou.combat_plan(context)
 
-        self.assertEqual([action.name for action in plan.actions], ["ZankouMainDps_test_normal_attacks"])
+        self.assertEqual(
+            [action.name for action in plan.actions],
+            ["ZankouMainDps_test_normal_attacks"],
+        )
         self.assertEqual(next(plan.entry()).name, "ZankouMainDps_test_normal_attacks")
+
+    def test_requiem_pending_axis_switch_forces_departure_from_field_time(self):
+        requiem, _zankou, _context = make_combat_pair(combat_enabled=True)
+        requiem.skill_off_field_until = 0.0
+        requiem._coaxis_switch_pending = True
+
+        self.assertTrue(requiem.should_force_off_field())
+
+        requiem._coaxis_switch_pending = False
+        self.assertFalse(requiem.should_force_off_field())
 
     def test_one_round_uses_configured_keys_and_attack_sequence(self):
         clock = FakeClock()
@@ -270,10 +283,13 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [event for event in requiem.events if event[0] == "tap"],
             [("tap", 0.0), ("tap", 0.2), ("tap", 0.4)],
         )
-        requiem_context.request_switch.assert_called_once_with(
-            zankou,
-            reason="requiem coordinated axis complete",
-        )
+        requiem_context.request_switch.assert_called_once()
+        args, kwargs = requiem_context.request_switch.call_args
+        self.assertEqual(args, (zankou,))
+        self.assertEqual(kwargs["reason"], "requiem coordinated axis complete")
+        self.assertTrue(requiem._coaxis_switch_pending)
+        kwargs["on_finish"]()
+        self.assertFalse(requiem._coaxis_switch_pending)
 
         self.assertTrue(perform_zankou_combat_axis(zankou, zankou_context, requiem))
         self.assertEqual(zankou.events[0], ("hold", 1.8))

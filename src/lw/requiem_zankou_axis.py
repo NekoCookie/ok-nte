@@ -238,7 +238,14 @@ def perform_requiem_combat_axis(
         settings.requiem_attack_duration,
         settings.requiem_attack_interval,
     )
-    context.request_switch(partner, reason="requiem coordinated axis complete")
+    # MainDps normally keeps the current character until its field-time limit. Mark this
+    # completed axis as an explicit departure until the public planner request resolves.
+    char._coaxis_switch_pending = True
+    context.request_switch(
+        partner,
+        reason="requiem coordinated axis complete",
+        on_finish=lambda: setattr(char, "_coaxis_switch_pending", False),
+    )
     return True
 
 

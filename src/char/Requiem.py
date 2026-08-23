@@ -194,6 +194,8 @@ class Requiem(MainDps):
         self._d4_front_left_ms = 0.0     # 双4a前段平A在窗口内打掉后剩余的时长(ms)
         self._d4_seam_t = 0.0            # 窗口内结束时刻(单调时钟), 供诊断续打接缝
         self._d4_last_end = 0.0           # 上轮双4a结束时刻(单调时钟), 供诊断 combo 交接
+        # [lw] Bypass MainDps field-time hold for one axis handoff.
+        self._coaxis_switch_pending = False
 
     def describe_role(self):
         # 安魂曲一律用主C(MainDps)的 MAIN_DPS 画像, 不再降级到 RU 安魂曲(Lacrimosa)。
@@ -330,7 +332,9 @@ class Requiem(MainDps):
         return False
 
     def should_force_off_field(self):
-        return time.time() < self.skill_off_field_until
+        return time.time() < self.skill_off_field_until or getattr(
+            self, "_coaxis_switch_pending", False
+        )
 
     @classmethod
     def _load_skill_templates(cls):
@@ -886,3 +890,4 @@ class Requiem(MainDps):
         self._d4_front_left_ms = 0.0
         self._d4_seam_t = 0.0
         self._d4_last_end = 0.0
+        self._coaxis_switch_pending = False
