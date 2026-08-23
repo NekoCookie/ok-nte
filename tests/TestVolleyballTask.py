@@ -250,7 +250,7 @@ class TestVolleyballTask(unittest.TestCase):
 
         task.info_set.assert_called_once_with(VolleyballTask.INFO_LEVEL_STATUS, "重开当前关")
 
-    def test_missing_exit_keeps_active_match_state_without_result_button(self):
+    def test_missing_exit_checks_for_dialog_skip_during_an_active_match(self):
         task = Mock()
         task.handle_match_end.return_value = False
         skip_task = Mock()
@@ -258,7 +258,7 @@ class TestVolleyballTask(unittest.TestCase):
         in_game = VolleyballTask.handle_missing_exit(task, True, skip_task)
 
         self.assertTrue(in_game)
-        skip_task.check_skip.assert_not_called()
+        skip_task.check_skip.assert_called_once_with()
 
     def test_missing_exit_checks_for_dialog_skip_before_match_starts(self):
         task = Mock()

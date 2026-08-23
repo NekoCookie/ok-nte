@@ -236,8 +236,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     def handle_missing_exit(self, in_game, skip_task):
         if self.handle_match_end():
             return False
-        if not in_game:
-            skip_task.check_skip()
+        skip_task.check_skip()
         return in_game
 
     def play_once(self, key, switch_key):
