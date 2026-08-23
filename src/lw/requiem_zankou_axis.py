@@ -6,6 +6,8 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
+from src.Labels import Labels
+
 if TYPE_CHECKING:
     from src.char.BaseChar import BaseChar
     from src.combat.planner import CombatContext
@@ -24,6 +26,7 @@ class CoordinatedAxisSettings:
     requiem_attack_duration: float = 2.0
     zankou_switch_delay: float = 0.5
     zankou_intro_wait_duration: float = 1.5
+    zankou_gold_skill_interrupt: bool = False
     zankou_hold_duration: float = 2.0
     zankou_normal_attack_duration: float = 2.0
     zankou_dodge_normal_attack_duration: float = 0.5
@@ -92,6 +95,16 @@ def _config_number(config_task, key: str, default: float) -> float:
         return default
 
 
+def _config_boolean(config_task, key: str, default: bool) -> bool:
+    config = getattr(config_task, "config", None)
+    if not key or not hasattr(config, "get"):
+        return default
+    value = config.get(key, default)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 def coordinated_axis_settings(char: "BaseChar") -> CoordinatedAxisSettings:
     """Read the shared test/combat timings from Requiem configuration."""
 
@@ -113,6 +126,11 @@ def coordinated_axis_settings(char: "BaseChar") -> CoordinatedAxisSettings:
             config_task,
             config_task.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION,
             1.5,
+        ),
+        zankou_gold_skill_interrupt=_config_boolean(
+            config_task,
+            getattr(config_task, "CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT", ""),
+            False,
         ),
         zankou_hold_duration=_config_number(
             config_task,
@@ -167,41 +185,80 @@ def _sound_dodge_since(char: "BaseChar", recorded_at: float) -> tuple[bool, floa
     return current_at > recorded_at, max(recorded_at, current_at)
 
 
+def _try_zankou_gold_skill_interrupt(
+    char: "BaseChar",
+    context: "CombatContext",
+    partner: "BaseChar",
+    settings: CoordinatedAxisSettings,
+) -> bool:
+    """Cast Zankou's RU-recognized gold skill and hand off only on success."""
+
+    if not settings.zankou_gold_skill_interrupt:
+        return False
+    find_one = getattr(getattr(char, "task", None), "find_one", None)
+    if not callable(find_one) or not find_one(Labels.zankou_skill_gold):
+        return False
+    logger = getattr(char, "logger", None)
+    log_info = getattr(logger, "info", None)
+    if callable(log_info):
+        log_info("zankou coordinated axis interrupted by gold skill")
+    click_skill = getattr(char, "click_skill", None)
+    if not callable(click_skill) or not click_skill():
+        return False
+    context.request_switch(partner, reason="zankou gold skill complete")
+    return True
+
+
 def _run_normal_attacks_until_sound_dodge(
     char: "BaseChar",
     duration: float,
     interval: float,
     dodge_at: float,
-) -> tuple[bool, float]:
+    context: "CombatContext",
+    partner: "BaseChar",
+    settings: CoordinatedAxisSettings,
+) -> tuple[bool, bool, float]:
     deadline = char.now() + duration
     while char.now() < deadline:
+        if _try_zankou_gold_skill_interrupt(char, context, partner, settings):
+            return False, True, dodge_at
         char.normal_attack()
         dodged, dodge_at = _sound_dodge_since(char, dodge_at)
         if dodged:
-            return True, dodge_at
+            return True, False, dodge_at
+        if _try_zankou_gold_skill_interrupt(char, context, partner, settings):
+            return False, True, dodge_at
         remaining = deadline - char.now()
         if remaining > 0:
             char.sleep(min(interval, remaining))
             dodged, dodge_at = _sound_dodge_since(char, dodge_at)
             if dodged:
-                return True, dodge_at
-    return False, dodge_at
+                return True, False, dodge_at
+    if _try_zankou_gold_skill_interrupt(char, context, partner, settings):
+        return False, True, dodge_at
+    return False, False, dodge_at
 
 
 def _run_zankou_dodge_recovery(
     char: "BaseChar",
+    context: "CombatContext",
+    partner: "BaseChar",
     settings: CoordinatedAxisSettings,
     dodge_at: float,
-) -> float:
+) -> tuple[float, bool]:
     """Recover with normals; a new dodge restarts the configured recovery window."""
 
     deadline = char.now() + settings.zankou_dodge_normal_attack_duration
     while char.now() < deadline:
+        if _try_zankou_gold_skill_interrupt(char, context, partner, settings):
+            return dodge_at, True
         char.normal_attack()
         dodged, dodge_at = _sound_dodge_since(char, dodge_at)
         if dodged:
             deadline = char.now() + settings.zankou_dodge_normal_attack_duration
             continue
+        if _try_zankou_gold_skill_interrupt(char, context, partner, settings):
+            return dodge_at, True
         remaining = deadline - char.now()
         if remaining <= 0:
             continue
@@ -209,7 +266,9 @@ def _run_zankou_dodge_recovery(
         dodged, dodge_at = _sound_dodge_since(char, dodge_at)
         if dodged:
             deadline = char.now() + settings.zankou_dodge_normal_attack_duration
-    return dodge_at
+    if _try_zankou_gold_skill_interrupt(char, context, partner, settings):
+        return dodge_at, True
+    return dodge_at, False
 
 
 def _log_zankou_sound_dodge_recovery(char: "BaseChar", duration: float) -> None:
@@ -256,23 +315,40 @@ def perform_zankou_combat_axis(
     settings = coordinated_axis_settings(char)
     dodge_at = _last_sound_dodge_time(char)
     while True:
+        if _try_zankou_gold_skill_interrupt(char, context, partner, settings):
+            return True
         # Entry timing is handled before this action. The combat axis always begins
         # with heavy attack, while the standalone tester keeps its own switch delay.
         char.heavy_attack(duration=settings.zankou_hold_duration)
+        if _try_zankou_gold_skill_interrupt(char, context, partner, settings):
+            return True
         dodged, dodge_at = _sound_dodge_since(char, dodge_at)
         if not dodged:
-            dodged, dodge_at = _run_normal_attacks_until_sound_dodge(
+            dodged, skill_interrupted, dodge_at = _run_normal_attacks_until_sound_dodge(
                 char,
                 settings.zankou_normal_attack_duration,
                 COAXIS_NORMAL_ATTACK_INTERVAL,
                 dodge_at,
+                context,
+                partner,
+                settings,
             )
+            if skill_interrupted:
+                return True
         if not dodged:
             context.request_switch(partner, reason="zankou coordinated axis complete")
             return True
 
         _log_zankou_sound_dodge_recovery(char, settings.zankou_dodge_normal_attack_duration)
-        dodge_at = _run_zankou_dodge_recovery(char, settings, dodge_at)
+        dodge_at, skill_interrupted = _run_zankou_dodge_recovery(
+            char,
+            context,
+            partner,
+            settings,
+            dodge_at,
+        )
+        if skill_interrupted:
+            return True
 
 
 class CoordinatedAxisIO(Protocol):

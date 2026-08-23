@@ -1442,3 +1442,9 @@ msgstr "Zankou silent intro wait (s)"
 
 msgid "实战合轴中, 残虹通过环合切入后静默等待这么久, 不进行普攻输入, 再从重击开始; 默认1.5s"
 msgstr "In the combat axis, when Zankou enters through an intro, wait silently for this duration without basic attacks, then start from heavy attack; default: 1.5 s"
+
+msgid "残虹强化E打断合轴"
+msgstr "Interrupt axis with Zankou enhanced E"
+
+msgid "开=合轴中识别到残虹黄色强化E时中断当前动作, 成功释放后请求切人; 关=忽略强化E"
+msgstr "On = when Zankou's yellow enhanced E is recognized during the coordinated axis, interrupt the current action and request a switch after a successful cast; off = ignore enhanced E"

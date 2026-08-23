@@ -1442,3 +1442,9 @@ msgstr "Espera silenciosa de entrada de Zankou (s)"
 
 msgid "实战合轴中, 残虹通过环合切入后静默等待这么久, 不进行普攻输入, 再从重击开始; 默认1.5s"
 msgstr "En el eje de combate, cuando Zankou entra mediante una reaccion de entrada, espera en silencio este tiempo sin ataques basicos y luego comienza con un ataque pesado; predeterminado: 1.5 s"
+
+msgid "残虹强化E打断合轴"
+msgstr "Interrumpir el eje con E mejorada de Zankou"
+
+msgid "开=合轴中识别到残虹黄色强化E时中断当前动作, 成功释放后请求切人; 关=忽略强化E"
+msgstr "Activado = cuando se reconozca la E mejorada amarilla de Zankou durante el eje coordinado, interrumpe la accion actual y solicita cambio tras lanzarla con exito; desactivado = ignora la E mejorada"

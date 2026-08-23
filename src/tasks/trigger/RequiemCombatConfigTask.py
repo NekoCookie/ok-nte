@@ -218,6 +218,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_COAXIS_REQUIEM_DURATION = "安魂曲普攻时长(s)"
     CONF_COAXIS_ZANKOU_SWITCH_DELAY = "切到残虹后等待(s)"
     CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION = "残虹环合静默等待(s)"
+    CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT = "残虹强化E打断合轴"
     CONF_COAXIS_ZANKOU_HOLD_DURATION = "残虹长按普攻时长(s)"
     CONF_COAXIS_ZANKOU_NORMAL_DURATION = "残虹普攻时长(s)"
     CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION = "残虹声音闪避后普攻时长(s)"
@@ -318,6 +319,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_REQUIEM_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.5,
                 self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION: 1.5,
+                self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: False,
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.5,
@@ -436,6 +438,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                             self.CONF_COAXIS_REQUIEM_DURATION,
                             self.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
                             self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION,
+                            self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT,
                             self.CONF_COAXIS_ZANKOU_HOLD_DURATION,
                             self.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
                             self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
@@ -593,6 +596,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION: (
                     "实战合轴中, 残虹通过环合切入后静默等待这么久, "
                     "不进行普攻输入, 再从重击开始; 默认1.5s"
+                ),
+                self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: (
+                    "开=合轴中识别到残虹黄色强化E时中断当前动作, "
+                    "成功释放后请求切人; 关=忽略强化E"
                 ),
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: "残虹合轴阶段长按普攻的持续秒数",
                 self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: "残虹长按结束后按共享间隔持续普攻这么久, 然后切回安魂曲",
