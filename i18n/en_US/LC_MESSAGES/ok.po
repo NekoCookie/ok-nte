@@ -1418,3 +1418,12 @@ msgstr "How long to wait after tossing before pressing the serve key. Range: 0.5
 
 msgid "发球等待时间必须在0.5到5.0秒之间"
 msgstr "Serve wait time must be between 0.5 and 5.0 seconds"
+
+msgid "仅按键测试: 按下残虹切换键后等待这么久再长按普攻; 实战由切人识别和环合结算"
+msgstr "Standalone test only: wait this long after pressing the Zankou switch key before holding attack; combat uses switch detection and intro resolution"
+
+msgid "残虹声音闪避后普攻时长(s)"
+msgstr "Zankou normal-attack duration after sound dodge (s)"
+
+msgid "残虹合轴被声音闪避打断后, 按共享间隔持续普攻这么久, 然后从重击重新开始"
+msgstr "After Zankou's coordinated axis is interrupted by a sound-triggered dodge, keep normal attacking at the shared interval for this long, then restart from the heavy attack"

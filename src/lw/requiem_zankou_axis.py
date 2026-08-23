@@ -26,6 +26,7 @@ class CoordinatedAxisSettings:
     zankou_switch_delay: float = 0.5
     zankou_hold_duration: float = 2.0
     zankou_normal_attack_duration: float = 2.0
+    zankou_dodge_normal_attack_duration: float = 0.5
 
 
 def _config_task(char: "BaseChar"):
@@ -126,6 +127,11 @@ def coordinated_axis_settings(char: "BaseChar") -> CoordinatedAxisSettings:
             config_task.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
             2.0,
         ),
+        zankou_dodge_normal_attack_duration=_config_number(
+            config_task,
+            getattr(config_task, "CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION", ""),
+            0.5,
+        ),
     )
 
 
@@ -136,6 +142,87 @@ def _run_combat_normal_attacks(char: "BaseChar", duration: float, interval: floa
         remaining = deadline - char.now()
         if remaining > 0:
             char.sleep(min(interval, remaining))
+
+
+def _last_sound_dodge_time(char: "BaseChar") -> float:
+    """Read the last completed sound-triggered dodge without coupling to trigger internals."""
+
+    getter = getattr(getattr(char, "task", None), "last_dodge_time", None)
+    if not callable(getter):
+        return 0.0
+    try:
+        return max(0.0, float(getter()))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _flush_pending_sound_dodge(char: "BaseChar") -> None:
+    """Execute a queued sound action so a phase-boundary dodge is visible immediately."""
+
+    flush_pending_dodge = getattr(getattr(char, "task", None), "flush_pending_dodge", None)
+    if callable(flush_pending_dodge):
+        flush_pending_dodge()
+
+
+def _sound_dodge_since(char: "BaseChar", recorded_at: float) -> tuple[bool, float]:
+    _flush_pending_sound_dodge(char)
+    current_at = _last_sound_dodge_time(char)
+    return current_at > recorded_at, max(recorded_at, current_at)
+
+
+def _run_normal_attacks_until_sound_dodge(
+    char: "BaseChar",
+    duration: float,
+    interval: float,
+    dodge_at: float,
+) -> tuple[bool, float]:
+    deadline = char.now() + duration
+    while char.now() < deadline:
+        char.normal_attack()
+        dodged, dodge_at = _sound_dodge_since(char, dodge_at)
+        if dodged:
+            return True, dodge_at
+        remaining = deadline - char.now()
+        if remaining > 0:
+            char.sleep(min(interval, remaining))
+            dodged, dodge_at = _sound_dodge_since(char, dodge_at)
+            if dodged:
+                return True, dodge_at
+    return False, dodge_at
+
+
+def _run_zankou_dodge_recovery(
+    char: "BaseChar",
+    settings: CoordinatedAxisSettings,
+    dodge_at: float,
+) -> float:
+    """Recover with normals; a new dodge restarts the configured recovery window."""
+
+    deadline = char.now() + settings.zankou_dodge_normal_attack_duration
+    while char.now() < deadline:
+        char.normal_attack()
+        dodged, dodge_at = _sound_dodge_since(char, dodge_at)
+        if dodged:
+            deadline = char.now() + settings.zankou_dodge_normal_attack_duration
+            continue
+        remaining = deadline - char.now()
+        if remaining <= 0:
+            continue
+        char.sleep(min(settings.requiem_attack_interval, remaining))
+        dodged, dodge_at = _sound_dodge_since(char, dodge_at)
+        if dodged:
+            deadline = char.now() + settings.zankou_dodge_normal_attack_duration
+    return dodge_at
+
+
+def _log_zankou_sound_dodge_recovery(char: "BaseChar", duration: float) -> None:
+    logger = getattr(char, "logger", None)
+    log_info = getattr(logger, "info", None)
+    if callable(log_info):
+        log_info(
+            "zankou coordinated axis interrupted by sound dodge; "
+            f"normal attacks for {duration:.2f}s before restarting"
+        )
 
 
 def perform_requiem_combat_axis(
@@ -160,19 +247,27 @@ def perform_zankou_combat_axis(
     context: "CombatContext",
     partner: "BaseChar",
 ) -> bool:
-    """Run Zankou's hold and normal-attack field time, then request Requiem."""
+    """Run Zankou's field time; recover from a sound dodge by restarting the axis."""
 
     settings = coordinated_axis_settings(char)
-    if settings.zankou_switch_delay > 0:
-        char.sleep(settings.zankou_switch_delay)
-    char.heavy_attack(duration=settings.zankou_hold_duration)
-    _run_combat_normal_attacks(
-        char,
-        settings.zankou_normal_attack_duration,
-        settings.requiem_attack_interval,
-    )
-    context.request_switch(partner, reason="zankou coordinated axis complete")
-    return True
+    dodge_at = _last_sound_dodge_time(char)
+    while True:
+        # RU has already verified the switch and, for an intro, completed its entry recovery.
+        char.heavy_attack(duration=settings.zankou_hold_duration)
+        dodged, dodge_at = _sound_dodge_since(char, dodge_at)
+        if not dodged:
+            dodged, dodge_at = _run_normal_attacks_until_sound_dodge(
+                char,
+                settings.zankou_normal_attack_duration,
+                settings.requiem_attack_interval,
+                dodge_at,
+            )
+        if not dodged:
+            context.request_switch(partner, reason="zankou coordinated axis complete")
+            return True
+
+        _log_zankou_sound_dodge_recovery(char, settings.zankou_dodge_normal_attack_duration)
+        dodge_at = _run_zankou_dodge_recovery(char, settings, dodge_at)
 
 
 class CoordinatedAxisIO(Protocol):

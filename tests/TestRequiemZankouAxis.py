@@ -63,11 +63,16 @@ class FakeAxisIO:
 
 
 class FakeCombatChar:
-    def __init__(self, config_task):
-        self.task = SimpleNamespace(get_task_by_class=lambda _: config_task)
+    def __init__(self, config_task, dodge_times=()):
+        self.task = SimpleNamespace(
+            get_task_by_class=lambda _: config_task,
+            last_dodge_time=lambda: self._last_dodge_time,
+        )
         self.clock = 0.0
         self.events = []
         self.last_switch_time = 0.0
+        self._dodge_times = list(dodge_times)
+        self._last_dodge_time = 0.0
 
     def now(self):
         return self.clock
@@ -77,11 +82,17 @@ class FakeCombatChar:
 
     def sleep(self, duration):
         self.events.append(("sleep", duration))
-        self.clock += duration
+        self._advance(duration)
 
     def heavy_attack(self, duration):
         self.events.append(("hold", duration))
-        self.clock += duration
+        self._advance(duration)
+
+    def _advance(self, duration):
+        end = self.clock + duration
+        while self._dodge_times and self._dodge_times[0] <= end:
+            self._last_dodge_time = self._dodge_times.pop(0)
+        self.clock = end
 
 def make_config_task(combat_enabled=True, **overrides):
     config = {
@@ -91,6 +102,7 @@ def make_config_task(combat_enabled=True, **overrides):
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.5,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_HOLD_DURATION: 1.8,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 0.45,
+        RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.5,
     }
     config.update(overrides)
     return SimpleNamespace(
@@ -106,6 +118,9 @@ def make_config_task(combat_enabled=True, **overrides):
         ),
         CONF_COAXIS_ZANKOU_NORMAL_DURATION=(
             RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_NORMAL_DURATION
+        ),
+        CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION=(
+            RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION
         ),
     )
 
@@ -250,13 +265,78 @@ class TestRequiemZankouAxis(unittest.TestCase):
         )
 
         self.assertTrue(perform_zankou_combat_axis(zankou, zankou_context, requiem))
-        self.assertEqual(zankou.events[0], ("sleep", 0.5))
+        self.assertEqual(zankou.events[0], ("hold", 1.8))
         self.assertIn(("hold", 1.8), zankou.events)
         self.assertEqual(
             [(name, round(at, 1)) for name, at in zankou.events if name == "tap"],
-            [("tap", 2.3), ("tap", 2.5), ("tap", 2.7)],
+            [("tap", 1.8), ("tap", 2.0), ("tap", 2.2)],
         )
         zankou_context.request_switch.assert_called_once_with(
+            requiem,
+            reason="zankou coordinated axis complete",
+        )
+
+    def test_zankou_sound_dodge_recovers_then_restarts_axis(self):
+        config_task = make_config_task(
+            **{
+                RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.45,
+            }
+        )
+        zankou = FakeCombatChar(config_task, dodge_times=(0.4,))
+        requiem = FakeCombatChar(config_task)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+
+        self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
+
+        self.assertEqual(
+            [event for event in zankou.events if event[0] == "hold"],
+            [("hold", 1.8), ("hold", 1.8)],
+        )
+        self.assertEqual(
+            [(name, round(at, 2)) for name, at in zankou.events if name == "tap"],
+            [
+                ("tap", 1.8),
+                ("tap", 2.0),
+                ("tap", 2.2),
+                ("tap", 4.05),
+                ("tap", 4.25),
+                ("tap", 4.45),
+            ],
+        )
+        context.request_switch.assert_called_once_with(
+            requiem,
+            reason="zankou coordinated axis complete",
+        )
+
+    def test_zankou_normal_phase_sound_dodge_recovers_then_restarts_axis(self):
+        config_task = make_config_task(
+            **{
+                RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.45,
+            }
+        )
+        zankou = FakeCombatChar(config_task, dodge_times=(1.9,))
+        requiem = FakeCombatChar(config_task)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+
+        self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
+
+        self.assertEqual(
+            [event for event in zankou.events if event[0] == "hold"],
+            [("hold", 1.8), ("hold", 1.8)],
+        )
+        self.assertEqual(
+            [(name, round(at, 2)) for name, at in zankou.events if name == "tap"],
+            [
+                ("tap", 1.8),
+                ("tap", 2.0),
+                ("tap", 2.2),
+                ("tap", 2.4),
+                ("tap", 4.25),
+                ("tap", 4.45),
+                ("tap", 4.65),
+            ],
+        )
+        context.request_switch.assert_called_once_with(
             requiem,
             reason="zankou coordinated axis complete",
         )

@@ -220,6 +220,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_COAXIS_ZANKOU_SWITCH_DELAY = "切到残虹后等待(s)"
     CONF_COAXIS_ZANKOU_HOLD_DURATION = "残虹长按普攻时长(s)"
     CONF_COAXIS_ZANKOU_NORMAL_DURATION = "残虹普攻时长(s)"
+    CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION = "残虹声音闪避后普攻时长(s)"
     CONF_GROUP_DODGE = "▸ 闪避反击设置(展开)"     # 分组折叠开关: 展开=闪避方式(下拉)+选闪双4a时的时序
     CONF_GROUP_TUNING = "▸ 实战调优参数(展开)"    # 分组折叠开关
     CONF_GROUP_TEST = "▸ 测试开关与测试键(展开)"   # 分组折叠开关
@@ -319,6 +320,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.5,
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 2.0,
+                self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.5,
                 # 闪避反击设置组(折叠)→ 闪避方式(下拉)→ 选"闪双4a"才显示7个时序
                 self.CONF_GROUP_DODGE: False,
                 self.CONF_DODGE_STYLE: self.STYLE_SCHEME_B,
@@ -436,6 +438,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                             self.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
                             self.CONF_COAXIS_ZANKOU_HOLD_DURATION,
                             self.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
+                            self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
                         ],
                     },
                 },
@@ -587,9 +590,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_ZANKOU_SWITCH_KEY: "残虹在队伍中的数字切换键; 默认2",
                 self.CONF_COAXIS_REQUIEM_INTERVAL: "安魂曲和残虹合轴阶段共用的普攻间隔秒数, 最低按0.02s执行",
                 self.CONF_COAXIS_REQUIEM_DURATION: "安魂曲持续普攻这么久后切到残虹",
-                self.CONF_COAXIS_ZANKOU_SWITCH_DELAY: "按下残虹切换键后等待这么久再长按普攻",
+                self.CONF_COAXIS_ZANKOU_SWITCH_DELAY: "仅按键测试: 按下残虹切换键后等待这么久再长按普攻; 实战由切人识别和环合结算",
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: "残虹合轴阶段长按普攻的持续秒数",
                 self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: "残虹长按结束后按共享间隔持续普攻这么久, 然后切回安魂曲",
+                self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: "残虹合轴被声音闪避打断后, 按共享间隔持续普攻这么久, 然后从重击重新开始",
                 self.CONF_GROUP_TUNING: "▸ 分组折叠: 展开实战调优参数(反击平A/后摇/主动闪避/轮数/技能前平A/脱战复查/让路)",
                 self.CONF_GROUP_TEST: "▸ 分组折叠: 展开测试开关与测试键(闪避反击测试/禁用技能大招/首平A/模拟闪避)",
                 self.CONF_GROUP_GAMEPAD: "▸ 分组折叠: 展开实体手柄与虚拟手柄共存测试",

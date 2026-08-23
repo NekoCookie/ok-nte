@@ -1418,3 +1418,12 @@ msgstr "Cuánto tiempo esperar después del lanzamiento antes de pulsar la tecla
 
 msgid "发球等待时间必须在0.5到5.0秒之间"
 msgstr "El tiempo de espera del saque debe estar entre 0,5 y 5,0 segundos"
+
+msgid "仅按键测试: 按下残虹切换键后等待这么久再长按普攻; 实战由切人识别和环合结算"
+msgstr "Solo prueba de tecla: espera este tiempo tras pulsar la tecla de cambio de Zankou antes de mantener el ataque; en combate se usa la deteccion de cambio y la resolucion de entrada"
+
+msgid "残虹声音闪避后普攻时长(s)"
+msgstr "Duracion de ataques normales de Zankou tras esquiva por sonido (s)"
+
+msgid "残虹合轴被声音闪避打断后, 按共享间隔持续普攻这么久, 然后从重击重新开始"
+msgstr "Tras interrumpirse el eje coordinado de Zankou por una esquiva activada por sonido, ataca normalmente durante este tiempo con el intervalo compartido y reinicia desde el ataque pesado"
