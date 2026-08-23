@@ -68,7 +68,7 @@ class FakeAxisIO:
 
 
 class FakeCombatChar:
-    def __init__(self, config_task, dodge_times=(), gold_skill_times=(), gold_skill_success=True):
+    def __init__(self, config_task, dodge_times=(), gold_skill_times=(), gold_skill_consumed=True):
         self.task = SimpleNamespace(
             get_task_by_class=lambda _: config_task,
             last_dodge_time=lambda: self._last_dodge_time,
@@ -81,7 +81,7 @@ class FakeCombatChar:
         self._last_dodge_time = 0.0
         self._gold_skill_times = list(gold_skill_times)
         self._gold_skill_ready = False
-        self._gold_skill_success = gold_skill_success
+        self._gold_skill_consumed = gold_skill_consumed
         self.has_intro = False
 
     def now(self):
@@ -100,9 +100,11 @@ class FakeCombatChar:
         self.events.append(("hold", duration))
         self._advance(duration)
 
-    def click_skill(self):
-        self.events.append(("gold_skill", self.clock))
-        return self._gold_skill_success
+    def send_skill_key(self, action_name=None):
+        self.events.append(("gold_skill", self.clock, action_name))
+        if self._gold_skill_consumed:
+            self._gold_skill_ready = False
+        return True
 
     def _advance(self, duration):
         end = self.clock + duration
@@ -414,11 +416,11 @@ class TestRequiemZankouAxis(unittest.TestCase):
 
         self.assertEqual([event for event in zankou.events if event[0] == "hold"], [("hold", 1.8)])
         self.assertEqual(
-            [(name, round(at, 1)) for name, at in zankou.events if name == "tap"],
+            [(event[0], round(event[1], 1)) for event in zankou.events if event[0] == "tap"],
             [("tap", 1.8)],
         )
         self.assertEqual(
-            [(name, round(at, 1)) for name, at in zankou.events if name == "gold_skill"],
+            [(event[0], round(event[1], 1)) for event in zankou.events if event[0] == "gold_skill"],
             [("gold_skill", 1.9)],
         )
         context.request_switch.assert_called_once_with(
@@ -426,21 +428,29 @@ class TestRequiemZankouAxis(unittest.TestCase):
             reason="zankou gold skill complete",
         )
 
-    def test_zankou_gold_skill_failure_keeps_the_axis_running(self):
+    def test_zankou_gold_skill_failure_keeps_the_axis_on_its_original_deadline(self):
         config_task = make_config_task(
             **{RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: True}
         )
         zankou = FakeCombatChar(
             config_task,
             gold_skill_times=(1.85,),
-            gold_skill_success=False,
+            gold_skill_consumed=False,
         )
         requiem = FakeCombatChar(config_task)
         context = SimpleNamespace(request_switch=mock.MagicMock())
 
         self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
 
-        self.assertTrue(any(event[0] == "gold_skill" for event in zankou.events))
+        self.assertEqual(
+            [
+                (event[0], round(event[1], 1), event[2])
+                for event in zankou.events
+                if event[0] == "gold_skill"
+            ],
+            [("gold_skill", 1.9, "zankou_gold_skill")],
+        )
+        self.assertEqual(round(zankou.clock, 2), 2.25)
         context.request_switch.assert_called_once_with(
             requiem,
             reason="zankou coordinated axis complete",
