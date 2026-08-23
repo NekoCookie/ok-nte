@@ -373,6 +373,7 @@ def run_zankou_opening_gold_skill(task) -> bool:
     if get_current_char(raise_exception=False) is not zankou:
         return False
 
+    zankou.heavy_attack(duration=settings.zankou_hold_duration)
     find_one = _wait_for_zankou_gold_skill(zankou, OPENING_GOLD_SKILL_DETECT_TIMEOUT)
     if find_one is None:
         if callable(log_info):

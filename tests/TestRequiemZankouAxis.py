@@ -298,9 +298,8 @@ class TestRequiemZankouAxis(unittest.TestCase):
         )
         requiem = FakeCombatChar(config_task)
         requiem.impl_id = REQUIEM_IMPL_ID
-        zankou = FakeCombatChar(config_task)
+        zankou = FakeCombatChar(config_task, gold_skill_times=(1.0,))
         zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
-        zankou._gold_skill_ready = True
         support = FakeCombatChar(config_task)
         task = FakeOpeningTask(config_task, requiem, zankou, support)
 
@@ -316,9 +315,9 @@ class TestRequiemZankouAxis(unittest.TestCase):
         )
         self.assertEqual(
             [event for event in zankou.events if event[0] == "gold_skill"],
-            [("gold_skill", 0.0, "zankou_opening_gold_skill")],
+            [("gold_skill", 1.8, "zankou_opening_gold_skill")],
         )
-        self.assertFalse(any(event[0] == "hold" for event in zankou.events))
+        self.assertEqual([event for event in zankou.events if event[0] == "hold"], [("hold", 1.8)])
 
     def test_requiem_free_skill_uses_axis_followup_instead_of_old_break_sequence(self):
         requiem, zankou, context = make_combat_pair(combat_enabled=True)
