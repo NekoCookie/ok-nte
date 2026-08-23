@@ -27,6 +27,8 @@ class FakeClock:
         return self.now
 
     def sleep(self, duration):
+        if duration < 0:
+            raise AssertionError("axis tester must not sleep a negative duration")
         self.now += duration
 
 
@@ -73,6 +75,7 @@ class FakeCombatChar:
         self.last_switch_time = 0.0
         self._dodge_times = list(dodge_times)
         self._last_dodge_time = 0.0
+        self.has_intro = False
 
     def now(self):
         return self.clock
@@ -81,6 +84,8 @@ class FakeCombatChar:
         self.events.append(("tap", self.clock))
 
     def sleep(self, duration):
+        if duration < 0:
+            raise AssertionError("axis tester must not sleep a negative duration")
         self.events.append(("sleep", duration))
         self._advance(duration)
 
@@ -271,6 +276,19 @@ class TestRequiemZankouAxis(unittest.TestCase):
 
         self.assertEqual(io.events, [("key", "2"), ("down",), ("up",)])
 
+    def test_initial_trigger_release_must_be_stable_before_stop_edge_is_armed(self):
+        clock = FakeClock()
+        io = FakeAxisIO()
+        states = iter([True, False, True, *([False] * 8)])
+        io.trigger_pressed = lambda _key: next(states, False)
+        tester = RequiemZankouAxisTester(io, CoordinatedAxisSettings())
+
+        with mock.patch("src.lw.requiem_zankou_axis.time", clock):
+            self.assertTrue(tester._wait_for_initial_release())
+
+        self.assertFalse(tester._trigger_was_down)
+        self.assertGreaterEqual(clock.now, 0.16)
+
     def test_combat_actions_use_configured_timings_and_request_each_partner(self):
         config_task = make_config_task()
         requiem = FakeCombatChar(config_task)
@@ -334,6 +352,17 @@ class TestRequiemZankouAxis(unittest.TestCase):
             requiem,
             reason="zankou coordinated axis complete",
         )
+
+    def test_zankou_intro_waits_before_heavy_but_ordinary_switch_does_not(self):
+        config_task = make_config_task()
+        zankou = FakeCombatChar(config_task)
+        zankou.has_intro = True
+        requiem = FakeCombatChar(config_task)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+
+        self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
+
+        self.assertEqual(zankou.events[:2], [("sleep", 0.5), ("hold", 1.8)])
 
     def test_zankou_normal_phase_sound_dodge_recovers_then_restarts_axis(self):
         config_task = make_config_task(

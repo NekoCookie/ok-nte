@@ -225,6 +225,26 @@ def _log_zankou_sound_dodge_recovery(char: "BaseChar", duration: float) -> None:
         )
 
 
+def _wait_zankou_intro_settle(
+    char: "BaseChar",
+    settings: CoordinatedAxisSettings,
+    dodge_at: float,
+) -> tuple[bool, float]:
+    """Apply the test-configured settle delay only after an actual intro switch."""
+
+    if not bool(getattr(char, "has_intro", False)) or settings.zankou_switch_delay <= 0:
+        return False, dodge_at
+    logger = getattr(char, "logger", None)
+    log_info = getattr(logger, "info", None)
+    if callable(log_info):
+        log_info(
+            "zankou coordinated axis intro settled; "
+            f"wait {settings.zankou_switch_delay:.2f}s before heavy attack"
+        )
+    char.sleep(settings.zankou_switch_delay)
+    return _sound_dodge_since(char, dodge_at)
+
+
 def perform_requiem_combat_axis(
     char: "BaseChar",
     context: "CombatContext",
@@ -258,8 +278,13 @@ def perform_zankou_combat_axis(
 
     settings = coordinated_axis_settings(char)
     dodge_at = _last_sound_dodge_time(char)
+    dodged, dodge_at = _wait_zankou_intro_settle(char, settings, dodge_at)
+    if dodged:
+        _log_zankou_sound_dodge_recovery(char, settings.zankou_dodge_normal_attack_duration)
+        dodge_at = _run_zankou_dodge_recovery(char, settings, dodge_at)
     while True:
-        # RU has already verified the switch and, for an intro, completed its entry recovery.
+        # RU has verified the switch and completed its 1.5s entry recovery. The extra
+        # configurable settle delay above applies only to this intro path.
         char.heavy_attack(duration=settings.zankou_hold_duration)
         dodged, dodge_at = _sound_dodge_since(char, dodge_at)
         if not dodged:
@@ -298,21 +323,20 @@ class RequiemZankouAxisTester:
 
     POLL_INTERVAL = 0.02
     SWITCH_SETTLE_SECONDS = 0.15
+    RELEASE_STABLE_SECONDS = 0.10
 
     def __init__(self, io: CoordinatedAxisIO, settings: CoordinatedAxisSettings):
         self.io = io
         self.settings = settings
         self._trigger_was_down = True
         self._stop_requested = False
+        self._stop_reason = ""
 
     def run(self) -> int:
         """Repeat rounds until the trigger is pressed again or the task is disabled."""
 
-        while self.io.enabled() and self.io.trigger_pressed(self.settings.trigger_key):
-            time.sleep(self.POLL_INTERVAL)
-        if not self.io.enabled():
+        if not self._wait_for_initial_release():
             return 0
-        self._trigger_was_down = False
         rounds = 0
         self.io.log("安魂曲残虹合轴测试: 开始")
         try:
@@ -326,8 +350,27 @@ class RequiemZankouAxisTester:
                 rounds += 1
         finally:
             self.io.attack_up()
-            self.io.log(f"安魂曲残虹合轴测试: 停止, 完成{rounds}轮")
+            reason = self._stop_reason or "流程完成"
+            self.io.log(f"安魂曲残虹合轴测试: 停止, 原因={reason}, 完成{rounds}轮")
         return rounds
+
+    def _wait_for_initial_release(self) -> bool:
+        """Avoid treating an unstable starter-key release as the stop edge."""
+
+        released_at = None
+        while self.io.enabled():
+            if self.io.trigger_pressed(self.settings.trigger_key):
+                released_at = None
+            else:
+                now = time.monotonic()
+                if released_at is None:
+                    released_at = now
+                elif now - released_at >= self.RELEASE_STABLE_SECONDS:
+                    self._trigger_was_down = False
+                    return True
+            time.sleep(self.POLL_INTERVAL)
+        self._stop_reason = "任务已停用"
+        return False
 
     def run_round(self) -> bool:
         """Run one Requiem attack window and one Zankou hold/tap window."""
@@ -375,15 +418,22 @@ class RequiemZankouAxisTester:
         while time.monotonic() < deadline:
             if not self._should_continue():
                 return False
-            time.sleep(min(self.POLL_INTERVAL, deadline - time.monotonic()))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(self.POLL_INTERVAL, remaining))
         return self._should_continue()
 
     def _should_continue(self) -> bool:
-        if self._stop_requested or not self.io.enabled():
+        if self._stop_requested:
+            return False
+        if not self.io.enabled():
+            self._stop_reason = "任务已停用"
             return False
         trigger_down = self.io.trigger_pressed(self.settings.trigger_key)
         if trigger_down and not self._trigger_was_down:
             self._stop_requested = True
+            self._stop_reason = "再次按下合轴触发键"
             return False
         self._trigger_was_down = trigger_down
         return True
