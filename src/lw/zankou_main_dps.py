@@ -7,6 +7,7 @@ from src.lw.requiem_zankou_axis import (
     REQUIEM_IMPL_ID,
     ZANKOU_MAIN_DPS_IMPL_ID,
     coordinated_axis_partner,
+    coordinated_axis_settings,
     perform_zankou_combat_axis,
 )
 
@@ -16,6 +17,31 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
 
     en_name = "Zankou Main DPS"
     cn_name = "残虹主C"
+
+    def _has_coordinated_axis_partner(self):
+        return coordinated_axis_partner(
+            self,
+            None,
+            self_impl_id=ZANKOU_MAIN_DPS_IMPL_ID,
+            partner_impl_id=REQUIEM_IMPL_ID,
+        ) is not None
+
+    def intro_motion_freeze_duration(self) -> float:
+        if self._has_coordinated_axis_partner():
+            return coordinated_axis_settings(self).zankou_intro_wait_duration
+        return super().intro_motion_freeze_duration()
+
+    def wait_intro(self, time_out=-1, click=True):
+        """Keep Zankou's coordinated-axis entry silent until its heavy attack."""
+
+        if not self._has_coordinated_axis_partner():
+            return super().wait_intro(time_out=time_out, click=click)
+        if not self.has_intro:
+            return
+        duration = self.intro_motion_freeze_duration() if time_out < 0 else time_out
+        self.logger.info(f"zankou coordinated axis wait intro {duration:.2f}s without attack")
+        self.sleep(duration)
+        self.logger.info("zankou coordinated axis wait intro end")
 
     def combat_plan(self, context):
         partner = coordinated_axis_partner(

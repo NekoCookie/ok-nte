@@ -1161,3 +1161,15 @@ msgstr "Apos o eixo coordenado da Zankou ser interrompido por uma esquiva aciona
 
 msgid "开=所有LW角色模板不放E/Q; G和合轴不受影响(测手感/闪避用); 刷本记得关"
 msgstr "Ligado: todos os modelos de personagem LW nao usam E/Q; G e eixo coordenado nao sao afetados (para testar ataques e esquivas); desative em combate normal"
+
+msgid "通用环合普攻时长(s)"
+msgstr "Duracao de ataques basicos da entrada em reacao (s)"
+
+msgid "环合切人后的通用普攻时长, 默认1.5s且每0.1s普攻一次; 开启实战合轴的残虹主C改用自身静默等待"
+msgstr "Apos trocar por uma reacao de entrada, personagens padrao atacam por esta duracao; padrao: 1.5 s, um ataque a cada 0.1 s. Zankou DPS principal com o eixo de combate ativado usa sua propria espera silenciosa"
+
+msgid "残虹环合静默等待(s)"
+msgstr "Espera silenciosa de entrada de Zankou (s)"
+
+msgid "实战合轴中, 残虹通过环合切入后静默等待这么久, 不进行普攻输入, 再从重击开始; 默认1.5s"
+msgstr "No eixo de combate, quando Zankou entra por uma reacao de entrada, aguarda silenciosamente por esta duracao sem ataques basicos e entao comeca pelo ataque pesado; padrao: 1.5 s"

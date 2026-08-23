@@ -939,7 +939,9 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
     def _execute_field_time(self, char: "BaseChar", max_field_time: float) -> ActionResult:
         duration = max_field_time - char.time_elapsed_accounting_for_freeze(char.last_perform)
         if char.has_intro:
-            duration += char.INTRO_MOTION_FREEZE_DURATION
+            # [lw] Honor the shared configurable intro duration and character-specific
+            # overrides, such as Zankou's silent coordinated-axis entry.
+            duration += char.intro_motion_freeze_duration()
         if duration > 0:
             char.continues_normal_attack(duration)
         return ActionResult(

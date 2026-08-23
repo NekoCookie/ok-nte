@@ -163,6 +163,9 @@ class FakeChar:
     def continues_normal_attack(self, duration):
         self.waited = duration
 
+    def intro_motion_freeze_duration(self):
+        return 1.5
+
     def switch_in_guard(self, context, from_char, has_intro):
         if self._switch_in_guard is None:
             return SwitchInGuard.allow()

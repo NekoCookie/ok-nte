@@ -78,9 +78,9 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertEqual(task.default_config[task.CONF_COAXIS_TRIGGER_KEY], "8")
         self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_SWITCH_KEY], "1")
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_SWITCH_KEY], "2")
-        self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_INTERVAL], 0.2)
         self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_DURATION], 2.0)
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_SWITCH_DELAY], 0.5)
+        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION], 1.5)
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_HOLD_DURATION], 2.0)
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_NORMAL_DURATION], 2.0)
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION], 0.5)
@@ -92,9 +92,9 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
                 task.CONF_COAXIS_TRIGGER_KEY,
                 task.CONF_COAXIS_REQUIEM_SWITCH_KEY,
                 task.CONF_COAXIS_ZANKOU_SWITCH_KEY,
-                task.CONF_COAXIS_REQUIEM_INTERVAL,
                 task.CONF_COAXIS_REQUIEM_DURATION,
                 task.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
+                task.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION,
                 task.CONF_COAXIS_ZANKOU_HOLD_DURATION,
                 task.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
                 task.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
@@ -122,7 +122,6 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             task.CONF_COAXIS_TRIGGER_KEY: "8",
             task.CONF_COAXIS_REQUIEM_SWITCH_KEY: "3",
             task.CONF_COAXIS_ZANKOU_SWITCH_KEY: "1",
-            task.CONF_COAXIS_REQUIEM_INTERVAL: 0.25,
             task.CONF_COAXIS_REQUIEM_DURATION: 2.5,
             task.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.45,
             task.CONF_COAXIS_ZANKOU_HOLD_DURATION: 1.5,
@@ -146,7 +145,6 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertEqual(settings.trigger_key, "8")
         self.assertEqual(settings.requiem_switch_key, "3")
         self.assertEqual(settings.zankou_switch_key, "1")
-        self.assertEqual(settings.requiem_attack_interval, 0.25)
         self.assertEqual(settings.requiem_attack_duration, 2.5)
         self.assertEqual(settings.zankou_switch_delay, 0.45)
         self.assertEqual(settings.zankou_hold_duration, 1.5)

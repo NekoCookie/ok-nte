@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from src.char.Requiem import Requiem
+from src.char.BaseChar import BaseChar
 from src.char.Zankou import Zankou
 from src.combat.planner import ActionSlot
 from src.lw.requiem_zankou_axis import (
@@ -16,6 +17,7 @@ from src.lw.requiem_zankou_axis import (
     perform_zankou_combat_axis,
 )
 from src.lw.zankou_main_dps import ZankouMainDps
+from src.tasks.trigger.AutoCombatTask import AutoCombatTask
 from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 
 
@@ -102,9 +104,9 @@ class FakeCombatChar:
 def make_config_task(combat_enabled=True, **overrides):
     config = {
         RequiemCombatConfigTask.CONF_COAXIS_COMBAT_ENABLE: combat_enabled,
-        RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_INTERVAL: 0.2,
         RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_DURATION: 0.45,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.5,
+        RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION: 1.25,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_HOLD_DURATION: 1.8,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 0.45,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.5,
@@ -113,10 +115,12 @@ def make_config_task(combat_enabled=True, **overrides):
     return SimpleNamespace(
         config=config,
         CONF_COAXIS_COMBAT_ENABLE=RequiemCombatConfigTask.CONF_COAXIS_COMBAT_ENABLE,
-        CONF_COAXIS_REQUIEM_INTERVAL=RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_INTERVAL,
         CONF_COAXIS_REQUIEM_DURATION=RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_DURATION,
         CONF_COAXIS_ZANKOU_SWITCH_DELAY=(
             RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_SWITCH_DELAY
+        ),
+        CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION=(
+            RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION
         ),
         CONF_COAXIS_ZANKOU_HOLD_DURATION=(
             RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_HOLD_DURATION
@@ -150,6 +154,17 @@ def make_combat_pair(combat_enabled=True):
 
 
 class TestRequiemZankouAxis(unittest.TestCase):
+    def test_standard_intro_duration_uses_auto_combat_config_or_ru_default(self):
+        char = BaseChar.__new__(BaseChar)
+        char.task = SimpleNamespace(
+            config={AutoCombatTask.CONF_INTRO_MOTION_DURATION: 2.25},
+            CONF_INTRO_MOTION_DURATION=AutoCombatTask.CONF_INTRO_MOTION_DURATION,
+        )
+        self.assertEqual(char.intro_motion_freeze_duration(), 2.25)
+
+        char.task.config = {}
+        self.assertEqual(char.intro_motion_freeze_duration(), 1.5)
+
     def test_zankou_main_dps_keeps_ru_skill_combo_implementation(self):
         self.assertIs(ZankouMainDps.perform_skill_combo, Zankou.perform_skill_combo)
 
@@ -231,7 +246,6 @@ class TestRequiemZankouAxis(unittest.TestCase):
         settings = CoordinatedAxisSettings(
             requiem_switch_key="3",
             zankou_switch_key="1",
-            requiem_attack_interval=0.2,
             requiem_attack_duration=0.45,
             zankou_switch_delay=0.4,
             zankou_hold_duration=1.8,
@@ -249,9 +263,13 @@ class TestRequiemZankouAxis(unittest.TestCase):
                 ("tap",),
                 ("tap",),
                 ("tap",),
+                ("tap",),
+                ("tap",),
                 ("key", "1"),
                 ("down",),
                 ("up",),
+                ("tap",),
+                ("tap",),
                 ("tap",),
                 ("tap",),
                 ("tap",),
@@ -298,8 +316,8 @@ class TestRequiemZankouAxis(unittest.TestCase):
 
         self.assertTrue(perform_requiem_combat_axis(requiem, requiem_context, zankou))
         self.assertEqual(
-            [event for event in requiem.events if event[0] == "tap"],
-            [("tap", 0.0), ("tap", 0.2), ("tap", 0.4)],
+            [(name, round(at, 1)) for name, at in requiem.events if name == "tap"],
+            [("tap", 0.0), ("tap", 0.1), ("tap", 0.2), ("tap", 0.3), ("tap", 0.4)],
         )
         requiem_context.request_switch.assert_called_once()
         args, kwargs = requiem_context.request_switch.call_args
@@ -314,7 +332,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertIn(("hold", 1.8), zankou.events)
         self.assertEqual(
             [(name, round(at, 1)) for name, at in zankou.events if name == "tap"],
-            [("tap", 1.8), ("tap", 2.0), ("tap", 2.2)],
+            [("tap", 1.8), ("tap", 1.9), ("tap", 2.0), ("tap", 2.1), ("tap", 2.2)],
         )
         zankou_context.request_switch.assert_called_once_with(
             requiem,
@@ -341,10 +359,14 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [(name, round(at, 2)) for name, at in zankou.events if name == "tap"],
             [
                 ("tap", 1.8),
+                ("tap", 1.9),
                 ("tap", 2.0),
+                ("tap", 2.1),
                 ("tap", 2.2),
                 ("tap", 4.05),
+                ("tap", 4.15),
                 ("tap", 4.25),
+                ("tap", 4.35),
                 ("tap", 4.45),
             ],
         )
@@ -353,7 +375,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
             reason="zankou coordinated axis complete",
         )
 
-    def test_zankou_intro_waits_before_heavy_but_ordinary_switch_does_not(self):
+    def test_zankou_combat_axis_does_not_reuse_test_switch_delay(self):
         config_task = make_config_task()
         zankou = FakeCombatChar(config_task)
         zankou.has_intro = True
@@ -362,7 +384,46 @@ class TestRequiemZankouAxis(unittest.TestCase):
 
         self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
 
-        self.assertEqual(zankou.events[:2], [("sleep", 0.5), ("hold", 1.8)])
+        self.assertEqual(zankou.events[0], ("hold", 1.8))
+
+    def test_zankou_coaxis_intro_wait_is_silent_and_uses_its_own_duration(self):
+        config_task = make_config_task()
+        task = SimpleNamespace(chars=[], get_task_by_class=lambda _: config_task)
+        requiem = Requiem.__new__(Requiem)
+        requiem.impl_id = REQUIEM_IMPL_ID
+        requiem.is_dead = False
+        requiem.task = task
+        zankou = ZankouMainDps.__new__(ZankouMainDps)
+        zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
+        zankou.is_dead = False
+        zankou.has_intro = True
+        zankou.task = task
+        zankou.logger = mock.MagicMock()
+        zankou.sleep = mock.MagicMock()
+        task.chars = [requiem, zankou]
+
+        self.assertEqual(zankou.intro_motion_freeze_duration(), 1.25)
+        zankou.wait_intro()
+
+        zankou.sleep.assert_called_once_with(1.25)
+
+    def test_zankou_without_coaxis_keeps_standard_intro_behavior(self):
+        zankou = ZankouMainDps.__new__(ZankouMainDps)
+        zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
+        zankou.is_dead = False
+        zankou.has_intro = True
+        zankou.task = SimpleNamespace(
+            chars=[zankou],
+            config={AutoCombatTask.CONF_INTRO_MOTION_DURATION: 2.25},
+            CONF_INTRO_MOTION_DURATION=AutoCombatTask.CONF_INTRO_MOTION_DURATION,
+            get_task_by_class=lambda _: make_config_task(combat_enabled=False),
+        )
+        zankou.logger = mock.MagicMock()
+        zankou.continues_normal_attack = mock.MagicMock()
+
+        zankou.wait_intro()
+
+        zankou.continues_normal_attack.assert_called_once_with(2.25)
 
     def test_zankou_normal_phase_sound_dodge_recovers_then_restarts_axis(self):
         config_task = make_config_task(
@@ -384,12 +445,16 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [(name, round(at, 2)) for name, at in zankou.events if name == "tap"],
             [
                 ("tap", 1.8),
+                ("tap", 1.9),
                 ("tap", 2.0),
+                ("tap", 2.1),
                 ("tap", 2.2),
-                ("tap", 2.4),
+                ("tap", 2.3),
+                ("tap", 4.15),
                 ("tap", 4.25),
+                ("tap", 4.35),
                 ("tap", 4.45),
-                ("tap", 4.65),
+                ("tap", 4.55),
             ],
         )
         context.request_switch.assert_called_once_with(

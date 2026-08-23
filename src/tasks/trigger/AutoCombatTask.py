@@ -7,6 +7,7 @@ from src.combat.BaseCombatTask import BaseCombatTask
 class AutoCombatTask(BaseCombatTask, TriggerTask):
     CONF_USE_ULT = "使用终结技"
     CONF_AUTO_TARGET = "自动目标"
+    CONF_INTRO_MOTION_DURATION = "通用环合普攻时长(s)"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -20,10 +21,15 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
             {
                 self.CONF_AUTO_TARGET: True,
                 self.CONF_USE_ULT: True,
+                self.CONF_INTRO_MOTION_DURATION: 1.5,
             }
         )
         self.config_description = {
             self.CONF_AUTO_TARGET: "关闭时仅在中键选中敌人且画面识别到 'Lv' 文字时开启战斗",
+            self.CONF_INTRO_MOTION_DURATION: (
+                "环合切人后的通用普攻时长, 默认1.5s且每0.1s普攻一次; "
+                "开启实战合轴的残虹主C改用自身静默等待"
+            ),
         }
         self.op_index = 0
         self.origin_func = {}

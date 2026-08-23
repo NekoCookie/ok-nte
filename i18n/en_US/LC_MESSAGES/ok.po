@@ -1430,3 +1430,15 @@ msgstr "After Zankou's coordinated axis is interrupted by a sound-triggered dodg
 
 msgid "开=所有LW角色模板不放E/Q; G和合轴不受影响(测手感/闪避用); 刷本记得关"
 msgstr "On: all LW character templates skip E/Q; G and the coordinated axis are unaffected (for testing attacks and dodges); turn this off for normal combat"
+
+msgid "通用环合普攻时长(s)"
+msgstr "Generic intro basic-attack duration (s)"
+
+msgid "环合切人后的通用普攻时长, 默认1.5s且每0.1s普攻一次; 开启实战合轴的残虹主C改用自身静默等待"
+msgstr "After an intro switch, standard characters use basic attacks for this duration; default: 1.5 s at 0.1 s intervals. Zankou Main DPS with the combat axis enabled uses its own silent wait instead"
+
+msgid "残虹环合静默等待(s)"
+msgstr "Zankou silent intro wait (s)"
+
+msgid "实战合轴中, 残虹通过环合切入后静默等待这么久, 不进行普攻输入, 再从重击开始; 默认1.5s"
+msgstr "In the combat axis, when Zankou enters through an intro, wait silently for this duration without basic attacks, then start from heavy attack; default: 1.5 s"

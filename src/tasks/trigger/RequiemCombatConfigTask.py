@@ -215,9 +215,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_COAXIS_TRIGGER_KEY = "合轴触发键"
     CONF_COAXIS_REQUIEM_SWITCH_KEY = "安魂曲切换键"
     CONF_COAXIS_ZANKOU_SWITCH_KEY = "残虹切换键"
-    CONF_COAXIS_REQUIEM_INTERVAL = "安魂曲普攻间隔(s)"
     CONF_COAXIS_REQUIEM_DURATION = "安魂曲普攻时长(s)"
     CONF_COAXIS_ZANKOU_SWITCH_DELAY = "切到残虹后等待(s)"
+    CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION = "残虹环合静默等待(s)"
     CONF_COAXIS_ZANKOU_HOLD_DURATION = "残虹长按普攻时长(s)"
     CONF_COAXIS_ZANKOU_NORMAL_DURATION = "残虹普攻时长(s)"
     CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION = "残虹声音闪避后普攻时长(s)"
@@ -315,9 +315,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_TRIGGER_KEY: "8",
                 self.CONF_COAXIS_REQUIEM_SWITCH_KEY: "1",
                 self.CONF_COAXIS_ZANKOU_SWITCH_KEY: "2",
-                self.CONF_COAXIS_REQUIEM_INTERVAL: 0.2,
                 self.CONF_COAXIS_REQUIEM_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.5,
+                self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION: 1.5,
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.5,
@@ -433,9 +433,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                             self.CONF_COAXIS_TRIGGER_KEY,
                             self.CONF_COAXIS_REQUIEM_SWITCH_KEY,
                             self.CONF_COAXIS_ZANKOU_SWITCH_KEY,
-                            self.CONF_COAXIS_REQUIEM_INTERVAL,
                             self.CONF_COAXIS_REQUIEM_DURATION,
                             self.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
+                            self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION,
                             self.CONF_COAXIS_ZANKOU_HOLD_DURATION,
                             self.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
                             self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
@@ -588,9 +588,12 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_TRIGGER_KEY: "按一下开始重复合轴测试, 再按一下停止; 默认8",
                 self.CONF_COAXIS_REQUIEM_SWITCH_KEY: "安魂曲在队伍中的数字切换键; 默认1",
                 self.CONF_COAXIS_ZANKOU_SWITCH_KEY: "残虹在队伍中的数字切换键; 默认2",
-                self.CONF_COAXIS_REQUIEM_INTERVAL: "安魂曲和残虹合轴阶段共用的普攻间隔秒数, 最低按0.02s执行",
                 self.CONF_COAXIS_REQUIEM_DURATION: "安魂曲持续普攻这么久后切到残虹",
                 self.CONF_COAXIS_ZANKOU_SWITCH_DELAY: "仅按键测试: 按下残虹切换键后等待这么久再长按普攻; 实战由切人识别和环合结算",
+                self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION: (
+                    "实战合轴中, 残虹通过环合切入后静默等待这么久, "
+                    "不进行普攻输入, 再从重击开始; 默认1.5s"
+                ),
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: "残虹合轴阶段长按普攻的持续秒数",
                 self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: "残虹长按结束后按共享间隔持续普攻这么久, 然后切回安魂曲",
                 self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: "残虹合轴被声音闪避打断后, 按共享间隔持续普攻这么久, 然后从重击重新开始",
@@ -776,10 +779,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             trigger_key=str(self.config.get(self.CONF_COAXIS_TRIGGER_KEY, "8")),
             requiem_switch_key=requiem_switch_key,
             zankou_switch_key=zankou_switch_key,
-            requiem_attack_interval=max(
-                0.02,
-                self._conf_num(self.CONF_COAXIS_REQUIEM_INTERVAL, 0.2),
-            ),
             requiem_attack_duration=max(
                 0.0,
                 self._conf_num(self.CONF_COAXIS_REQUIEM_DURATION, 2.0),

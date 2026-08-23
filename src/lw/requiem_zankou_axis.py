@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 REQUIEM_IMPL_ID = "builtin:requiem"
 ZANKOU_MAIN_DPS_IMPL_ID = "builtin:zankou_main_dps"
-MIN_ATTACK_INTERVAL = 0.02
+COAXIS_NORMAL_ATTACK_INTERVAL = 0.1
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,9 +21,9 @@ class CoordinatedAxisSettings:
     trigger_key: str = "8"
     requiem_switch_key: str = "1"
     zankou_switch_key: str = "2"
-    requiem_attack_interval: float = 0.2
     requiem_attack_duration: float = 2.0
     zankou_switch_delay: float = 0.5
+    zankou_intro_wait_duration: float = 1.5
     zankou_hold_duration: float = 2.0
     zankou_normal_attack_duration: float = 2.0
     zankou_dodge_normal_attack_duration: float = 0.5
@@ -99,14 +99,6 @@ def coordinated_axis_settings(char: "BaseChar") -> CoordinatedAxisSettings:
     if config_task is None:
         return CoordinatedAxisSettings()
     return CoordinatedAxisSettings(
-        requiem_attack_interval=max(
-            MIN_ATTACK_INTERVAL,
-            _config_number(
-                config_task,
-                config_task.CONF_COAXIS_REQUIEM_INTERVAL,
-                0.2,
-            ),
-        ),
         requiem_attack_duration=_config_number(
             config_task,
             config_task.CONF_COAXIS_REQUIEM_DURATION,
@@ -116,6 +108,11 @@ def coordinated_axis_settings(char: "BaseChar") -> CoordinatedAxisSettings:
             config_task,
             config_task.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
             0.5,
+        ),
+        zankou_intro_wait_duration=_config_number(
+            config_task,
+            config_task.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION,
+            1.5,
         ),
         zankou_hold_duration=_config_number(
             config_task,
@@ -208,7 +205,7 @@ def _run_zankou_dodge_recovery(
         remaining = deadline - char.now()
         if remaining <= 0:
             continue
-        char.sleep(min(settings.requiem_attack_interval, remaining))
+        char.sleep(min(COAXIS_NORMAL_ATTACK_INTERVAL, remaining))
         dodged, dodge_at = _sound_dodge_since(char, dodge_at)
         if dodged:
             deadline = char.now() + settings.zankou_dodge_normal_attack_duration
@@ -225,26 +222,6 @@ def _log_zankou_sound_dodge_recovery(char: "BaseChar", duration: float) -> None:
         )
 
 
-def _wait_zankou_intro_settle(
-    char: "BaseChar",
-    settings: CoordinatedAxisSettings,
-    dodge_at: float,
-) -> tuple[bool, float]:
-    """Apply the test-configured settle delay only after an actual intro switch."""
-
-    if not bool(getattr(char, "has_intro", False)) or settings.zankou_switch_delay <= 0:
-        return False, dodge_at
-    logger = getattr(char, "logger", None)
-    log_info = getattr(logger, "info", None)
-    if callable(log_info):
-        log_info(
-            "zankou coordinated axis intro settled; "
-            f"wait {settings.zankou_switch_delay:.2f}s before heavy attack"
-        )
-    char.sleep(settings.zankou_switch_delay)
-    return _sound_dodge_since(char, dodge_at)
-
-
 def perform_requiem_combat_axis(
     char: "BaseChar",
     context: "CombatContext",
@@ -256,7 +233,7 @@ def perform_requiem_combat_axis(
     _run_combat_normal_attacks(
         char,
         settings.requiem_attack_duration,
-        settings.requiem_attack_interval,
+        COAXIS_NORMAL_ATTACK_INTERVAL,
     )
     # MainDps normally keeps the current character until its field-time limit. Mark this
     # completed axis as an explicit departure until the public planner request resolves.
@@ -278,20 +255,16 @@ def perform_zankou_combat_axis(
 
     settings = coordinated_axis_settings(char)
     dodge_at = _last_sound_dodge_time(char)
-    dodged, dodge_at = _wait_zankou_intro_settle(char, settings, dodge_at)
-    if dodged:
-        _log_zankou_sound_dodge_recovery(char, settings.zankou_dodge_normal_attack_duration)
-        dodge_at = _run_zankou_dodge_recovery(char, settings, dodge_at)
     while True:
-        # RU has verified the switch and completed its 1.5s entry recovery. The extra
-        # configurable settle delay above applies only to this intro path.
+        # Entry timing is handled before this action. The combat axis always begins
+        # with heavy attack, while the standalone tester keeps its own switch delay.
         char.heavy_attack(duration=settings.zankou_hold_duration)
         dodged, dodge_at = _sound_dodge_since(char, dodge_at)
         if not dodged:
             dodged, dodge_at = _run_normal_attacks_until_sound_dodge(
                 char,
                 settings.zankou_normal_attack_duration,
-                settings.requiem_attack_interval,
+                COAXIS_NORMAL_ATTACK_INTERVAL,
                 dodge_at,
             )
         if not dodged:
@@ -405,7 +378,7 @@ class RequiemZankouAxisTester:
             attack_started = time.monotonic()
             self.io.tap_attack()
             remaining = deadline - time.monotonic()
-            interval_left = self.settings.requiem_attack_interval - (
+            interval_left = COAXIS_NORMAL_ATTACK_INTERVAL - (
                 time.monotonic() - attack_started
             )
             if remaining > 0 and interval_left > 0:

@@ -151,10 +151,25 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
     def add_intro_motion_freeze(self, start):
         self.task.lw_add_freeze_duration(  # [lw] Keep freeze diagnostics outside RU tuple storage.
             start,
-            self.INTRO_MOTION_FREEZE_DURATION,
+            self.intro_motion_freeze_duration(),
             freeze_time=-100,
             cause="intro/entry",
         )
+
+    def intro_motion_freeze_duration(self) -> float:
+        """Return the configurable duration for the standard intro attack window."""
+
+        # [lw] Auto Combat owns the shared intro duration; subclasses may replace it
+        # for a character-specific entry path without changing the RU default.
+        default = self.INTRO_MOTION_FREEZE_DURATION
+        config = getattr(getattr(self, "task", None), "config", None)
+        key = getattr(getattr(self, "task", None), "CONF_INTRO_MOTION_DURATION", "")
+        if not key or not hasattr(config, "get"):
+            return default
+        try:
+            return max(0.0, float(config.get(key, default)))
+        except (TypeError, ValueError):
+            return default
 
     def wait_intro(self, time_out=-1, click=True):
         """等待角色入场动画结束。
@@ -164,7 +179,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             click (bool, optional): 等待期间是否持续点击。默认为 True。
         """
         if time_out < 0:
-            time_out = self.INTRO_MOTION_FREEZE_DURATION
+            time_out = self.intro_motion_freeze_duration()
 
         if self.has_intro:
             self.logger.info(f"wait intro {time_out}s")
