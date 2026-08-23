@@ -16,8 +16,9 @@ if TYPE_CHECKING:
 REQUIEM_IMPL_ID = "builtin:requiem"
 ZANKOU_MAIN_DPS_IMPL_ID = "builtin:zankou_main_dps"
 COAXIS_NORMAL_ATTACK_INTERVAL = 0.1
-GOLD_SKILL_CONFIRM_TIMEOUT = 0.15
+GOLD_SKILL_CONFIRM_TIMEOUT = 0.35
 GOLD_SKILL_CONFIRM_INTERVAL = 0.02
+GOLD_SKILL_INPUT_RETRY_INTERVAL = 0.1
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,15 +212,27 @@ def _try_zankou_gold_skill_interrupt(
     logger = getattr(char, "logger", None)
     log_info = getattr(logger, "info", None)
     if callable(log_info):
-        log_info("zankou coordinated axis gold skill detected; attempting once")
+        log_info("zankou coordinated axis gold skill detected; attempting input")
     send_skill_key = getattr(char, "send_skill_key", None)
-    if not callable(send_skill_key) or send_skill_key(action_name="zankou_gold_skill") is False:
+    if not callable(send_skill_key):
         log_warning = getattr(logger, "warning", None)
         if callable(log_warning):
             log_warning("zankou coordinated axis gold skill input was not sent")
         return False
 
     confirmation_deadline = min(char.now() + GOLD_SKILL_CONFIRM_TIMEOUT, phase_deadline)
+    next_retry_at = char.now() + GOLD_SKILL_INPUT_RETRY_INTERVAL
+    input_count = 1
+    if send_skill_key(
+        down_time=0.05,
+        interval=0.25,
+        action_name="zankou_gold_skill",
+    ) is False:
+        log_warning = getattr(logger, "warning", None)
+        if callable(log_warning):
+            log_warning("zankou coordinated axis gold skill input was not sent")
+        return False
+
     while True:
         next_frame = getattr(getattr(char, "task", None), "next_frame", None)
         if callable(next_frame):
@@ -234,7 +247,24 @@ def _try_zankou_gold_skill_interrupt(
             if callable(log_info):
                 log_info("zankou coordinated axis gold skill not confirmed; continuing axis")
             return False
-        char.sleep(min(GOLD_SKILL_CONFIRM_INTERVAL, remaining))
+        if char.now() >= next_retry_at:
+            input_count += 1
+            if callable(log_info):
+                log_info(
+                    "zankou coordinated axis gold skill unchanged; "
+                    f"retrying input {input_count}"
+                )
+            if send_skill_key(
+                down_time=0.05,
+                action_name=f"zankou_gold_skill_retry_{input_count}",
+            ) is False:
+                log_warning = getattr(logger, "warning", None)
+                if callable(log_warning):
+                    log_warning("zankou coordinated axis gold skill retry input was not sent")
+            next_retry_at += GOLD_SKILL_INPUT_RETRY_INTERVAL
+            continue
+        retry_remaining = next_retry_at - char.now()
+        char.sleep(min(GOLD_SKILL_CONFIRM_INTERVAL, remaining, retry_remaining))
 
 
 def _run_normal_attacks_until_sound_dodge(
