@@ -216,9 +216,11 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_COAXIS_REQUIEM_SWITCH_KEY = "安魂曲切换键"
     CONF_COAXIS_ZANKOU_SWITCH_KEY = "残虹切换键"
     CONF_COAXIS_REQUIEM_DURATION = "安魂曲普攻时长(s)"
+    CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION = "安魂曲免费技能后普攻时长(s)"
     CONF_COAXIS_ZANKOU_SWITCH_DELAY = "切到残虹后等待(s)"
     CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION = "残虹环合静默等待(s)"
     CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT = "残虹强化E打断合轴"
+    CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL = "开局残虹黄E后切辅助"
     CONF_COAXIS_ZANKOU_HOLD_DURATION = "残虹长按普攻时长(s)"
     CONF_COAXIS_ZANKOU_NORMAL_DURATION = "残虹普攻时长(s)"
     CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION = "残虹声音闪避后普攻时长(s)"
@@ -317,9 +319,11 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_REQUIEM_SWITCH_KEY: "1",
                 self.CONF_COAXIS_ZANKOU_SWITCH_KEY: "2",
                 self.CONF_COAXIS_REQUIEM_DURATION: 2.0,
+                self.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.5,
                 self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION: 1.5,
                 self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: False,
+                self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: False,
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.5,
@@ -436,9 +440,11 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                             self.CONF_COAXIS_REQUIEM_SWITCH_KEY,
                             self.CONF_COAXIS_ZANKOU_SWITCH_KEY,
                             self.CONF_COAXIS_REQUIEM_DURATION,
+                            self.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION,
                             self.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
                             self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION,
                             self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT,
+                            self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL,
                             self.CONF_COAXIS_ZANKOU_HOLD_DURATION,
                             self.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
                             self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
@@ -592,6 +598,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_REQUIEM_SWITCH_KEY: "安魂曲在队伍中的数字切换键; 默认1",
                 self.CONF_COAXIS_ZANKOU_SWITCH_KEY: "残虹在队伍中的数字切换键; 默认2",
                 self.CONF_COAXIS_REQUIEM_DURATION: "安魂曲持续普攻这么久后切到残虹",
+                self.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: (
+                    "实战合轴中, 安魂曲释放免费技能后按0.1秒间隔普攻这么久; "
+                    "辅助大招待开时正常切辅助, 否则请求切残虹"
+                ),
                 self.CONF_COAXIS_ZANKOU_SWITCH_DELAY: "仅按键测试: 按下残虹切换键后等待这么久再长按普攻; 实战由切人识别和环合结算",
                 self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION: (
                     "实战合轴中, 残虹通过环合切入后静默等待这么久, "
@@ -600,6 +610,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: (
                     "开=合轴中识别到残虹黄色强化E时中断当前动作, "
                     "成功释放后请求切人; 关=忽略强化E"
+                ),
+                self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: (
+                    "开=开局先切残虹释放黄色强化E, 随后立刻切回原开局流程选中的辅助; "
+                    "关=不插入该步骤"
                 ),
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: "残虹合轴阶段长按普攻的持续秒数",
                 self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: "残虹长按结束后按共享间隔持续普攻这么久, 然后切回安魂曲",

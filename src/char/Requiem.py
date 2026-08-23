@@ -14,6 +14,7 @@ from src.lw.requiem_zankou_axis import (
     ZANKOU_MAIN_DPS_IMPL_ID,
     coordinated_axis_partner,
     perform_requiem_combat_axis,
+    perform_requiem_free_skill_coaxis,
 )
 from src.sound_trigger.SoundCombatContext import SoundCombatContext
 
@@ -326,6 +327,14 @@ class Requiem(MainDps):
         """免费技动作: 放招→闪避打断拖沓的a5→后续输出。"""
         if self.click_skill(time_out=1.0):
             self.logger.info("requiem FREE skill cast, staying on field")
+            coaxis_partner = coordinated_axis_partner(
+                self,
+                context,
+                self_impl_id=REQUIEM_IMPL_ID,
+                partner_impl_id=ZANKOU_MAIN_DPS_IMPL_ID,
+            )
+            if coaxis_partner is not None and context is not None:
+                return perform_requiem_free_skill_coaxis(self, context, coaxis_partner)
             self._free_skill_break_a5()
             self.free_skill_followup_attack()
             return True

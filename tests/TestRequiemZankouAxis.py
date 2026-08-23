@@ -15,7 +15,9 @@ from src.lw.requiem_zankou_axis import (
     RequiemZankouAxisTester,
     ZANKOU_MAIN_DPS_IMPL_ID,
     perform_requiem_combat_axis,
+    perform_requiem_free_skill_coaxis,
     perform_zankou_combat_axis,
+    run_zankou_opening_gold_skill,
 )
 from src.lw.zankou_main_dps import ZankouMainDps
 from src.tasks.trigger.AutoCombatTask import AutoCombatTask
@@ -125,13 +127,52 @@ class FakeCombatChar:
             self._gold_skill_times.pop(0)
         self.clock = end
 
+
+class FakeOpeningTask:
+    def __init__(self, config_task, current_char, zankou, opening_target):
+        self._config_task = config_task
+        self._current_char = current_char
+        self.zankou = zankou
+        self.chars = [current_char, zankou, opening_target]
+        self.logger = mock.MagicMock()
+        self.combat_planner = SimpleNamespace(
+            decide_combat_start_char=mock.MagicMock(
+                return_value=SimpleNamespace(target=opening_target, has_intro=True)
+            )
+        )
+        self.switches = []
+        for char in self.chars:
+            char.task = self
+            char.is_current_char = char is current_char
+
+    def get_task_by_class(self, _task_class):
+        return self._config_task
+
+    def get_current_char(self, raise_exception=False):
+        return self._current_char
+
+    def find_one(self, feature):
+        return feature == Labels.zankou_skill_gold and self.zankou._gold_skill_ready
+
+    def next_frame(self):
+        return None
+
+    def _switch_to_char(self, switch_to, current_char, has_intro, log_prefix):
+        self.switches.append((current_char, switch_to, has_intro, log_prefix))
+        current_char.is_current_char = False
+        switch_to.is_current_char = True
+        self._current_char = switch_to
+
+
 def make_config_task(combat_enabled=True, **overrides):
     config = {
         RequiemCombatConfigTask.CONF_COAXIS_COMBAT_ENABLE: combat_enabled,
         RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_DURATION: 0.45,
+        RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: 2.0,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.5,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION: 1.25,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: False,
+        RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: False,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_HOLD_DURATION: 1.8,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 0.45,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.5,
@@ -141,6 +182,9 @@ def make_config_task(combat_enabled=True, **overrides):
         config=config,
         CONF_COAXIS_COMBAT_ENABLE=RequiemCombatConfigTask.CONF_COAXIS_COMBAT_ENABLE,
         CONF_COAXIS_REQUIEM_DURATION=RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_DURATION,
+        CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION=(
+            RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION
+        ),
         CONF_COAXIS_ZANKOU_SWITCH_DELAY=(
             RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_SWITCH_DELAY
         ),
@@ -149,6 +193,9 @@ def make_config_task(combat_enabled=True, **overrides):
         ),
         CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT=(
             RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT
+        ),
+        CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL=(
+            RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL
         ),
         CONF_COAXIS_ZANKOU_HOLD_DURATION=(
             RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_HOLD_DURATION
@@ -244,6 +291,50 @@ class TestRequiemZankouAxis(unittest.TestCase):
         with mock.patch.object(Zankou, "combat_plan", return_value="ru-plan") as ru_plan:
             self.assertEqual(zankou.combat_plan(context), "ru-plan")
         ru_plan.assert_called_once_with(context)
+
+    def test_opening_gold_skill_returns_to_the_original_opening_target_without_ultimate(self):
+        config_task = make_config_task(
+            **{RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: True}
+        )
+        requiem = FakeCombatChar(config_task)
+        requiem.impl_id = REQUIEM_IMPL_ID
+        zankou = FakeCombatChar(config_task)
+        zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
+        zankou._gold_skill_ready = True
+        support = FakeCombatChar(config_task)
+        task = FakeOpeningTask(config_task, requiem, zankou, support)
+
+        self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        task.combat_planner.decide_combat_start_char.assert_called_once_with(requiem)
+        self.assertEqual(
+            task.switches,
+            [
+                (requiem, zankou, False, "lw opening zankou gold skill"),
+                (zankou, support, True, "lw opening zankou gold skill return"),
+            ],
+        )
+        self.assertEqual(
+            [event for event in zankou.events if event[0] == "gold_skill"],
+            [("gold_skill", 0.0, "zankou_opening_gold_skill")],
+        )
+        self.assertFalse(any(event[0] == "hold" for event in zankou.events))
+
+    def test_requiem_free_skill_uses_axis_followup_instead_of_old_break_sequence(self):
+        requiem, zankou, context = make_combat_pair(combat_enabled=True)
+        requiem.logger = mock.MagicMock()
+        requiem.click_skill = mock.MagicMock(return_value=True)
+        requiem._free_skill_break_a5 = mock.MagicMock()
+        requiem.free_skill_followup_attack = mock.MagicMock()
+
+        with mock.patch(
+            "src.char.Requiem.perform_requiem_free_skill_coaxis", return_value=True
+        ) as axis_followup:
+            self.assertTrue(requiem._execute_free_skill(context))
+
+        axis_followup.assert_called_once_with(requiem, context, zankou)
+        requiem._free_skill_break_a5.assert_not_called()
+        requiem.free_skill_followup_attack.assert_not_called()
 
     def test_test_switch_disables_zankou_e_q_outside_the_axis(self):
         _requiem, zankou, context = make_combat_pair(combat_enabled=False)
@@ -366,6 +457,45 @@ class TestRequiemZankouAxis(unittest.TestCase):
             requiem,
             reason="zankou coordinated axis complete",
         )
+
+    def test_requiem_free_skill_axis_attacks_then_requests_zankou_without_support_ultimate(self):
+        config_task = make_config_task(
+            **{RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: 0.25}
+        )
+        requiem = FakeCombatChar(config_task)
+        zankou = FakeCombatChar(config_task)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+
+        self.assertTrue(perform_requiem_free_skill_coaxis(requiem, context, zankou))
+
+        self.assertEqual(
+            [(name, round(at, 2)) for name, at in requiem.events if name == "tap"],
+            [("tap", 0.0), ("tap", 0.1), ("tap", 0.2)],
+        )
+        context.request_switch.assert_called_once()
+        args, kwargs = context.request_switch.call_args
+        self.assertEqual(args, (zankou,))
+        self.assertEqual(kwargs["reason"], "requiem free skill coordinated axis complete")
+        self.assertTrue(requiem._coaxis_switch_pending)
+
+    def test_requiem_free_skill_axis_defers_to_pending_support_ultimate(self):
+        config_task = make_config_task(
+            **{RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: 0.2}
+        )
+        requiem = FakeCombatChar(config_task)
+        zankou = FakeCombatChar(config_task)
+        support = SimpleNamespace(is_dead=False, ultimate_buff_pending=lambda: True)
+        requiem.task.chars = [requiem, zankou, support]
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+
+        self.assertTrue(perform_requiem_free_skill_coaxis(requiem, context, zankou))
+
+        self.assertEqual(
+            [(name, round(at, 2)) for name, at in requiem.events if name == "tap"],
+            [("tap", 0.0), ("tap", 0.1)],
+        )
+        context.request_switch.assert_not_called()
+        self.assertFalse(hasattr(requiem, "_coaxis_switch_pending"))
 
     def test_zankou_sound_dodge_recovers_then_restarts_axis(self):
         config_task = make_config_task(

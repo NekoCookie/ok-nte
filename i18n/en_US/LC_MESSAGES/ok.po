@@ -1448,3 +1448,15 @@ msgstr "Interrupt axis with Zankou enhanced E"
 
 msgid "开=合轴中识别到残虹黄色强化E时中断当前动作, 成功释放后请求切人; 关=忽略强化E"
 msgstr "On = when Zankou's yellow enhanced E is recognized during the coordinated axis, interrupt the current action and request a switch after a successful cast; off = ignore enhanced E"
+
+msgid "安魂曲免费技能后普攻时长(s)"
+msgstr "Requiem basic attack duration after free skill (s)"
+
+msgid "实战合轴中, 安魂曲释放免费技能后按0.1秒间隔普攻这么久; 辅助大招待开时正常切辅助, 否则请求切残虹"
+msgstr "In combat coaxis, after Requiem casts a free skill, perform basic attacks at 0.1 s intervals for this duration; switch normally to support when a support ultimate is pending, otherwise request Zankou"
+
+msgid "开局残虹黄E后切辅助"
+msgstr "Switch to support after opening Zankou yellow E"
+
+msgid "开=开局先切残虹释放黄色强化E, 随后立刻切回原开局流程选中的辅助; 关=不插入该步骤"
+msgstr "On = at combat start, switch to Zankou to cast yellow enhanced E, then immediately return to the support selected by the ordinary opening flow; off = do not insert this step"

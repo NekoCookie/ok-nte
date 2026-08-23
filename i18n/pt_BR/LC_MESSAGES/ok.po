@@ -1179,3 +1179,15 @@ msgstr "Interromper eixo com E aprimorado da Zankou"
 
 msgid "开=合轴中识别到残虹黄色强化E时中断当前动作, 成功释放后请求切人; 关=忽略强化E"
 msgstr "Ligado = ao reconhecer o E aprimorado amarelo da Zankou durante o eixo coordenado, interrompe a acao atual e solicita troca apos lancamento bem-sucedido; desligado = ignora o E aprimorado"
+
+msgid "安魂曲免费技能后普攻时长(s)"
+msgstr "Duracao de ataques basicos de Requiem apos habilidade gratuita (s)"
+
+msgid "实战合轴中, 安魂曲释放免费技能后按0.1秒间隔普攻这么久; 辅助大招待开时正常切辅助, 否则请求切残虹"
+msgstr "No eixo de combate, apos Requiem usar uma habilidade gratuita, execute ataques basicos a cada 0.1 s por esta duracao; se a suprema de um suporte estiver pendente, troque normalmente para o suporte, caso contrario solicite Zankou"
+
+msgid "开局残虹黄E后切辅助"
+msgstr "Trocar para suporte apos E amarela inicial de Zankou"
+
+msgid "开=开局先切残虹释放黄色强化E, 随后立刻切回原开局流程选中的辅助; 关=不插入该步骤"
+msgstr "Ligado = no inicio, troca para Zankou para usar a E aprimorada amarela e retorna imediatamente ao suporte escolhido pelo fluxo normal; desligado = nao insere esta etapa"

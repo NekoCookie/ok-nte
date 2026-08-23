@@ -19,6 +19,7 @@ COAXIS_NORMAL_ATTACK_INTERVAL = 0.1
 GOLD_SKILL_CONFIRM_TIMEOUT = 0.35
 GOLD_SKILL_CONFIRM_INTERVAL = 0.02
 GOLD_SKILL_INPUT_RETRY_INTERVAL = 0.1
+OPENING_GOLD_SKILL_DETECT_TIMEOUT = 0.4
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,9 +28,11 @@ class CoordinatedAxisSettings:
     requiem_switch_key: str = "1"
     zankou_switch_key: str = "2"
     requiem_attack_duration: float = 2.0
+    requiem_free_skill_attack_duration: float = 2.0
     zankou_switch_delay: float = 0.5
     zankou_intro_wait_duration: float = 1.5
     zankou_gold_skill_interrupt: bool = False
+    opening_zankou_gold_skill: bool = False
     zankou_hold_duration: float = 2.0
     zankou_normal_attack_duration: float = 2.0
     zankou_dodge_normal_attack_duration: float = 0.5
@@ -125,6 +128,11 @@ def coordinated_axis_settings(char: "BaseChar") -> CoordinatedAxisSettings:
             config_task.CONF_COAXIS_REQUIEM_DURATION,
             2.0,
         ),
+        requiem_free_skill_attack_duration=_config_number(
+            config_task,
+            getattr(config_task, "CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION", ""),
+            2.0,
+        ),
         zankou_switch_delay=_config_number(
             config_task,
             config_task.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
@@ -138,6 +146,11 @@ def coordinated_axis_settings(char: "BaseChar") -> CoordinatedAxisSettings:
         zankou_gold_skill_interrupt=_config_boolean(
             config_task,
             getattr(config_task, "CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT", ""),
+            False,
+        ),
+        opening_zankou_gold_skill=_config_boolean(
+            config_task,
+            getattr(config_task, "CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL", ""),
             False,
         ),
         zankou_hold_duration=_config_number(
@@ -209,6 +222,26 @@ def _try_zankou_gold_skill_interrupt(
     if not callable(find_one) or not find_one(Labels.zankou_skill_gold):
         return False
     attempt.attempted = True
+    if _send_zankou_gold_skill_until_confirmed(
+        char,
+        find_one,
+        phase_deadline=phase_deadline,
+        action_name="zankou_gold_skill",
+    ):
+        context.request_switch(partner, reason="zankou gold skill complete")
+        return True
+    return False
+
+
+def _send_zankou_gold_skill_until_confirmed(
+    char: "BaseChar",
+    find_one,
+    *,
+    phase_deadline: float,
+    action_name: str,
+) -> bool:
+    """Send Zankou's gold skill until it is confirmed or the bounded window ends."""
+
     logger = getattr(char, "logger", None)
     log_info = getattr(logger, "info", None)
     if callable(log_info):
@@ -226,7 +259,7 @@ def _try_zankou_gold_skill_interrupt(
     if send_skill_key(
         down_time=0.05,
         interval=0.25,
-        action_name="zankou_gold_skill",
+        action_name=action_name,
     ) is False:
         log_warning = getattr(logger, "warning", None)
         if callable(log_warning):
@@ -239,8 +272,7 @@ def _try_zankou_gold_skill_interrupt(
             next_frame()
         if not find_one(Labels.zankou_skill_gold):
             if callable(log_info):
-                log_info("zankou coordinated axis gold skill confirmed; requesting switch")
-            context.request_switch(partner, reason="zankou gold skill complete")
+                log_info("zankou coordinated axis gold skill confirmed")
             return True
         remaining = confirmation_deadline - char.now()
         if remaining <= 0:
@@ -256,7 +288,7 @@ def _try_zankou_gold_skill_interrupt(
                 )
             if send_skill_key(
                 down_time=0.05,
-                action_name=f"zankou_gold_skill_retry_{input_count}",
+                action_name=f"{action_name}_retry_{input_count}",
             ) is False:
                 log_warning = getattr(logger, "warning", None)
                 if callable(log_warning):
@@ -265,6 +297,103 @@ def _try_zankou_gold_skill_interrupt(
             continue
         retry_remaining = next_retry_at - char.now()
         char.sleep(min(GOLD_SKILL_CONFIRM_INTERVAL, remaining, retry_remaining))
+
+
+def _wait_for_zankou_gold_skill(char: "BaseChar", timeout: float) -> object | None:
+    """Wait briefly for the gold E template after the opening switch settles."""
+
+    find_one = getattr(getattr(char, "task", None), "find_one", None)
+    if not callable(find_one):
+        return None
+    deadline = char.now() + timeout
+    while True:
+        next_frame = getattr(getattr(char, "task", None), "next_frame", None)
+        if callable(next_frame):
+            next_frame()
+        if find_one(Labels.zankou_skill_gold):
+            return find_one
+        remaining = deadline - char.now()
+        if remaining <= 0:
+            return None
+        char.sleep(min(GOLD_SKILL_CONFIRM_INTERVAL, remaining))
+
+
+def run_zankou_opening_gold_skill(task) -> bool:
+    """Insert Zankou's yellow E before the precomputed ordinary combat opening."""
+
+    get_current_char = getattr(task, "get_current_char", None)
+    switch_to_char = getattr(task, "_switch_to_char", None)
+    planner = getattr(task, "combat_planner", None)
+    if not callable(get_current_char) or not callable(switch_to_char) or planner is None:
+        return False
+    current_char = get_current_char(raise_exception=False)
+    if current_char is None:
+        return False
+    zankou = next(
+        (
+            char
+            for char in getattr(task, "chars", ())
+            if char is not None
+            and not bool(getattr(char, "is_dead", False))
+            and str(getattr(char, "impl_id", "")) == ZANKOU_MAIN_DPS_IMPL_ID
+        ),
+        None,
+    )
+    if zankou is None:
+        return False
+    settings = coordinated_axis_settings(zankou)
+    if not settings.opening_zankou_gold_skill:
+        return False
+    if (
+        coordinated_axis_partner(
+            zankou,
+            None,
+            self_impl_id=ZANKOU_MAIN_DPS_IMPL_ID,
+            partner_impl_id=REQUIEM_IMPL_ID,
+        )
+        is None
+    ):
+        return False
+
+    opening_decision = planner.decide_combat_start_char(current_char)
+    opening_target = opening_decision.target
+    if opening_target is None or opening_target is zankou:
+        opening_target = current_char
+    logger = getattr(task, "logger", None)
+    log_info = getattr(logger, "info", None)
+    if callable(log_info):
+        log_info("combat opening inserts zankou gold skill before ordinary opening target")
+    if current_char is not zankou:
+        switch_to_char(
+            zankou,
+            current_char=current_char,
+            has_intro=False,
+            log_prefix="lw opening zankou gold skill",
+        )
+    if get_current_char(raise_exception=False) is not zankou:
+        return False
+
+    find_one = _wait_for_zankou_gold_skill(zankou, OPENING_GOLD_SKILL_DETECT_TIMEOUT)
+    if find_one is None:
+        if callable(log_info):
+            log_info("combat opening zankou gold skill was not detected; returning to ordinary opening")
+    else:
+        _send_zankou_gold_skill_until_confirmed(
+            zankou,
+            find_one,
+            phase_deadline=zankou.now() + GOLD_SKILL_CONFIRM_TIMEOUT,
+            action_name="zankou_opening_gold_skill",
+        )
+
+    if opening_target is zankou:
+        return False
+    switch_to_char(
+        opening_target,
+        current_char=zankou,
+        has_intro=bool(getattr(opening_decision, "has_intro", False)),
+        log_prefix="lw opening zankou gold skill return",
+    )
+    return get_current_char(raise_exception=False) is opening_target
 
 
 def _run_normal_attacks_until_sound_dodge(
@@ -365,6 +494,44 @@ def perform_requiem_combat_axis(
         on_finish=lambda: setattr(char, "_coaxis_switch_pending", False),
     )
     return True
+
+
+def perform_requiem_free_skill_coaxis(
+    char: "BaseChar",
+    context: "CombatContext",
+    partner: "BaseChar",
+) -> bool:
+    """Finish Requiem's free skill with axis normals before returning to Zankou."""
+
+    settings = coordinated_axis_settings(char)
+    _run_combat_normal_attacks(
+        char,
+        settings.requiem_free_skill_attack_duration,
+        COAXIS_NORMAL_ATTACK_INTERVAL,
+    )
+    if _support_ultimate_pending(char):
+        logger = getattr(char, "logger", None)
+        log_info = getattr(logger, "info", None)
+        if callable(log_info):
+            log_info("requiem free skill axis yields to pending support ultimate")
+        return True
+    char._coaxis_switch_pending = True
+    context.request_switch(
+        partner,
+        reason="requiem free skill coordinated axis complete",
+        on_finish=lambda: setattr(char, "_coaxis_switch_pending", False),
+    )
+    return True
+
+
+def _support_ultimate_pending(char: "BaseChar") -> bool:
+    for teammate in getattr(getattr(char, "task", None), "chars", ()):
+        if teammate is None or teammate is char or bool(getattr(teammate, "is_dead", False)):
+            continue
+        pending = getattr(teammate, "ultimate_buff_pending", None)
+        if callable(pending) and pending():
+            return True
+    return False
 
 
 def perform_zankou_combat_axis(

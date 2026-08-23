@@ -728,7 +728,8 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
         )
 
     def switch_to_combat_start_char(self):
-        self.lw_prepare_combat_start()  # [lw]
+        if self.lw_prepare_combat_start():  # [lw] Optional LW opening may complete the start switch.
+            return
         if not self.combat_session.switch_enabled:
             logger.info("combat start switch disabled by task policy")
             return

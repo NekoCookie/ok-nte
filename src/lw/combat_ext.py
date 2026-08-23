@@ -220,6 +220,11 @@ class CombatExtMixin(_TaskProxy):
 
         self.in_animation = False
         self.lw_settle_combat_start_resources()
+        if not self.combat_session.switch_enabled:
+            return False
+        from src.lw.requiem_zankou_axis import run_zankou_opening_gold_skill
+
+        return run_zankou_opening_gold_skill(self)
 
     # ---------- 闪避/放招诊断 ----------
 

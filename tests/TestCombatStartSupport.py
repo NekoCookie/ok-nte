@@ -93,6 +93,16 @@ class TestCombatStartResourceSettle(unittest.TestCase):
 
 
 class TestCombatStartDispatch(unittest.TestCase):
+    def test_completed_lw_opening_skips_the_regular_start_decision(self):
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        task.lw_prepare_combat_start = mock.MagicMock(return_value=True)
+        task.combat_planner = mock.MagicMock()
+
+        task.switch_to_combat_start_char()
+
+        task.lw_prepare_combat_start.assert_called_once_with()
+        task.combat_planner.decide_combat_start_char.assert_not_called()
+
     def test_settles_lw_resources_before_asking_planner(self):
         calls = []
         task = BaseCombatTask.__new__(BaseCombatTask)
