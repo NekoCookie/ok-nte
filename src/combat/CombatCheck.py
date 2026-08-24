@@ -334,6 +334,7 @@ class CombatCheck(BaseNTETask):
             return None
 
         if is_boss():
+            logger.info("combat boss target lock: middle click")  # [lw]
             self.middle_click()
         elif not self.target_enemy(wait=True, lv=skip_target):
             return False
