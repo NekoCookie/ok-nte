@@ -212,6 +212,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     # [lw] Requiem and Zankou main-DPS axis settings, folded away by default.
     CONF_GROUP_COAXIS = "▸ 安魂曲残虹合轴(展开)"
     CONF_COAXIS_COMBAT_ENABLE = "实战启用合轴"
+    CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU = "安魂曲真技能后切残虹"
     CONF_COAXIS_TRIGGER_KEY = "合轴触发键"
     CONF_COAXIS_REQUIEM_SWITCH_KEY = "安魂曲切换键"
     CONF_COAXIS_ZANKOU_SWITCH_KEY = "残虹切换键"
@@ -317,6 +318,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 # [lw] Pair-axis testing and default-off automatic-combat integration.
                 self.CONF_GROUP_COAXIS: False,
                 self.CONF_COAXIS_COMBAT_ENABLE: False,
+                self.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU: False,
                 self.CONF_COAXIS_TRIGGER_KEY: "8",
                 self.CONF_COAXIS_REQUIEM_SWITCH_KEY: "1",
                 self.CONF_COAXIS_ZANKOU_SWITCH_KEY: "2",
@@ -440,6 +442,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "sub_configs": {
                         True: [
                             self.CONF_COAXIS_COMBAT_ENABLE,
+                            self.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU,
                             self.CONF_COAXIS_TRIGGER_KEY,
                             self.CONF_COAXIS_REQUIEM_SWITCH_KEY,
                             self.CONF_COAXIS_ZANKOU_SWITCH_KEY,
@@ -604,6 +607,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_SUPPORT_ULTIMATE_PREEMPTION: "开=辅助 Q 待铺时在环合前抢占; 关=仅按普通评分参与切人",
                 self.CONF_GROUP_COAXIS: "▸ 分组折叠: 展开安魂曲主C与残虹主C的合轴触发键和时序",
                 self.CONF_COAXIS_COMBAT_ENABLE: "开=两个主C模板同队时自动进入实战合轴; 关=仅保留按键测试",
+                self.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU: (
+                    "开=安魂曲真技能确认后固定切残虹; 真技能窗口内残虹不切回安魂曲"
+                ),
                 self.CONF_COAXIS_TRIGGER_KEY: "按一下开始重复合轴测试, 再按一下停止; 默认8",
                 self.CONF_COAXIS_REQUIEM_SWITCH_KEY: "安魂曲在队伍中的数字切换键; 默认1",
                 self.CONF_COAXIS_ZANKOU_SWITCH_KEY: "残虹在队伍中的数字切换键; 默认2",

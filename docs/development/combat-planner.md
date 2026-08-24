@@ -303,6 +303,10 @@ def combat_plan(self, context):
 RU 原有的完整普攻窗口。提前的 Q/E 仍由 planner 调用角色的标准 action, 而不是由切人代码
 直接发键。
 
+LW 角色可选实现 `lw_can_switch_in()`，在短暂的游戏机制窗口返回 `False`。planner 会把该角色
+从所有切人候选中排除，不发送角色数字键，也不会把暂时不可切入误判为死亡。该钩子只用于已确认
+的本地窗口，例如安魂曲真技能确认后的离场时间；不能用不稳定的头像明暗识别取代动作成功判定。
+
 ## combat_policies
 
 `combat_policies(context)` 用于随队伍生命周期长期生效的策略。planner reset 当前队伍

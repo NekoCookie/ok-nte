@@ -43,6 +43,13 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
         self.sleep(duration)
         self.logger.info("zankou coordinated axis wait intro end")
 
+    def should_force_off_field(self):
+        return bool(getattr(self, "_coaxis_switch_pending", False))
+
+    def switch_out(self):
+        self._coaxis_switch_pending = False
+        super().switch_out()
+
     def combat_plan(self, context):
         partner = coordinated_axis_partner(
             self,

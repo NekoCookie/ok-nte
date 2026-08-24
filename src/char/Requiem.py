@@ -7,12 +7,13 @@ import win32con
 
 from src.lw.combat_templates import MainDps
 from src.combat import requiem_combo
-from src.combat.planner import ActionSlot, ActionTag
+from src.combat.planner import ActionSlot, ActionTag, FollowupStep
 from src.Labels import Labels
 from src.lw.requiem_zankou_axis import (
     REQUIEM_IMPL_ID,
     ZANKOU_MAIN_DPS_IMPL_ID,
     coordinated_axis_partner,
+    coordinated_axis_settings,
     perform_requiem_combat_axis,
     perform_requiem_free_skill_coaxis,
 )
@@ -197,6 +198,7 @@ class Requiem(MainDps):
         self._d4_last_end = 0.0           # 上轮双4a结束时刻(单调时钟), 供诊断 combo 交接
         # [lw] Bypass MainDps field-time hold for one axis handoff.
         self._coaxis_switch_pending = False
+        self._coaxis_real_skill_handoff_until = 0.0
 
     def describe_role(self):
         # 安魂曲一律用主C(MainDps)的 MAIN_DPS 画像, 不再降级到 RU 安魂曲(Lacrimosa)。
@@ -235,7 +237,7 @@ class Requiem(MainDps):
         real_skill = self.planner_action(
             tags={ActionTag.SKILL_ACTION, ActionTag.DAMAGE},
             slot=ActionSlot.SKILL,
-            execute=lambda _: self.cast_real_skill(),
+            execute=lambda context: self.cast_real_skill(context),
             name=f"{self}_real_skill",
             reason="requiem real skill (damage)",
             can_execute=lambda _: (
@@ -344,6 +346,11 @@ class Requiem(MainDps):
         return time.time() < self.skill_off_field_until or getattr(
             self, "_coaxis_switch_pending", False
         )
+
+    def lw_can_switch_in(self):
+        """Block a premature return during an enabled real-skill axis handoff."""
+
+        return time.time() >= getattr(self, "_coaxis_real_skill_handoff_until", 0.0)
 
     @classmethod
     def _load_skill_templates(cls):
@@ -834,6 +841,39 @@ class Requiem(MainDps):
         self.task.note_skill_on_cd(self.index, cd=self.REAL_SKILL_CD)
         self.logger.info(f"requiem REAL skill {reason}, off-field overlap switch")
 
+    def _request_real_skill_zankou_axis(self, context):
+        """Force Zankou's ordinary Q-to-axis entry after a confirmed real skill."""
+
+        if context is None:
+            return
+        partner = coordinated_axis_partner(
+            self,
+            context,
+            self_impl_id=REQUIEM_IMPL_ID,
+            partner_impl_id=ZANKOU_MAIN_DPS_IMPL_ID,
+        )
+        if partner is None or not coordinated_axis_settings(self).requiem_real_skill_to_zankou:
+            return
+
+        self._coaxis_real_skill_handoff_until = self.skill_off_field_until
+        context.request_route(
+            [
+                FollowupStep.for_action(
+                    partner,
+                    ActionSlot.ULTIMATE,
+                    reason="requiem real skill zankou ultimate",
+                    optional=True,
+                ),
+                FollowupStep.for_action(
+                    partner,
+                    ActionSlot.LEGACY_COMBO,
+                    reason="requiem real skill zankou axis",
+                ),
+            ],
+            reason="requiem real skill handoff to zankou",
+        )
+        self.logger.info("requiem REAL skill fixed handoff to zankou")
+
     def _real_skill_in_long_cd(self):
         """真技能按键后是否真进了"长CD"(= 真放成功了)。**只信这帧 OCR 真读到的 CD 数字**
         (skill_ocr_raw), 不经锚点推算、不看就绪图标——和统一规则一致: 读到数字才是真进CD。
@@ -866,7 +906,7 @@ class Requiem(MainDps):
         self._mark_real_skill_overlap("cast")
         return True
 
-    def cast_real_skill(self):
+    def cast_real_skill(self, context=None):
         """真技能分支(伤害大头): 先起手平A进交战再放真技能。
 
         BaseChar.click_skill 统一处理放招后闪避导致的补发；这里只判断最终是否进入长 CD，
@@ -877,10 +917,12 @@ class Requiem(MainDps):
         if engage > 0:
             self.engage_before_skill(engage)
         if self._try_land_real_skill():
+            self._request_real_skill_zankou_axis(context)
             return True  # 一次就放进长CD(常见路径)→ 已 overlap
         # 通用 click_skill 已完成必要的打断恢复；复查最终长短 CD 决定是否下场。
         if self._real_skill_in_long_cd():
             self._mark_real_skill_overlap("settled")
+            self._request_real_skill_zankou_axis(context)
             return True
         else:
             self.logger.info("requiem REAL skill 未放进长CD(被打断/没放出), 不切, 下轮重试")
@@ -900,3 +942,4 @@ class Requiem(MainDps):
         self._d4_seam_t = 0.0
         self._d4_last_end = 0.0
         self._coaxis_switch_pending = False
+        self._coaxis_real_skill_handoff_until = 0.0

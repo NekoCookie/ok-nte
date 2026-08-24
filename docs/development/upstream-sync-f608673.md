@@ -297,6 +297,17 @@ at `HEAD` only and was not changed as part of this sync.
 | Manual validation | With the setting on, switch from Requiem to a ready Zankou: confirm the log first reports `planner entry expected action ..._ultimate`, then the normal `click_ultimate end` and ultimate freeze record, and only then the Zankou coordinated-axis heavy attack. Switch to Sakiri with only E ready: confirm its normal support-skill log and the existing `0.25s` long press. |
 | Status | pending real-window verification |
 
+### P-06: Requiem real-skill Zankou handoff boundary
+
+| Field | Evidence |
+| --- | --- |
+| Scope | Adds the default-off `安魂曲真技能后切残虹` coaxis setting. |
+| Required LW behavior | After Requiem confirms its real skill entered long CD, the enabled setting publishes a strict planner route to Zankou's optional Q followed by its normal coordinated-axis heavy attack. Requiem is unavailable as a planner switch target only through its existing `3.0s` real-skill off-field window. When Zankou completes heavy attacks and normal attacks before that window ends, it continues normal attacks in the same axis action if no element-ring reaction or ready support resource exists; it does not request Requiem and does not pull an idle support on field. A reaction or ready support hands control to the normal planner. After the window expires, the normal axis handoff requests Requiem. With the setting disabled, the prior Requiem and Zankou paths remain unchanged. |
+| Boundary | `Requiem` owns confirmation of its existing long-CD skill and publishes only the public `CombatContext.request_route()` request. `src/lw/requiem_zankou_axis.py` owns the coaxis timing and resource/reaction handoff. The one minimal `[lw]` connection in `CombatPlanner._can_switch_to()` delegates to `CombatPlannerExtMixin.lw_can_switch_to()`, which reads an optional character `lw_can_switch_in()` hook; it never emits raw switch input. |
+| Regression | `TestRequiemCombatConfigTask` verifies default-off configuration ordering. `TestRequiemZankouAxis` verifies the strict Zankou Q-to-axis route, normal-attack fill through a temporary Requiem lockout, and planner handoff when support resource appears. `TestCombatPlanner` verifies a temporarily locked character is excluded from switch selection. Existing Requiem-skill regression coverage verifies long-CD confirmation still controls the `3.0s` overlap window. |
+| Manual validation | Enable the setting with Requiem, Zankou, and a support. After `requiem REAL skill fixed handoff to zankou`, verify Zankou follows its normal Q-if-ready then heavy-attack flow. If Zankou finishes before the real-skill window ends and no support resource or element reaction exists, verify it only continues normal attacks. If a support resource becomes ready during the window, verify normal planner switching chooses that valid resource. |
+| Status | pending real-window verification |
+
 ### R-01: Window layout and focus-stability extension boundary
 
 | Field | Evidence |

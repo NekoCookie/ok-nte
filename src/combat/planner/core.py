@@ -1193,7 +1193,11 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
     def _can_switch_to(self, char: "BaseChar | None") -> bool:
         """返回 planner 是否允许把目标角色作为切人候选。"""
 
-        return char is not None and not getattr(char, "is_dead", False)
+        return (
+            char is not None
+            and not getattr(char, "is_dead", False)
+            and self.lw_can_switch_to(char)  # [lw] Temporary character lockouts remain planner-visible.
+        )
 
     def _log_switch_decision(self, current_char: "BaseChar", decision: SwitchDecision):
         breakdown = (

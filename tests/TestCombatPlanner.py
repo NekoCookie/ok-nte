@@ -218,6 +218,17 @@ class PublicApiChar(BaseChar):
 
 
 class TestCombatPlanner(unittest.TestCase):
+    def test_temporary_character_lockout_excludes_planner_switch_candidate(self):
+        current = FakeChar(0, "current")
+        blocked = FakeChar(1, "blocked")
+        fallback = FakeChar(2, "fallback")
+        blocked.lw_can_switch_in = lambda: False
+        planner = self._planner([current, blocked, fallback])
+
+        decision = planner.decide_switch(current)
+
+        self.assertIs(decision.target, fallback)
+
     def test_planner_namespace_exports_existing_enums(self):
         self.assertIs(Planner.NEVER_EXPIRES, NEVER_EXPIRES)
 

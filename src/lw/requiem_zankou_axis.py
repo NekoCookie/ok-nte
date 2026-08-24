@@ -37,6 +37,7 @@ class CoordinatedAxisSettings:
     zankou_hold_duration: float = 2.0
     zankou_normal_attack_duration: float = 2.0
     zankou_dodge_normal_attack_duration: float = 0.5
+    requiem_real_skill_to_zankou: bool = False
 
 
 @dataclass(slots=True)
@@ -178,6 +179,11 @@ def coordinated_axis_settings(char: "BaseChar") -> CoordinatedAxisSettings:
             getattr(config_task, "CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION", ""),
             0.5,
         ),
+        requiem_real_skill_to_zankou=_config_boolean(
+            config_task,
+            getattr(config_task, "CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU", ""),
+            False,
+        ),
     )
 
 
@@ -252,7 +258,7 @@ def _try_zankou_gold_skill_interrupt(
         if not find_one(Labels.zankou_skill_gold):
             if callable(log_info):
                 log_info("zankou coordinated axis gold skill confirmed")
-            context.request_switch(partner, reason="zankou gold skill complete")
+            _finish_zankou_axis(char, context, partner, reason="zankou gold skill complete")
             return True
         if now >= attempt.confirmation_deadline:
             attempt.finished = True
@@ -287,7 +293,7 @@ def _try_zankou_gold_skill_interrupt(
     if not find_one(Labels.zankou_skill_gold):
         if callable(log_info):
             log_info("zankou coordinated axis gold skill confirmed")
-        context.request_switch(partner, reason="zankou gold skill complete")
+        _finish_zankou_axis(char, context, partner, reason="zankou gold skill complete")
         return True
     return False
 
@@ -605,6 +611,53 @@ def _support_ultimate_pending(char: "BaseChar") -> bool:
     return False
 
 
+def _partner_switch_in_ready(partner: "BaseChar") -> bool:
+    can_switch_in = getattr(partner, "lw_can_switch_in", None)
+    if not callable(can_switch_in):
+        return True
+    try:
+        return bool(can_switch_in())
+    except (AttributeError, RuntimeError, TypeError):
+        return True
+
+
+def _zankou_should_yield_to_planner(char: "BaseChar") -> bool:
+    is_cycle_full = getattr(char, "is_cycle_full", None)
+    if callable(is_cycle_full) and is_cycle_full():
+        return True
+    should_yield_to_support = getattr(char, "should_yield_to_support", None)
+    return bool(callable(should_yield_to_support) and should_yield_to_support())
+
+
+def _finish_zankou_axis(
+    char: "BaseChar",
+    context: "CombatContext",
+    partner: "BaseChar",
+    *,
+    reason: str,
+) -> None:
+    """Return to Requiem when allowed, otherwise fill until planner has a real alternative."""
+
+    logger = getattr(char, "logger", None)
+    log_info = getattr(logger, "info", None)
+    waited = False
+    while not _partner_switch_in_ready(partner) and not _zankou_should_yield_to_planner(char):
+        if not waited and callable(log_info):
+            log_info("zankou axis holds normal attacks while requiem real skill is active")
+        waited = True
+        char.normal_attack()
+        char.sleep(COAXIS_NORMAL_ATTACK_INTERVAL)
+
+    if not _partner_switch_in_ready(partner):
+        if callable(log_info):
+            log_info("zankou axis yields to planner before requiem real skill ends")
+        return
+
+    if waited:
+        char._coaxis_switch_pending = True
+    context.request_switch(partner, reason=reason)
+
+
 def perform_zankou_combat_axis(
     char: "BaseChar",
     context: "CombatContext",
@@ -644,7 +697,7 @@ def perform_zankou_combat_axis(
             if skill_interrupted:
                 return True
         if not dodged:
-            context.request_switch(partner, reason="zankou coordinated axis complete")
+            _finish_zankou_axis(char, context, partner, reason="zankou coordinated axis complete")
             return True
 
         _log_zankou_sound_dodge_recovery(char, settings.zankou_dodge_normal_attack_duration)

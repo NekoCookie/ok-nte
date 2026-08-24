@@ -1,5 +1,6 @@
 """Regression tests for the standalone Requiem and Zankou coordinated-axis test."""
 
+import time
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -177,6 +178,7 @@ class FakeOpeningTask:
 def make_config_task(combat_enabled=True, **overrides):
     config = {
         RequiemCombatConfigTask.CONF_COAXIS_COMBAT_ENABLE: combat_enabled,
+        RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU: False,
         RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_DURATION: 0.45,
         RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: 2.0,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.5,
@@ -192,6 +194,9 @@ def make_config_task(combat_enabled=True, **overrides):
     return SimpleNamespace(
         config=config,
         CONF_COAXIS_COMBAT_ENABLE=RequiemCombatConfigTask.CONF_COAXIS_COMBAT_ENABLE,
+        CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU=(
+            RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU
+        ),
         CONF_COAXIS_REQUIEM_DURATION=RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_DURATION,
         CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION=(
             RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION
@@ -410,6 +415,54 @@ class TestRequiemZankouAxis(unittest.TestCase):
 
         requiem._coaxis_switch_pending = False
         self.assertFalse(requiem.should_force_off_field())
+
+    def test_real_skill_axis_routes_zankou_through_its_normal_ultimate_then_axis(self):
+        requiem, zankou, _context = make_combat_pair(combat_enabled=True)
+        config_task = requiem.task.get_task_by_class(None)
+        config_task.config[RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU] = True
+        requiem.skill_off_field_until = time.time() + 3.0
+        requiem.logger = mock.MagicMock()
+        context = mock.MagicMock(chars=[requiem, zankou])
+
+        requiem._request_real_skill_zankou_axis(context)
+
+        steps = context.request_route.call_args.args[0]
+        self.assertEqual([step.slot for step in steps], [ActionSlot.ULTIMATE, ActionSlot.LEGACY_COMBO])
+        self.assertTrue(steps[0].optional)
+        self.assertFalse(requiem.lw_can_switch_in())
+
+    def test_zankou_axis_fills_normal_attacks_until_real_skill_handoff_ends(self):
+        config_task = make_config_task()
+        zankou = FakeCombatChar(config_task)
+        partner = SimpleNamespace(lw_can_switch_in=lambda: zankou.now() >= 2.4)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+
+        self.assertTrue(perform_zankou_combat_axis(zankou, context, partner))
+
+        self.assertGreaterEqual(zankou.clock, 2.4)
+        self.assertEqual(
+            [event for event in zankou.events if event[0] == "hold"],
+            [("hold", 1.8)],
+        )
+        tap_times = [event[1] for event in zankou.events if event[0] == "tap"]
+        self.assertGreaterEqual(len(tap_times), 7)
+        self.assertGreaterEqual(tap_times[-1], 2.35)
+        context.request_switch.assert_called_once_with(
+            partner,
+            reason="zankou coordinated axis complete",
+        )
+
+    def test_zankou_axis_yields_to_planner_when_support_resource_appears_during_handoff(self):
+        config_task = make_config_task()
+        zankou = FakeCombatChar(config_task)
+        zankou.should_yield_to_support = lambda: True
+        partner = SimpleNamespace(lw_can_switch_in=lambda: False)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+
+        self.assertTrue(perform_zankou_combat_axis(zankou, context, partner))
+
+        context.request_switch.assert_not_called()
+        self.assertFalse(getattr(zankou, "_coaxis_switch_pending", False))
 
     def test_one_round_uses_configured_keys_and_attack_sequence(self):
         clock = FakeClock()

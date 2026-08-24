@@ -15,6 +15,17 @@ if TYPE_CHECKING:
 class CombatPlannerExtMixin:
     """LW switch policy using the stable RU CombatPlan and FieldClaim contracts."""
 
+    def lw_can_switch_to(self, char: "BaseChar") -> bool:
+        """Allow a character to defer planner re-entry during a local action window."""
+
+        can_switch_in = getattr(char, "lw_can_switch_in", None)
+        if not callable(can_switch_in):
+            return True
+        try:
+            return bool(can_switch_in())
+        except (AttributeError, RuntimeError, TypeError):
+            return True
+
     def lw_switch_target_has_intro(self, current_char, target, intro_available: bool) -> bool:
         """Return whether this target is the current element-ring entry target."""
 
