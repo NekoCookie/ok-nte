@@ -117,6 +117,10 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         c = make_buff()
         self.assertEqual(c.describe_role().role, PlannerRole.SUPPORT)
 
+    def test_no_resource_support_has_no_idle_field_time(self):
+        c = make_buff(ult_ready=False, skill_ready=False, buff_pending=False)
+        self.assertEqual(c.describe_role().max_field_time, 0)
+
     def test_combat_plan_splits_ultimate_and_skill_actions(self):
         # ru 风格: 大招/技能各是独立声明动作(planner 能分别评分), 不是笼统一个
         c = make_buff(ult_ready=True, buff_pending=True)

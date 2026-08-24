@@ -156,10 +156,11 @@ class BuffSupport(LWCombatTestPolicyMixin, ResourceSupportMixin, BaseChar):
         )
 
     def describe_role(self):
+        # [lw] A buff support with no available resource must yield the field to damage dealers.
         return RoleProfile(
             role=PlannerRole.SUPPORT,
             field_preference=FieldPreference.SUPPORT,
-            max_field_time=1.5,
+            max_field_time=0,
         )
 
     def ultimate_buff_pending(self):
