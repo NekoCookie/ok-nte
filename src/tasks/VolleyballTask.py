@@ -14,6 +14,8 @@ EN_INST = "Start the mission after entering the game"
 class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     CONF_MODE = "模式"
     CONF_SERVE_DELAY = "发球等待时间"
+    CONF_PLAY_INTERVAL = "普通回合按键间隔"
+    CONF_POSITION_ADJUST = "每4次按键调整位置"
     MODE_EXP = "刷经验"
     MODE_AUTO = "自动闯关"
     MODE_SUP = "辅助扣发球"
@@ -48,6 +50,11 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     MIN_SERVE_DELAY = 0.5
     MAX_SERVE_DELAY = 5.0
     SERVE_DELAY_RANGE_ERROR = "发球等待时间必须在0.5到5.0秒之间"
+    DEFAULT_PLAY_INTERVAL = 0.5
+    MIN_PLAY_INTERVAL = 0.1
+    MAX_PLAY_INTERVAL = 2.0
+    PLAY_INTERVAL_RANGE_ERROR = "普通回合按键间隔必须在0.1到2.0秒之间"
+    DEFAULT_POSITION_ADJUST = True
     SERVICE_RELEASE_CONFIRM_SECONDS = 0.5
     SERVICE_PHASE_WARNING_SECONDS = 10.0
     SERVICE_PHASE_HARD_TIMEOUT_SECONDS = 30.0
@@ -60,11 +67,15 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
             {
                 self.CONF_MODE: self.MODE_EXP,
                 self.CONF_SERVE_DELAY: self.DEFAULT_SERVE_DELAY,
+                self.CONF_PLAY_INTERVAL: self.DEFAULT_PLAY_INTERVAL,
+                self.CONF_POSITION_ADJUST: self.DEFAULT_POSITION_ADJUST,
             }
         )
         self.config_description.update(
             {
                 self.CONF_SERVE_DELAY: "抛球后等待多久再按发球键, 可设置0.5到5.0秒, 默认2.5秒. 运行中修改会在下一次发球时生效",
+                self.CONF_PLAY_INTERVAL: "普通回合 J/K 的最短按键间隔, 可设置0.1到2.0秒, 默认0.5秒. 运行中修改会在下一次按键时生效",
+                self.CONF_POSITION_ADJUST: "每成功按4次 J/K 后执行 A -> S 位置调整, 默认开启. 关闭后不会中断普通回合按键",
             }
         )
         self.config_type.update(
@@ -92,6 +103,13 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                 return self.SERVE_DELAY_RANGE_ERROR
             if not self.MIN_SERVE_DELAY <= delay <= self.MAX_SERVE_DELAY:
                 return self.SERVE_DELAY_RANGE_ERROR
+        if key == self.CONF_PLAY_INTERVAL:
+            try:
+                interval = float(value)
+            except (TypeError, ValueError):
+                return self.PLAY_INTERVAL_RANGE_ERROR
+            if not self.MIN_PLAY_INTERVAL <= interval <= self.MAX_PLAY_INTERVAL:
+                return self.PLAY_INTERVAL_RANGE_ERROR
         return super().validate_config(key, value)
 
     def run(self):
@@ -203,6 +221,17 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
             return self.DEFAULT_SERVE_DELAY
         return max(self.MIN_SERVE_DELAY, min(delay, self.MAX_SERVE_DELAY))
 
+    def get_play_interval(self):
+        configured_interval = self.config.get(self.CONF_PLAY_INTERVAL, self.DEFAULT_PLAY_INTERVAL)
+        try:
+            interval = float(configured_interval)
+        except (TypeError, ValueError):
+            self.log_warning(
+                f"invalid play interval {configured_interval!r}; using {self.DEFAULT_PLAY_INTERVAL:.1f}s"
+            )
+            return self.DEFAULT_PLAY_INTERVAL
+        return max(self.MIN_PLAY_INTERVAL, min(interval, self.MAX_PLAY_INTERVAL))
+
     def handle_service_release(self, now):
         if not self._service_phase_active:
             return False
@@ -242,15 +271,22 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     def play_once(self, key, switch_key):
         match self.config.get(self.CONF_MODE):
             case self.MODE_EXP | self.MODE_AUTO:
-                if self._play_count >= self.POSITION_ADJUST_AFTER_HITS:
+                position_adjust_enabled = self.config.get(
+                    self.CONF_POSITION_ADJUST,
+                    self.DEFAULT_POSITION_ADJUST,
+                )
+                if not position_adjust_enabled:
+                    self._play_count = 0
+                elif self._play_count >= self.POSITION_ADJUST_AFTER_HITS:
                     self.sleep(0.5)
                     self.send_key("a", down_time=0.1)
                     self.sleep(0.1)
                     self.send_key("s", down_time=0.1)
                     self._play_count = 0
                     return key, switch_key
-                if self.send_key(key, interval=0.5):
-                    self._play_count += 1
+                if self.send_key(key, interval=self.get_play_interval()):
+                    if position_adjust_enabled:
+                        self._play_count += 1
                     return ("j" if switch_key else "k"), not switch_key
             case self.MODE_SUP:
                 pass
