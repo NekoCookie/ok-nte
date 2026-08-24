@@ -547,6 +547,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
                 if detected_reason:
                     logger.info(f"{log_prefix} detected by {detected_reason}")
                     self._set_current_char(current_char, switch_to, has_intro)
+                    self.lw_record_intro_switch_input(switch_to, switch_input)  # [lw]
                     break
 
                 intro_ready = current_char is not None and (

@@ -132,6 +132,7 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         claims = list(c.combat_plan(None).claims)
         self.assertTrue(claims and claims[0].level == FieldClaimLevel.HIGH)
         self.assertTrue(is_lw_preemptive_field_claim(claims[0]))
+        self.assertEqual(claims[0].expected_entry.slot, ActionSlot.ULTIMATE)
 
     def test_combat_plan_without_ready_resource_has_no_claim(self):
         c = make_buff(ult_ready=False, skill_ready=False, buff_pending=False)
@@ -142,6 +143,7 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         claims = list(c.combat_plan(None).claims)
         self.assertTrue(claims and claims[0].level == FieldClaimLevel.HIGH)
         self.assertTrue(is_lw_preemptive_field_claim(claims[0]))
+        self.assertEqual(claims[0].expected_entry.slot, ActionSlot.SKILL)
 
     def test_due_resource_probe_claims_high_and_enables_skill(self):
         c = make_buff(ult_ready=False, skill_ready=False, buff_pending=False)

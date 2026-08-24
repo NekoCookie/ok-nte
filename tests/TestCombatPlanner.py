@@ -388,6 +388,7 @@ class TestCombatPlanner(unittest.TestCase):
         self.assertEqual(decision.target, support)
         self.assertEqual(decision.priority, 999600)
         self.assertIn("preemptive field claim", decision.reason)
+        self.assertFalse(decision.has_intro)
         self.assertTrue(is_lw_preemptive_field_claim(list(support.combat_plan(None).claims)[0]))
 
     def test_strict_route_preempts_preemptive_field_claim(self):

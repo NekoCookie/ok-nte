@@ -54,7 +54,7 @@ class CombatPlannerExtMixin:
             target=target,
             reason=f"preemptive field claim: {claim.reason}",
             priority=999600,
-            has_intro=has_intro,
+            has_intro=False,
             expected_entry=claim.expected_entry,
         )
 

@@ -4,6 +4,7 @@ from src.char.BaseChar import BaseChar
 from src.combat.planner import (
     ActionSlot,
     ActionTag,
+    ExpectedEntry,
     FieldClaim,
     FieldPreference,
     RoleProfile,
@@ -186,7 +187,11 @@ class BuffSupport(LWCombatTestPolicyMixin, ResourceSupportMixin, BaseChar):
                 RequiemCombatConfigTask.CONF_SUPPORT_ULTIMATE_PREEMPTION
             ):
                 return [
-                    lw_preemptive_field_claim(source=self, reason="support ultimate buff pending")
+                    lw_preemptive_field_claim(
+                        source=self,
+                        reason="support ultimate buff pending",
+                        expected_entry=ExpectedEntry(slot=ActionSlot.ULTIMATE),
+                    )
                 ]
             return [FieldClaim.high(source=self, reason="support ultimate buff pending")]
         if self.has_skill_resource():
@@ -196,7 +201,11 @@ class BuffSupport(LWCombatTestPolicyMixin, ResourceSupportMixin, BaseChar):
                 RequiemCombatConfigTask.CONF_SUPPORT_SKILL_PREEMPTION
             ):
                 return [
-                    lw_preemptive_field_claim(source=self, reason="support skill resource ready")
+                    lw_preemptive_field_claim(
+                        source=self,
+                        reason="support skill resource ready",
+                        expected_entry=ExpectedEntry(slot=ActionSlot.SKILL),
+                    )
                 ]
             return [FieldClaim.high(source=self, reason="support skill resource ready")]
         if needs_probe:

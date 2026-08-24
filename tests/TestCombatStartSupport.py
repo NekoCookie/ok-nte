@@ -8,6 +8,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from src.char.BaseChar import BaseChar
 from src.combat.BaseCombatTask import BaseCombatTask
 from src.combat.planner import ActionSlot
 from src.lw.combat_templates import BuffSupport
@@ -147,6 +148,35 @@ class TestCombatStartDispatch(unittest.TestCase):
             interval=0.1,
             action_name=("lw_switch_input", 2, "skill"),
         )
+
+    def test_intro_repeats_the_selected_switch_input_instead_of_normal_attacks(self):
+        clock = FakeClock()
+        task = self._switch_input_task()
+        char = SimpleNamespace(index=1, sleep=mock.MagicMock(side_effect=clock.sleep))
+        char.logger = mock.MagicMock()
+        task._lw_intro_switch_inputs = {1: (char, "ultimate")}
+        task.get_current_char = mock.MagicMock(return_value=char)
+        task.lw_send_switch_input = mock.MagicMock(return_value=True)
+
+        with mock.patch("src.lw.combat_ext.time.time", clock.time):
+            self.assertTrue(task.lw_wait_intro_with_switch_input(char, 0.3))
+
+        self.assertGreaterEqual(task.lw_send_switch_input.call_count, 3)
+        self.assertNotIn(1, task._lw_intro_switch_inputs)
+
+    def test_base_char_intro_uses_the_task_switch_input_override(self):
+        char = BaseChar.__new__(BaseChar)
+        char.has_intro = True
+        char.logger = mock.MagicMock()
+        char.task = SimpleNamespace(
+            lw_wait_intro_with_switch_input=mock.MagicMock(return_value=True),
+        )
+        char.continues_normal_attack = mock.MagicMock()
+
+        char.wait_intro(time_out=0.3)
+
+        char.task.lw_wait_intro_with_switch_input.assert_called_once_with(char, 0.3)
+        char.continues_normal_attack.assert_not_called()
 
     def test_regular_switch_passes_the_optional_ability_input_to_the_switch_loop(self):
         task = BaseCombatTask.__new__(BaseCombatTask)

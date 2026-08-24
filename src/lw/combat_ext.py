@@ -76,6 +76,7 @@ class CombatExtMixin(_TaskProxy):
         self._team_change_checking = False
         self._last_team_recheck = 0.0  # AutoCombatTask 的队伍重载节流
         self._team_reload_enabled = False
+        self._lw_intro_switch_inputs = {}
 
     def lw_add_freeze_duration(self, start, duration=-1.0, freeze_time=0.1, cause=""):
         """Record LW diagnostic context without changing the RU freeze tuple contract."""
@@ -275,6 +276,39 @@ class CombatExtMixin(_TaskProxy):
             action_name=("lw_switch_input", switch_to.index, switch_input),
         )
         return result is not False
+
+    def lw_record_intro_switch_input(self, switch_to, switch_input) -> None:
+        """Carry an enabled planner-switch input into the target's intro window."""
+
+        if switch_input is None or not bool(getattr(switch_to, "has_intro", False)):
+            return
+        pending = getattr(self, "_lw_intro_switch_inputs", None)
+        if pending is None:
+            pending = {}
+            self._lw_intro_switch_inputs = pending
+        pending[switch_to.index] = (switch_to, switch_input)
+
+    def lw_wait_intro_with_switch_input(self, char, duration: float) -> bool:
+        """Replace the RU intro normal fill with the selected Q/E input once."""
+
+        pending = getattr(self, "_lw_intro_switch_inputs", None)
+        if not isinstance(pending, dict):
+            return False
+        entry = pending.pop(char.index, None)
+        if entry is None:
+            return False
+        switch_to, switch_input = entry
+        if switch_to is not char:
+            return False
+
+        char.logger.info(f"lw switch input during intro: {switch_input}")
+        deadline = time.time() + max(0.0, duration)
+        while time.time() < deadline:
+            if self.get_current_char(raise_exception=False) is not char:
+                return True
+            self.lw_send_switch_input(char, switch_input)
+            char.sleep(0.1)
+        return True
 
     # ---------- 闪避/放招诊断 ----------
 
