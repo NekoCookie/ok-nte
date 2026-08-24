@@ -422,6 +422,7 @@ def run_zankou_opening_gold_skill(task) -> bool:
             current_char=current_char,
             has_intro=False,
             log_prefix="lw opening zankou gold skill",
+            send_switch_attack=False,
         )
     if get_current_char(raise_exception=False) is not zankou:
         return False
@@ -446,6 +447,7 @@ def run_zankou_opening_gold_skill(task) -> bool:
         current_char=zankou,
         has_intro=bool(getattr(opening_decision, "has_intro", False)),
         log_prefix="lw opening zankou gold skill return",
+        send_switch_attack=False,
     )
     return get_current_char(raise_exception=False) is opening_target
 

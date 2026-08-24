@@ -141,6 +141,7 @@ class FakeOpeningTask:
             )
         )
         self.switches = []
+        self.switch_attack_options = []
         for char in self.chars:
             char.task = self
             char.is_current_char = char is current_char
@@ -157,8 +158,16 @@ class FakeOpeningTask:
     def next_frame(self):
         return None
 
-    def _switch_to_char(self, switch_to, current_char, has_intro, log_prefix):
+    def _switch_to_char(
+        self,
+        switch_to,
+        current_char,
+        has_intro,
+        log_prefix,
+        send_switch_attack=True,
+    ):
         self.switches.append((current_char, switch_to, has_intro, log_prefix))
+        self.switch_attack_options.append(send_switch_attack)
         current_char.is_current_char = False
         switch_to.is_current_char = True
         self._current_char = switch_to
@@ -318,6 +327,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [("gold_skill", 1.8, "zankou_opening_gold_skill")],
         )
         self.assertEqual([event for event in zankou.events if event[0] == "hold"], [("hold", 1.8)])
+        self.assertEqual(task.switch_attack_options, [False, False])
 
     def test_requiem_free_skill_uses_axis_followup_instead_of_old_break_sequence(self):
         requiem, zankou, context = make_combat_pair(combat_enabled=True)

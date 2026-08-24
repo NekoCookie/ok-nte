@@ -494,6 +494,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
         retry_intro=False,
         log_prefix="switch char",
         time_out=10,
+        send_switch_attack=True,
     ):
         current_char_name = current_char.ufn_name if current_char else "None"
         switch_to.has_intro = has_intro
@@ -581,7 +582,8 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
                     down_time=0.05,
                 )
                 self.sleep(0.001)
-                self.click(action_name="switch_char_click", interval=0.3)
+                if send_switch_attack:  # [lw] Input-sensitive custom openings need a clean first action.
+                    self.click(action_name="switch_char_click", interval=0.3)
                 if switch_key_sent_at <= 0:
                     switch_key_sent_at = current_time
 
