@@ -41,6 +41,10 @@ class CoordinatedAxisSettings:
 @dataclass(slots=True)
 class _GoldSkillAttempt:
     attempted: bool = False
+    finished: bool = False
+    confirmation_deadline: float = 0.0
+    next_retry_at: float = 0.0
+    input_count: int = 0
 
 
 def _config_task(char: "BaseChar"):
@@ -214,20 +218,69 @@ def _try_zankou_gold_skill_interrupt(
     attempt: _GoldSkillAttempt,
     phase_deadline: float,
 ) -> bool:
-    """Attempt the gold skill once without waiting for the base skill cooldown."""
+    """Try yellow E between normal attacks without blocking the active axis."""
 
-    if attempt.attempted or not settings.zankou_gold_skill_interrupt:
+    if attempt.finished or not settings.zankou_gold_skill_interrupt:
         return False
     find_one = getattr(getattr(char, "task", None), "find_one", None)
-    if not callable(find_one) or not find_one(Labels.zankou_skill_gold):
+    if not callable(find_one):
         return False
-    attempt.attempted = True
-    if _send_zankou_gold_skill_until_confirmed(
-        char,
-        find_one,
-        phase_deadline=phase_deadline,
-        action_name="zankou_gold_skill",
-    ):
+
+    logger = getattr(char, "logger", None)
+    log_info = getattr(logger, "info", None)
+    next_frame = getattr(getattr(char, "task", None), "next_frame", None)
+    if callable(next_frame):
+        next_frame()
+    now = char.now()
+    if not attempt.attempted:
+        if not find_one(Labels.zankou_skill_gold):
+            return False
+        attempt.attempted = True
+        attempt.confirmation_deadline = min(now + GOLD_SKILL_CONFIRM_TIMEOUT, phase_deadline)
+        attempt.next_retry_at = now + GOLD_SKILL_INPUT_RETRY_INTERVAL
+        attempt.input_count = 1
+        action_name = "zankou_gold_skill"
+        if callable(log_info):
+            log_info("zankou coordinated axis gold skill detected; attempting input")
+    else:
+        if not find_one(Labels.zankou_skill_gold):
+            if callable(log_info):
+                log_info("zankou coordinated axis gold skill confirmed")
+            context.request_switch(partner, reason="zankou gold skill complete")
+            return True
+        if now >= attempt.confirmation_deadline:
+            attempt.finished = True
+            if callable(log_info):
+                log_info("zankou coordinated axis gold skill not confirmed; continuing axis")
+            return False
+        if now < attempt.next_retry_at:
+            return False
+        attempt.input_count += 1
+        attempt.next_retry_at += GOLD_SKILL_INPUT_RETRY_INTERVAL
+        action_name = f"zankou_gold_skill_retry_{attempt.input_count}"
+        if callable(log_info):
+            log_info(
+                "zankou coordinated axis gold skill unchanged; "
+                f"retrying input {attempt.input_count}"
+            )
+
+    send_skill_key = getattr(char, "send_skill_key", None)
+    if not callable(send_skill_key) or send_skill_key(
+        down_time=0.05,
+        interval=0.25 if attempt.input_count == 1 else -1,
+        action_name=action_name,
+    ) is False:
+        attempt.finished = True
+        log_warning = getattr(logger, "warning", None)
+        if callable(log_warning):
+            log_warning("zankou coordinated axis gold skill input was not sent")
+        return False
+
+    if callable(next_frame):
+        next_frame()
+    if not find_one(Labels.zankou_skill_gold):
+        if callable(log_info):
+            log_info("zankou coordinated axis gold skill confirmed")
         context.request_switch(partner, reason="zankou gold skill complete")
         return True
     return False

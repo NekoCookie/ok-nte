@@ -595,6 +595,16 @@ class TestRequiemZankouAxis(unittest.TestCase):
             ],
         )
         self.assertEqual(round(zankou.clock, 2), 2.25)
+        self.assertEqual(
+            [(event[0], round(event[1], 2)) for event in zankou.events if event[0] == "tap"],
+            [
+                ("tap", 1.8),
+                ("tap", 1.9),
+                ("tap", 2.0),
+                ("tap", 2.1),
+                ("tap", 2.2),
+            ],
+        )
         context.request_switch.assert_called_once_with(
             requiem,
             reason="zankou coordinated axis complete",
