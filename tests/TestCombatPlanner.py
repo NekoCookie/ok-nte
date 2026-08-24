@@ -878,6 +878,7 @@ class TestCombatPlanner(unittest.TestCase):
         self.assertEqual(decision.target, nanally)
         self.assertIn("nanally_ultimate", decision.reason)
         self.assertIsNone(decision.expected_entry)
+        self.assertEqual(decision.scoring_action_slot, ActionSlot.ULTIMATE)
 
     def test_normal_switch_skips_dead_characters(self):
         current = self._support(0, "current")

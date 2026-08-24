@@ -648,7 +648,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
                 continue
             if char == current_char:
                 continue
-            score, reason, expected, breakdown = self._score_char(
+            score, reason, expected, breakdown, scoring_action_slot = self._score_char(
                 char,
                 context,
                 current_char=(char == current_char),
@@ -670,6 +670,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
                     has_intro,
                     expected,
                     breakdown.format(),
+                    scoring_action_slot,
                 )
 
         self._log_switch_decision(current_char, best_decision)
@@ -1210,7 +1211,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
 
     def _score_char(
         self, char: "BaseChar", context: CombatContext, current_char: bool
-    ) -> tuple[int, str, ExpectedEntry | None, _ScoreBreakdown]:
+    ) -> tuple[int, str, ExpectedEntry | None, _ScoreBreakdown, ActionSlot | None]:
         breakdown = _ScoreBreakdown()
         action = self._best_scoring_action_for(char, context)
         field_claim = self._best_field_claim_for(char, context)
@@ -1218,7 +1219,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
 
         if action is None and field_claim is None and field_action is None:
             breakdown.add("no_available_action", -10000)
-            return -10000, "no available action", None, breakdown
+            return -10000, "no available action", None, breakdown, None
 
         score = 0
         reason = "no ready action"
@@ -1259,7 +1260,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         field_preference_score = self._field_preference_score(profile, context, current_char)
         score += field_preference_score
         breakdown.add(f"field_preference:{profile.field_preference.value}", field_preference_score)
-        return score, reason, expected, breakdown
+        return score, reason, expected, breakdown, action.slot if action is not None else None
 
     def _field_preference_score(
         self, profile: RoleProfile, context: CombatContext, current_char: bool

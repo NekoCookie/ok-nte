@@ -226,6 +226,56 @@ class CombatExtMixin(_TaskProxy):
 
         return run_zankou_opening_gold_skill(self)
 
+    def lw_switch_input_for_decision(self, switch_to, decision):
+        """Choose the optional input to repeat while a regular planner switch settles."""
+
+        get_task_by_class = getattr(self, "get_task_by_class", None)
+        if not callable(get_task_by_class):
+            return None
+
+        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
+
+        try:
+            config_task = get_task_by_class(RequiemCombatConfigTask)
+        except (LookupError, RuntimeError, TypeError):
+            return None
+        config = getattr(config_task, "config", None)
+        enabled_key = getattr(config_task, "CONF_COAXIS_SWITCH_ABILITY_INPUT", "")
+        if not enabled_key or not hasattr(config, "get") or not bool(config.get(enabled_key, False)):
+            return None
+
+        from src.combat.planner import ActionSlot
+
+        action_slot = getattr(decision, "scoring_action_slot", None)
+        if action_slot is None:
+            expected_entry = getattr(decision, "expected_entry", None)
+            action_slot = getattr(expected_entry, "slot", None)
+        return "ultimate" if action_slot == ActionSlot.ULTIMATE else "skill"
+
+    def lw_send_switch_input(self, switch_to, switch_input) -> bool:
+        """Send one switch-window Q/E input without changing the target's planner state."""
+
+        if switch_input == "ultimate":
+            key_getter = getattr(switch_to, "get_ultimate_key", None)
+            down_time = 0.05
+        elif switch_input == "skill":
+            key_getter = getattr(switch_to, "get_skill_key", None)
+            try:
+                down_time = max(0.01, float(getattr(switch_to, "SKILL_DOWN_TIME", 0.05)))
+            except (TypeError, ValueError):
+                down_time = 0.05
+        else:
+            return False
+        if not callable(key_getter):
+            return False
+        result = self.send_key(
+            key_getter(),
+            down_time=down_time,
+            interval=0.1,
+            action_name=("lw_switch_input", switch_to.index, switch_input),
+        )
+        return result is not False
+
     # ---------- 闪避/放招诊断 ----------
 
     def last_dodge_time(self):

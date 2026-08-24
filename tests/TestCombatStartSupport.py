@@ -9,7 +9,9 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.combat.BaseCombatTask import BaseCombatTask
+from src.combat.planner import ActionSlot
 from src.lw.combat_templates import BuffSupport
+from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 
 
 class FakeClock:
@@ -93,6 +95,84 @@ class TestCombatStartResourceSettle(unittest.TestCase):
 
 
 class TestCombatStartDispatch(unittest.TestCase):
+    def _switch_input_task(self, enabled=True):
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        config_task = SimpleNamespace(
+            config={RequiemCombatConfigTask.CONF_COAXIS_SWITCH_ABILITY_INPUT: enabled},
+            CONF_COAXIS_SWITCH_ABILITY_INPUT=(
+                RequiemCombatConfigTask.CONF_COAXIS_SWITCH_ABILITY_INPUT
+            ),
+        )
+        task.get_task_by_class = mock.MagicMock(return_value=config_task)
+        task.send_key = mock.MagicMock(return_value=True)
+        return task
+
+    def test_switch_input_uses_scoring_ultimate_or_skill_fallback(self):
+        task = self._switch_input_task()
+        target = SimpleNamespace(index=1)
+        ultimate_decision = SimpleNamespace(
+            scoring_action_slot=ActionSlot.ULTIMATE,
+            expected_entry=None,
+        )
+        skill_decision = SimpleNamespace(scoring_action_slot=ActionSlot.SKILL, expected_entry=None)
+        entry_ultimate_decision = SimpleNamespace(
+            scoring_action_slot=None,
+            expected_entry=SimpleNamespace(slot=ActionSlot.ULTIMATE),
+        )
+
+        self.assertEqual(task.lw_switch_input_for_decision(target, ultimate_decision), "ultimate")
+        self.assertEqual(task.lw_switch_input_for_decision(target, skill_decision), "skill")
+        self.assertEqual(task.lw_switch_input_for_decision(target, entry_ultimate_decision), "ultimate")
+
+    def test_switch_input_is_disabled_by_default_setting(self):
+        task = self._switch_input_task(enabled=False)
+        target = SimpleNamespace(index=1)
+        decision = SimpleNamespace(scoring_action_slot=ActionSlot.ULTIMATE, expected_entry=None)
+
+        self.assertIsNone(task.lw_switch_input_for_decision(target, decision))
+
+    def test_switch_skill_input_uses_the_target_long_press_duration(self):
+        task = self._switch_input_task()
+        target = SimpleNamespace(
+            index=2,
+            SKILL_DOWN_TIME=0.25,
+            get_skill_key=lambda: "e",
+        )
+
+        self.assertTrue(task.lw_send_switch_input(target, "skill"))
+
+        task.send_key.assert_called_once_with(
+            "e",
+            down_time=0.25,
+            interval=0.1,
+            action_name=("lw_switch_input", 2, "skill"),
+        )
+
+    def test_regular_switch_passes_the_optional_ability_input_to_the_switch_loop(self):
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        current = mock.MagicMock()
+        target = mock.MagicMock(index=1)
+        task.combat_session = SimpleNamespace(switch_enabled=True)
+        task.chars = [current, target]
+        task._wait_switch_in_guard = mock.MagicMock()
+        task.lw_switch_input_for_decision = mock.MagicMock(return_value="ultimate")
+        task._switch_to_char = mock.MagicMock()
+        decision = SimpleNamespace(
+            target=target,
+            has_intro=False,
+            expected_entry=None,
+            reason="target ultimate ready",
+            scoring_action_slot=ActionSlot.ULTIMATE,
+        )
+        task.combat_planner = mock.MagicMock()
+        task.combat_planner.decide_switch.return_value = decision
+        task.combat_planner.has_strict_route.return_value = False
+
+        task.switch_next_char(current)
+
+        task.lw_switch_input_for_decision.assert_called_once_with(target, decision)
+        self.assertEqual(task._switch_to_char.call_args.kwargs["switch_input"], "ultimate")
+
     def test_completed_lw_opening_skips_the_initial_attack(self):
         task = BaseCombatTask.__new__(BaseCombatTask)
         task.combat_session = None

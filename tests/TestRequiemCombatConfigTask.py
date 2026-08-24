@@ -84,6 +84,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION], 1.5)
         self.assertFalse(task.default_config[task.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT])
         self.assertFalse(task.default_config[task.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL])
+        self.assertFalse(task.default_config[task.CONF_COAXIS_SWITCH_ABILITY_INPUT])
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_HOLD_DURATION], 2.0)
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_NORMAL_DURATION], 2.0)
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION], 0.5)
@@ -101,6 +102,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
                 task.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION,
                 task.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT,
                 task.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL,
+                task.CONF_COAXIS_SWITCH_ABILITY_INPUT,
                 task.CONF_COAXIS_ZANKOU_HOLD_DURATION,
                 task.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
                 task.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,

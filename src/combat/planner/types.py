@@ -778,6 +778,7 @@ class SwitchDecision:
     has_intro: bool = False
     expected_entry: "ExpectedEntry | None" = None
     score_breakdown: str = ""
+    scoring_action_slot: ActionSlot | None = None
 
 
 @dataclass(slots=True)

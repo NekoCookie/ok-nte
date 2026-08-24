@@ -158,6 +158,9 @@ flow 外预查询完整 action 时，使用 `context.is_action_allowed(self, act
 action 代表该角色参赛。tag 不控制普通入场流程；普通入场由 `CombatPlan.entry`
 控制。
 
+`SwitchDecision.scoring_action_slot` 记录该普通切人评分所选 action 的槽位，只用于
+切人窗口等输入策略；它不等同于 `expected_entry`，也不改变目标角色入场后的 action 顺序。
+
 ## ActionSlot
 
 `ActionSlot` 是协作匹配用的动作槽位，比 action name 更推荐。
