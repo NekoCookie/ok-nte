@@ -184,12 +184,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         if self.has_intro:
             self.logger.info(f"wait intro {time_out}s")
             if click:
-                switch_input_waiter = getattr(self.task, "lw_wait_intro_with_switch_input", None)
-                use_switch_input = (  # [lw] The optional switch input replaces intro normals.
-                    switch_input_waiter(self, time_out) if callable(switch_input_waiter) else False
-                )
-                if use_switch_input is not True:
-                    self.continues_normal_attack(time_out)
+                self.continues_normal_attack(time_out)
             else:
                 self.sleep(time_out)
             self.logger.info("wait intro end")

@@ -8,7 +8,6 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.char.BaseChar import BaseChar
 from src.combat.BaseCombatTask import BaseCombatTask
 from src.combat.planner import ActionSlot
 from src.lw.combat_templates import BuffSupport
@@ -108,7 +107,7 @@ class TestCombatStartDispatch(unittest.TestCase):
         task.send_key = mock.MagicMock(return_value=True)
         return task
 
-    def test_switch_input_uses_scoring_ultimate_or_skill_fallback(self):
+    def test_switch_entry_uses_scoring_ultimate_or_skill_fallback(self):
         task = self._switch_input_task()
         target = SimpleNamespace(index=1)
         ultimate_decision = SimpleNamespace(
@@ -121,11 +120,17 @@ class TestCombatStartDispatch(unittest.TestCase):
             expected_entry=SimpleNamespace(slot=ActionSlot.ULTIMATE),
         )
 
-        self.assertEqual(task.lw_switch_input_for_decision(target, ultimate_decision), "ultimate")
-        self.assertEqual(task.lw_switch_input_for_decision(target, skill_decision), "skill")
-        self.assertEqual(task.lw_switch_input_for_decision(target, entry_ultimate_decision), "ultimate")
+        self.assertEqual(
+            task.lw_switch_expected_entry_for_decision(target, ultimate_decision).slot,
+            ActionSlot.ULTIMATE,
+        )
+        self.assertEqual(
+            task.lw_switch_expected_entry_for_decision(target, skill_decision).slot,
+            ActionSlot.SKILL,
+        )
+        self.assertIsNone(task.lw_switch_expected_entry_for_decision(target, entry_ultimate_decision))
 
-    def test_switch_input_prioritizes_ready_ultimate_over_skill_score(self):
+    def test_switch_entry_prioritizes_ready_ultimate_over_skill_score(self):
         task = self._switch_input_task()
         target = SimpleNamespace(
             index=2,
@@ -133,10 +138,13 @@ class TestCombatStartDispatch(unittest.TestCase):
         )
         decision = SimpleNamespace(scoring_action_slot=ActionSlot.SKILL, expected_entry=None)
 
-        self.assertEqual(task.lw_switch_input_for_decision(target, decision), "ultimate")
+        self.assertEqual(
+            task.lw_switch_expected_entry_for_decision(target, decision).slot,
+            ActionSlot.ULTIMATE,
+        )
         target.ultimate_available.assert_called_once_with()
 
-    def test_switch_input_keeps_explicit_skill_entry_over_a_ready_ultimate(self):
+    def test_switch_entry_keeps_explicit_skill_entry_over_a_ready_ultimate(self):
         task = self._switch_input_task()
         target = SimpleNamespace(
             index=2,
@@ -147,7 +155,7 @@ class TestCombatStartDispatch(unittest.TestCase):
             expected_entry=SimpleNamespace(slot=ActionSlot.SKILL),
         )
 
-        self.assertEqual(task.lw_switch_input_for_decision(target, decision), "skill")
+        self.assertIsNone(task.lw_switch_expected_entry_for_decision(target, decision))
         target.ultimate_available.assert_not_called()
 
     def test_active_switch_target_is_not_marked_dead_by_another_char_revive_prompt(self):
@@ -180,67 +188,23 @@ class TestCombatStartDispatch(unittest.TestCase):
         current.mark_dead.assert_not_called()
         task.ensure_main.assert_not_called()
 
-    def test_switch_input_is_disabled_by_default_setting(self):
+    def test_switch_entry_is_disabled_by_default_setting(self):
         task = self._switch_input_task(enabled=False)
         target = SimpleNamespace(index=1)
         decision = SimpleNamespace(scoring_action_slot=ActionSlot.ULTIMATE, expected_entry=None)
 
-        self.assertIsNone(task.lw_switch_input_for_decision(target, decision))
+        self.assertIsNone(task.lw_switch_expected_entry_for_decision(target, decision))
 
-    def test_switch_skill_input_uses_the_target_long_press_duration(self):
-        task = self._switch_input_task()
-        target = SimpleNamespace(
-            index=2,
-            SKILL_DOWN_TIME=0.25,
-            get_skill_key=lambda: "e",
-        )
-
-        self.assertTrue(task.lw_send_switch_input(target, "skill"))
-
-        task.send_key.assert_called_once_with(
-            "e",
-            down_time=0.25,
-            interval=0.1,
-            action_name=("lw_switch_input", 2, "skill"),
-        )
-
-    def test_intro_repeats_the_selected_switch_input_instead_of_normal_attacks(self):
-        clock = FakeClock()
-        task = self._switch_input_task()
-        char = SimpleNamespace(index=1, sleep=mock.MagicMock(side_effect=clock.sleep))
-        char.logger = mock.MagicMock()
-        task._lw_intro_switch_inputs = {1: (char, "ultimate")}
-        task.get_current_char = mock.MagicMock(return_value=char)
-        task.lw_send_switch_input = mock.MagicMock(return_value=True)
-
-        with mock.patch("src.lw.combat_ext.time.time", clock.time):
-            self.assertTrue(task.lw_wait_intro_with_switch_input(char, 0.3))
-
-        self.assertGreaterEqual(task.lw_send_switch_input.call_count, 3)
-        self.assertNotIn(1, task._lw_intro_switch_inputs)
-
-    def test_base_char_intro_uses_the_task_switch_input_override(self):
-        char = BaseChar.__new__(BaseChar)
-        char.has_intro = True
-        char.logger = mock.MagicMock()
-        char.task = SimpleNamespace(
-            lw_wait_intro_with_switch_input=mock.MagicMock(return_value=True),
-        )
-        char.continues_normal_attack = mock.MagicMock()
-
-        char.wait_intro(time_out=0.3)
-
-        char.task.lw_wait_intro_with_switch_input.assert_called_once_with(char, 0.3)
-        char.continues_normal_attack.assert_not_called()
-
-    def test_regular_switch_passes_the_optional_ability_input_to_the_switch_loop(self):
+    def test_regular_switch_registers_the_supplemental_planner_entry_action(self):
         task = BaseCombatTask.__new__(BaseCombatTask)
         current = mock.MagicMock()
         target = mock.MagicMock(index=1)
         task.combat_session = SimpleNamespace(switch_enabled=True)
         task.chars = [current, target]
         task._wait_switch_in_guard = mock.MagicMock()
-        task.lw_switch_input_for_decision = mock.MagicMock(return_value="ultimate")
+        task.lw_switch_expected_entry_for_decision = mock.MagicMock(
+            return_value=SimpleNamespace(slot=ActionSlot.ULTIMATE)
+        )
         task._switch_to_char = mock.MagicMock()
         decision = SimpleNamespace(
             target=target,
@@ -255,8 +219,11 @@ class TestCombatStartDispatch(unittest.TestCase):
 
         task.switch_next_char(current)
 
-        task.lw_switch_input_for_decision.assert_called_once_with(target, decision)
-        self.assertEqual(task._switch_to_char.call_args.kwargs["switch_input"], "ultimate")
+        task.lw_switch_expected_entry_for_decision.assert_called_once_with(target, decision)
+        task.combat_planner.expect_entry_action.assert_called_once_with(
+            target, task.lw_switch_expected_entry_for_decision.return_value
+        )
+        self.assertFalse(task._switch_to_char.call_args.kwargs["send_switch_attack"])
 
     def test_completed_lw_opening_skips_the_initial_attack(self):
         task = BaseCombatTask.__new__(BaseCombatTask)

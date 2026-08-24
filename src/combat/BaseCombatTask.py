@@ -496,7 +496,6 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
         log_prefix="switch char",
         time_out=10,
         send_switch_attack=True,
-        switch_input=None,
     ):
         current_char_name = current_char.ufn_name if current_char else "None"
         switch_to.has_intro = has_intro
@@ -533,7 +532,6 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
                     ):
                         logger.info(f"{log_prefix} detected by active target during revive prompt")
                         self._set_current_char(current_char, switch_to, has_intro)
-                        self.lw_record_intro_switch_input(switch_to, switch_input)
                         break
 
                     if self._mark_dead_char_if_detected(switch_to):
@@ -557,7 +555,6 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
                 if detected_reason:
                     logger.info(f"{log_prefix} detected by {detected_reason}")
                     self._set_current_char(current_char, switch_to, has_intro)
-                    self.lw_record_intro_switch_input(switch_to, switch_input)  # [lw]
                     break
 
                 intro_ready = current_char is not None and (
@@ -595,9 +592,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
                     down_time=0.05,
                 )
                 self.sleep(0.001)
-                if switch_input is not None:  # [lw] Optional Q/E input replaces the RU switch click.
-                    self.lw_send_switch_input(switch_to, switch_input)
-                elif send_switch_attack:  # [lw] Input-sensitive custom openings need a clean first action.
+                if send_switch_attack:  # [lw] Input-sensitive custom openings need a clean first action.
                     self.click(action_name="switch_char_click", interval=0.3)
                 if switch_key_sent_at <= 0:
                     switch_key_sent_at = current_time
@@ -694,8 +689,10 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             self._wait_switch_in_guard(current_char, switch_to, has_intro)
             current_char.wait_switch_cd()
 
-        self.combat_planner.expect_entry_action(switch_to, decision.expected_entry)
-        switch_input = self.lw_switch_input_for_decision(switch_to, decision)  # [lw]
+        expected_entry = decision.expected_entry or self.lw_switch_expected_entry_for_decision(  # [lw]
+            switch_to, decision
+        )
+        self.combat_planner.expect_entry_action(switch_to, expected_entry)
         self._switch_to_char(
             switch_to,
             current_char=current_char,
@@ -704,7 +701,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             free_intro=free_intro,
             retry_intro=True,
             log_prefix=f"planner switch_next_char ({decision.reason})",
-            switch_input=switch_input,
+            send_switch_attack=expected_entry is None,  # [lw] Keep the selected planner Q/E first.
         )
 
     def switch_other_char(self, current_char: "BaseChar"):

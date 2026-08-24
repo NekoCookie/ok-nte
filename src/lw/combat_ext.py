@@ -76,7 +76,6 @@ class CombatExtMixin(_TaskProxy):
         self._team_change_checking = False
         self._last_team_recheck = 0.0  # AutoCombatTask 的队伍重载节流
         self._team_reload_enabled = False
-        self._lw_intro_switch_inputs = {}
 
     def lw_add_freeze_duration(self, start, duration=-1.0, freeze_time=0.1, cause=""):
         """Record LW diagnostic context without changing the RU freeze tuple contract."""
@@ -227,8 +226,8 @@ class CombatExtMixin(_TaskProxy):
 
         return run_zankou_opening_gold_skill(self)
 
-    def lw_switch_input_for_decision(self, switch_to, decision):
-        """Choose the optional input to repeat while a regular planner switch settles."""
+    def lw_switch_expected_entry_for_decision(self, switch_to, decision):
+        """Select a supplemental planner entry action for an ordinary switch."""
 
         get_task_by_class = getattr(self, "get_task_by_class", None)
         if not callable(get_task_by_class):
@@ -245,25 +244,22 @@ class CombatExtMixin(_TaskProxy):
         if not enabled_key or not hasattr(config, "get") or not bool(config.get(enabled_key, False)):
             return None
 
-        from src.combat.planner import ActionSlot
+        from src.combat.planner import ActionSlot, ExpectedEntry
 
-        expected_entry = getattr(decision, "expected_entry", None)
-        expected_slot = getattr(expected_entry, "slot", None)
-        if expected_slot == ActionSlot.ULTIMATE:
-            return "ultimate"
-        if expected_slot == ActionSlot.SKILL:
-            return "skill"
+        if getattr(decision, "expected_entry", None) is not None:
+            return None
 
         ultimate_available = getattr(switch_to, "ultimate_available", None)
         if callable(ultimate_available):
             try:
                 if ultimate_available():
-                    return "ultimate"
+                    return ExpectedEntry(slot=ActionSlot.ULTIMATE)
             except (AttributeError, RuntimeError, TypeError):
                 pass
 
         action_slot = getattr(decision, "scoring_action_slot", None)
-        return "ultimate" if action_slot == ActionSlot.ULTIMATE else "skill"
+        slot = ActionSlot.ULTIMATE if action_slot == ActionSlot.ULTIMATE else ActionSlot.SKILL
+        return ExpectedEntry(slot=slot)
 
     def lw_switch_target_entered_during_revive_prompt(self, current_char, switch_to, frame) -> bool:
         """Confirm the target entered before attributing a revive prompt to it."""
@@ -286,63 +282,6 @@ class CombatExtMixin(_TaskProxy):
 
         current_char.mark_dead("revive prompt after switch target became active")
         self.ensure_main(in_world=False)
-        return True
-
-    def lw_send_switch_input(self, switch_to, switch_input) -> bool:
-        """Send one switch-window Q/E input without changing the target's planner state."""
-
-        if switch_input == "ultimate":
-            key_getter = getattr(switch_to, "get_ultimate_key", None)
-            down_time = 0.05
-        elif switch_input == "skill":
-            key_getter = getattr(switch_to, "get_skill_key", None)
-            try:
-                down_time = max(0.01, float(getattr(switch_to, "SKILL_DOWN_TIME", 0.05)))
-            except (TypeError, ValueError):
-                down_time = 0.05
-        else:
-            return False
-        if not callable(key_getter):
-            return False
-        result = self.send_key(
-            key_getter(),
-            down_time=down_time,
-            interval=0.1,
-            action_name=("lw_switch_input", switch_to.index, switch_input),
-        )
-        return result is not False
-
-    def lw_record_intro_switch_input(self, switch_to, switch_input) -> None:
-        """Carry an enabled planner-switch input into the target's intro window."""
-
-        if switch_input is None or not bool(getattr(switch_to, "has_intro", False)):
-            return
-        pending = getattr(self, "_lw_intro_switch_inputs", None)
-        if pending is None:
-            pending = {}
-            self._lw_intro_switch_inputs = pending
-        pending[switch_to.index] = (switch_to, switch_input)
-
-    def lw_wait_intro_with_switch_input(self, char, duration: float) -> bool:
-        """Replace the RU intro normal fill with the selected Q/E input once."""
-
-        pending = getattr(self, "_lw_intro_switch_inputs", None)
-        if not isinstance(pending, dict):
-            return False
-        entry = pending.pop(char.index, None)
-        if entry is None:
-            return False
-        switch_to, switch_input = entry
-        if switch_to is not char:
-            return False
-
-        char.logger.info(f"lw switch input during intro: {switch_input}")
-        deadline = time.time() + max(0.0, duration)
-        while time.time() < deadline:
-            if self.get_current_char(raise_exception=False) is not char:
-                return True
-            self.lw_send_switch_input(char, switch_input)
-            char.sleep(0.1)
         return True
 
     # ---------- 闪避/放招诊断 ----------
