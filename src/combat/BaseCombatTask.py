@@ -134,8 +134,9 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
         session = self.combat_session
         if session.start_char is None:
             session.combat_start = time.time()
-            self.click(after_sleep=0.25)
-            self.switch_to_combat_start_char()
+            if not self.lw_prepare_combat_start():  # [lw] Run the input-sensitive opening first.
+                self.click(after_sleep=0.25)
+                self.switch_to_combat_start_char(lw_opening_checked=True)
             session.start_char = self.get_current_char(raise_exception=False)
             logger.info(f"combat session started, start char: {session.start_char}")
         return session
@@ -729,8 +730,8 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             f"switch_other_char on_combat_end {current_char.index} switch end"
         )
 
-    def switch_to_combat_start_char(self):
-        if self.lw_prepare_combat_start():  # [lw] Optional LW opening may complete the start switch.
+    def switch_to_combat_start_char(self, lw_opening_checked=False):
+        if not lw_opening_checked and self.lw_prepare_combat_start():  # [lw] Optional opening is complete.
             return
         if not self.combat_session.switch_enabled:
             logger.info("combat start switch disabled by task policy")

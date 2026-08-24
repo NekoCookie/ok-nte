@@ -14,11 +14,12 @@ class TestCombatSession(unittest.TestCase):
         task.start_char = object()
         task.switch_calls = 0
 
-        def switch_to_start():
+        def switch_to_start(**_kwargs):
             task.switch_calls += 1
             task.current_char = task.start_char
 
         task.switch_to_combat_start_char = switch_to_start
+        task.lw_prepare_combat_start = lambda: False
         task.get_current_char = lambda raise_exception=False: task.current_char
         task.click = lambda *_args, **_kwargs: None
         return task
@@ -94,7 +95,8 @@ class TestCombatSession(unittest.TestCase):
         task.config = {task.CONF_DONT_SWITCH: True}
         task.combat_session = None
         task.current_char = object()
-        task.switch_to_combat_start_char = lambda: None
+        task.switch_to_combat_start_char = lambda **_kwargs: None
+        task.lw_prepare_combat_start = lambda: False
         task.get_current_char = lambda raise_exception=False: task.current_char
         task.click = lambda *_args, **_kwargs: None
 

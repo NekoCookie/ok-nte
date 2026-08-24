@@ -93,6 +93,36 @@ class TestCombatStartResourceSettle(unittest.TestCase):
 
 
 class TestCombatStartDispatch(unittest.TestCase):
+    def test_completed_lw_opening_skips_the_initial_attack(self):
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        task.combat_session = None
+        current = mock.MagicMock()
+        task.get_current_char = mock.MagicMock(return_value=current)
+        task.lw_prepare_combat_start = mock.MagicMock(return_value=True)
+        task.click = mock.MagicMock()
+        task.switch_to_combat_start_char = mock.MagicMock()
+
+        session = task.begin_combat_session()
+
+        self.assertIs(session.start_char, current)
+        task.lw_prepare_combat_start.assert_called_once_with()
+        task.click.assert_not_called()
+        task.switch_to_combat_start_char.assert_not_called()
+
+    def test_regular_start_keeps_the_initial_attack_after_lw_opening_declines(self):
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        task.combat_session = None
+        current = mock.MagicMock()
+        task.get_current_char = mock.MagicMock(return_value=current)
+        task.lw_prepare_combat_start = mock.MagicMock(return_value=False)
+        task.click = mock.MagicMock()
+        task.switch_to_combat_start_char = mock.MagicMock()
+
+        task.begin_combat_session()
+
+        task.click.assert_called_once_with(after_sleep=0.25)
+        task.switch_to_combat_start_char.assert_called_once_with(lw_opening_checked=True)
+
     def test_completed_lw_opening_skips_the_regular_start_decision(self):
         task = BaseCombatTask.__new__(BaseCombatTask)
         task.lw_prepare_combat_start = mock.MagicMock(return_value=True)

@@ -441,7 +441,7 @@ def run_zankou_opening_gold_skill(task) -> bool:
         )
 
     if opening_target is zankou:
-        return False
+        return True
     switch_to_char(
         opening_target,
         current_char=zankou,

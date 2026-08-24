@@ -329,6 +329,22 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertEqual([event for event in zankou.events if event[0] == "hold"], [("hold", 1.8)])
         self.assertEqual(task.switch_attack_options, [False, False])
 
+    def test_opening_gold_skill_current_zankou_completes_without_a_regular_start_switch(self):
+        config_task = make_config_task(
+            **{RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: True}
+        )
+        zankou = FakeCombatChar(config_task, gold_skill_times=(1.0,))
+        zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
+        requiem = FakeCombatChar(config_task)
+        requiem.impl_id = REQUIEM_IMPL_ID
+        task = FakeOpeningTask(config_task, zankou, zankou, zankou)
+        task.chars = [zankou, requiem]
+
+        self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        self.assertEqual(task.switches, [])
+        self.assertEqual([event for event in zankou.events if event[0] == "hold"], [("hold", 1.8)])
+
     def test_requiem_free_skill_uses_axis_followup_instead_of_old_break_sequence(self):
         requiem, zankou, context = make_combat_pair(combat_enabled=True)
         requiem.logger = mock.MagicMock()
