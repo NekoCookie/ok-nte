@@ -14,7 +14,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.char.Requiem import Requiem
-from src.combat.planner import ActionResult, CombatPlanner
+from src.combat.planner import ActionResult, ActionSlot, CombatPlanner, ExpectedEntry
 
 
 class FakeClock:
@@ -147,6 +147,40 @@ class TestRequiemSkillClassification(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.name, "Requiem_real_skill")
         r.continues_normal_attack.assert_not_called()
+
+    def test_preconfirmed_real_skill_skips_followup_ultimate(self):
+        r = make_requiem(self.clock)
+        r.is_dead = False
+        r.has_intro = False
+        r.ultimate_available.return_value = True
+        r.click_ultimate.return_value = True
+        planner = CombatPlanner(r.task)
+        planner.reset([r])
+
+        planner.expect_entry_action(r, ExpectedEntry(slot=ActionSlot.SKILL))
+        pre_entry = planner.perform_entry_expected_action(r)
+        r.skill_available.return_value = False
+        result = planner.perform_current_char(r)
+
+        self.assertEqual(pre_entry.name, "Requiem_real_skill")
+        self.assertEqual(result.name, "Requiem_real_skill")
+        r.click_ultimate.assert_not_called()
+
+    def test_preconfirmed_real_skill_skips_followup_axis(self):
+        r = make_requiem(self.clock)
+        r.is_dead = False
+        r.has_intro = False
+        planner = CombatPlanner(r.task)
+        planner.reset([r])
+
+        planner.expect_entry_action(r, ExpectedEntry(slot=ActionSlot.SKILL))
+        pre_entry = planner.perform_entry_expected_action(r)
+        r.skill_available.return_value = False
+        result = planner.perform_current_char(r)
+
+        self.assertEqual(pre_entry.name, "Requiem_real_skill")
+        self.assertEqual(result.name, "Requiem_real_skill")
+        r.idle_normal_attack.assert_not_called()
 
     # ---- 进的是短CD(被闪避打断的假成功)→ 不切, 修掉"短CD误当放成功" ----
     def test_real_skill_short_cd_does_not_switch(self):

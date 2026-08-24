@@ -295,6 +295,10 @@ class Requiem(MainDps):
         )
 
         def entry():
+            # [lw] An early-entry real skill may already have committed this character to leave.
+            # Do not restart the ordinary entry flow with Q or coaxis before switch_next_char().
+            if self.should_force_off_field():
+                return
             # 续打窗口外部分优先: 闪避那1秒窗口已在 execute_dodge 打了前段前半, 这里无缝接剩余,
             # 跳过技能OCR(免在双4a中间插延迟打乱节奏)。
             if self._pending_double_4a is not None:
@@ -343,7 +347,7 @@ class Requiem(MainDps):
         return False
 
     def should_force_off_field(self):
-        return time.time() < self.skill_off_field_until or getattr(
+        return time.time() < getattr(self, "skill_off_field_until", 0.0) or getattr(
             self, "_coaxis_switch_pending", False
         )
 
