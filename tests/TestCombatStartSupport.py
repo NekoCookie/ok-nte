@@ -12,6 +12,7 @@ from src.combat.BaseCombatTask import BaseCombatTask
 from src.combat.planner import ActionSlot
 from src.char.BaseChar import BaseChar
 from src.lw.combat_templates import BuffSupport
+from src.lw.requiem_zankou_axis import ZANKOU_MAIN_DPS_IMPL_ID
 from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 
 
@@ -183,6 +184,18 @@ class TestCombatStartDispatch(unittest.TestCase):
             task.lw_switch_expected_entry_for_decision(target, decision).slot,
             ActionSlot.ULTIMATE,
         )
+        target.ultimate_available.assert_called_once_with()
+
+    def test_zankou_axis_entry_does_not_fallback_to_an_ordinary_skill(self):
+        task = self._entry_ability_task()
+        target = SimpleNamespace(
+            index=2,
+            impl_id=ZANKOU_MAIN_DPS_IMPL_ID,
+            ultimate_available=mock.MagicMock(return_value=False),
+        )
+        decision = SimpleNamespace(scoring_action_slot=None, expected_entry=None)
+
+        self.assertIsNone(task.lw_switch_expected_entry_for_decision(target, decision))
         target.ultimate_available.assert_called_once_with()
 
     def test_switch_entry_keeps_explicit_skill_entry_over_a_ready_ultimate(self):

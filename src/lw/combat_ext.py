@@ -263,6 +263,13 @@ class CombatExtMixin(_TaskProxy):
             except (AttributeError, RuntimeError, TypeError):
                 pass
 
+        # Zankou's paired main-DPS plan has no ordinary E entry. Its yellow E is
+        # only detected and used from within the coordinated-axis heavy phase.
+        from src.lw.requiem_zankou_axis import ZANKOU_MAIN_DPS_IMPL_ID
+
+        if str(getattr(switch_to, "impl_id", "")) == ZANKOU_MAIN_DPS_IMPL_ID:
+            return None
+
         action_slot = getattr(decision, "scoring_action_slot", None)
         slot = ActionSlot.ULTIMATE if action_slot == ActionSlot.ULTIMATE else ActionSlot.SKILL
         return ExpectedEntry(slot=slot)

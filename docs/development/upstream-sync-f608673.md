@@ -308,6 +308,17 @@ at `HEAD` only and was not changed as part of this sync.
 | Manual validation | Enable the setting with Requiem, Zankou, and a support. After `requiem REAL skill fixed handoff to zankou`, verify Zankou follows its normal Q-if-ready then heavy-attack flow. If Zankou finishes before the real-skill window ends and no support resource or element reaction exists, verify it only continues normal attacks. If a support resource becomes ready during the window, verify normal planner switching chooses that valid resource. |
 | Status | pending real-window verification |
 
+### P-07: Zankou coordinated-axis entry-action boundary
+
+| Field | Evidence |
+| --- | --- |
+| Scope | Corrects the default-off `入场提前执行技能大招` adapter when its target is `builtin:zankou_main_dps`. |
+| Required LW behavior | The generic adapter may register a ready Q for Zankou main-DPS. When Q is unavailable, it must not invent `ExpectedEntry(SKILL)`; Zankou proceeds directly into its coordinated-axis heavy attack. Its E remains exclusively the yellow-E detection and confirmation action inside that heavy phase. Other templates retain the existing Q-first, then scoring-slot E behavior. |
+| Boundary | `CombatExtMixin` identifies the LW Zankou main-DPS implementation before its generic skill fallback. No RU planner behavior, raw input, or Zankou action declaration is changed. |
+| Regression | `TestCombatStartSupport.test_zankou_axis_entry_does_not_fallback_to_an_ordinary_skill` verifies an unavailable Zankou Q produces no expected E action. |
+| Manual validation | Enable entry ability input and let Requiem finish a normal coaxis phase while Zankou Q is unavailable. Confirm no `planner entry expected action unavailable ... ExpectedEntry(slot=SKILL)` appears before Zankou starts its heavy attack. |
+| Status | pending real-window verification |
+
 ### R-01: Window layout and focus-stability extension boundary
 
 | Field | Evidence |
