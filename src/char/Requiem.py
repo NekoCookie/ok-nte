@@ -841,8 +841,8 @@ class Requiem(MainDps):
         self.task.note_skill_on_cd(self.index, cd=self.REAL_SKILL_CD)
         self.logger.info(f"requiem REAL skill {reason}, off-field overlap switch")
 
-    def _request_real_skill_zankou_axis(self, context):
-        """Force Zankou's ordinary Q-to-axis entry after a confirmed real skill."""
+    def _request_real_skill_configured_handoff(self, context):
+        """Honor the configured strict handoff after a confirmed real skill."""
 
         if context is None:
             return
@@ -852,27 +852,62 @@ class Requiem(MainDps):
             self_impl_id=REQUIEM_IMPL_ID,
             partner_impl_id=ZANKOU_MAIN_DPS_IMPL_ID,
         )
-        if partner is None or not coordinated_axis_settings(self).requiem_real_skill_to_zankou:
+        settings = coordinated_axis_settings(self)
+        if partner is None or not settings.requiem_real_skill_switch_slot:
+            return
+
+        target_index = settings.requiem_real_skill_switch_slot - 1
+        target = next(
+            (
+                char
+                for char in context.chars
+                if char is not None
+                and char.index == target_index
+                and not bool(getattr(char, "is_dead", False))
+            ),
+            None,
+        )
+        if target is None:
+            self.logger.info(
+                "requiem REAL skill fixed handoff skipped; "
+                f"slot {settings.requiem_real_skill_switch_slot} is unavailable"
+            )
+            return
+        if target is self:
+            self.logger.info("requiem REAL skill fixed handoff skipped; target is current Requiem")
             return
 
         self._coaxis_real_skill_handoff_until = self.skill_off_field_until
+        if target is partner:
+            context.request_route(
+                [
+                    FollowupStep.for_action(
+                        partner,
+                        ActionSlot.ULTIMATE,
+                        reason="requiem real skill zankou ultimate",
+                        optional=True,
+                    ),
+                    FollowupStep.for_action(
+                        partner,
+                        ActionSlot.LEGACY_COMBO,
+                        reason="requiem real skill zankou axis",
+                    ),
+                ],
+                reason="requiem real skill handoff to zankou",
+            )
+            self.logger.info("requiem REAL skill fixed handoff to zankou")
+            return
+
         context.request_route(
             [
-                FollowupStep.for_action(
-                    partner,
-                    ActionSlot.ULTIMATE,
-                    reason="requiem real skill zankou ultimate",
-                    optional=True,
-                ),
-                FollowupStep.for_action(
-                    partner,
-                    ActionSlot.LEGACY_COMBO,
-                    reason="requiem real skill zankou axis",
-                ),
+                FollowupStep.for_switch(
+                    target,
+                    reason=f"requiem real skill fixed switch to slot {target.index + 1}",
+                )
             ],
-            reason="requiem real skill handoff to zankou",
+            reason=f"requiem real skill handoff to slot {target.index + 1}",
         )
-        self.logger.info("requiem REAL skill fixed handoff to zankou")
+        self.logger.info(f"requiem REAL skill fixed handoff to slot {target.index + 1}")
 
     def _real_skill_in_long_cd(self):
         """真技能按键后是否真进了"长CD"(= 真放成功了)。**只信这帧 OCR 真读到的 CD 数字**
@@ -917,12 +952,12 @@ class Requiem(MainDps):
         if engage > 0:
             self.engage_before_skill(engage)
         if self._try_land_real_skill():
-            self._request_real_skill_zankou_axis(context)
+            self._request_real_skill_configured_handoff(context)
             return True  # 一次就放进长CD(常见路径)→ 已 overlap
         # 通用 click_skill 已完成必要的打断恢复；复查最终长短 CD 决定是否下场。
         if self._real_skill_in_long_cd():
             self._mark_real_skill_overlap("settled")
-            self._request_real_skill_zankou_axis(context)
+            self._request_real_skill_configured_handoff(context)
             return True
         else:
             self.logger.info("requiem REAL skill 未放进长CD(被打断/没放出), 不切, 下轮重试")

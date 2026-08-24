@@ -178,7 +178,7 @@ class FakeOpeningTask:
 def make_config_task(combat_enabled=True, **overrides):
     config = {
         RequiemCombatConfigTask.CONF_COAXIS_COMBAT_ENABLE: combat_enabled,
-        RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU: False,
+        RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT: "关闭",
         RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_DURATION: 0.45,
         RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: 2.0,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.5,
@@ -194,8 +194,8 @@ def make_config_task(combat_enabled=True, **overrides):
     return SimpleNamespace(
         config=config,
         CONF_COAXIS_COMBAT_ENABLE=RequiemCombatConfigTask.CONF_COAXIS_COMBAT_ENABLE,
-        CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU=(
-            RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU
+        CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT=(
+            RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT
         ),
         CONF_COAXIS_REQUIEM_DURATION=RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_DURATION,
         CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION=(
@@ -419,17 +419,48 @@ class TestRequiemZankouAxis(unittest.TestCase):
     def test_real_skill_axis_routes_zankou_through_its_normal_ultimate_then_axis(self):
         requiem, zankou, _context = make_combat_pair(combat_enabled=True)
         config_task = requiem.task.get_task_by_class(None)
-        config_task.config[RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU] = True
+        config_task.config[RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT] = "2"
         requiem.skill_off_field_until = time.time() + 3.0
         requiem.logger = mock.MagicMock()
         context = mock.MagicMock(chars=[requiem, zankou])
 
-        requiem._request_real_skill_zankou_axis(context)
+        requiem._request_real_skill_configured_handoff(context)
 
         steps = context.request_route.call_args.args[0]
         self.assertEqual([step.slot for step in steps], [ActionSlot.ULTIMATE, ActionSlot.LEGACY_COMBO])
         self.assertTrue(steps[0].optional)
         self.assertFalse(requiem.lw_can_switch_in())
+
+    def test_real_skill_handoff_can_strictly_switch_to_a_configured_non_zankou_slot(self):
+        requiem, zankou, _context = make_combat_pair(combat_enabled=True)
+        support = SimpleNamespace(index=2, is_dead=False)
+        requiem.task.chars.append(support)
+        config_task = requiem.task.get_task_by_class(None)
+        config_task.config[RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT] = "3"
+        requiem.skill_off_field_until = time.time() + 3.0
+        requiem.logger = mock.MagicMock()
+        context = mock.MagicMock(chars=[requiem, zankou, support])
+
+        requiem._request_real_skill_configured_handoff(context)
+
+        steps = context.request_route.call_args.args[0]
+        self.assertEqual(len(steps), 1)
+        self.assertTrue(steps[0].requires_switch)
+        self.assertEqual(steps[0].target_indices, {2})
+        self.assertFalse(requiem.lw_can_switch_in())
+
+    def test_real_skill_handoff_ignores_the_current_requiem_slot(self):
+        requiem, zankou, _context = make_combat_pair(combat_enabled=True)
+        config_task = requiem.task.get_task_by_class(None)
+        config_task.config[RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT] = "1"
+        requiem.skill_off_field_until = time.time() + 3.0
+        requiem.logger = mock.MagicMock()
+        context = mock.MagicMock(chars=[requiem, zankou])
+
+        requiem._request_real_skill_configured_handoff(context)
+
+        context.request_route.assert_not_called()
+        self.assertTrue(requiem.lw_can_switch_in())
 
     def test_zankou_axis_fills_normal_attacks_until_real_skill_handoff_ends(self):
         config_task = make_config_task()

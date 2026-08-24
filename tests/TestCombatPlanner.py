@@ -1719,6 +1719,26 @@ class TestCombatPlanner(unittest.TestCase):
 
         self.assertEqual(decision.target, zero)
 
+    def test_strict_route_can_complete_after_switching_to_its_target(self):
+        source = FakeChar(0, "source")
+        target = FakeChar(1, "target")
+        planner = self._planner([source, target])
+        self._publish(
+            planner,
+            source,
+            lambda context: context.request_route(
+                [FollowupStep.for_switch(target, reason="fixed target")],
+                reason="fixed switch route",
+            ),
+        )
+
+        decision = planner.decide_switch(source)
+
+        self.assertEqual(decision.target, target)
+        self.assertIsNone(decision.expected_entry)
+        planner.record_switch(target)
+        self.assertIsNone(planner.state.locked_route)
+
     def test_strict_route_does_not_switch_to_dead_target(self):
         hotori = FakeChar(0, "hotori", field_preference=FieldPreference.SETUP_ONLY)
         zero = FakeChar(1, "zero", tags={ActionTag.SKILL_ACTION})

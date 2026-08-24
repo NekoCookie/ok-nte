@@ -213,7 +213,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_GROUP_COAXIS = "▸ 安魂曲残虹合轴(展开)"
     CONF_COAXIS_COMBAT_ENABLE = "实战启用合轴"
     CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT = "入场提前执行技能大招"
-    CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU = "安魂曲真技能后切残虹"
+    CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT = "安魂曲真技能后固定切人位置"
     CONF_COAXIS_TRIGGER_KEY = "合轴触发键"
     CONF_COAXIS_REQUIEM_SWITCH_KEY = "安魂曲切换键"
     CONF_COAXIS_ZANKOU_SWITCH_KEY = "残虹切换键"
@@ -319,7 +319,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_GROUP_COAXIS: False,
                 self.CONF_COAXIS_COMBAT_ENABLE: False,
                 self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT: False,
-                self.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU: False,
+                self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT: "关闭",
                 self.CONF_COAXIS_TRIGGER_KEY: "8",
                 self.CONF_COAXIS_REQUIEM_SWITCH_KEY: "1",
                 self.CONF_COAXIS_ZANKOU_SWITCH_KEY: "2",
@@ -392,6 +392,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "type": "drop_down",
                     "options": ["1", "2", "3", "4"],
                 },
+                self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT: {
+                    "type": "drop_down",
+                    "options": ["关闭", "1", "2", "3", "4"],
+                },
                 self.CONF_PRESET_OPS: {
                     "buttons": [
                         {"text": "保存到该档位", "callback": self._preset_save},
@@ -443,7 +447,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                         True: [
                             self.CONF_COAXIS_COMBAT_ENABLE,
                             self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT,
-                            self.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU,
+                            self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT,
                             self.CONF_COAXIS_TRIGGER_KEY,
                             self.CONF_COAXIS_REQUIEM_SWITCH_KEY,
                             self.CONF_COAXIS_ZANKOU_SWITCH_KEY,
@@ -611,8 +615,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "开=普通入场确认后和环合开始时, 由planner提前执行角色原有Q/E; "
                     "关=保持RU的切人和环合普攻逻辑"
                 ),
-                self.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU: (
-                    "开=安魂曲真技能确认后固定切残虹; 真技能窗口内残虹不切回安魂曲"
+                self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT: (
+                    "关闭=不固定切人; 1~4=安魂曲真技能确认后严格切到对应队伍位置; "
+                    "选残虹主C时保留其Q后合轴, 真技能窗口内不切回安魂曲"
                 ),
                 self.CONF_COAXIS_TRIGGER_KEY: "按一下开始重复合轴测试, 再按一下停止; 默认8",
                 self.CONF_COAXIS_REQUIEM_SWITCH_KEY: "安魂曲在队伍中的数字切换键; 默认1",

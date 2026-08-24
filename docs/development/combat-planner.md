@@ -184,6 +184,7 @@ LW 可选的补充 `ExpectedEntry` 策略；它不等同于 `expected_entry`，�
 
 ```python
 FollowupStep.for_action(zero, ActionSlot.SKILL)
+FollowupStep.for_switch(zero)
 ActionReservation.for_action(nanally, ActionSlot.SKILL)
 context.is_slot_available(self, ActionSlot.SKILL)
 ```
@@ -342,7 +343,8 @@ def combat_plan(self, context):
 
 常用 API：
 
-- `context.request_route(...)`：固定顺序协作路线。
+- `context.request_route(...)`：固定顺序协作路线。`FollowupStep.for_action()` 要求目标完成指定动作;
+  `FollowupStep.for_switch()` 只锁定切入目标, 在实际切到该角色时完成, 不强制目标动作。
 - `context.request_switch(...)`：请求下一次普通调度切给某角色。
 - `context.request_role(...)`：请求下一次普通调度切给某个队伍定位的角色；多个
   匹配角色时按普通切人评分选择。它不指定动作，也不打断当前 entry flow。

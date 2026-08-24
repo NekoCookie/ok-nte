@@ -37,7 +37,7 @@ class CoordinatedAxisSettings:
     zankou_hold_duration: float = 2.0
     zankou_normal_attack_duration: float = 2.0
     zankou_dodge_normal_attack_duration: float = 0.5
-    requiem_real_skill_to_zankou: bool = False
+    requiem_real_skill_switch_slot: int = 0
 
 
 @dataclass(slots=True)
@@ -122,6 +122,17 @@ def _config_boolean(config_task, key: str, default: bool) -> bool:
     return bool(value)
 
 
+def _config_switch_slot(config_task, key: str) -> int:
+    config = getattr(config_task, "config", None)
+    if not key or not hasattr(config, "get"):
+        return 0
+    try:
+        slot = int(str(config.get(key, "关闭") or "关闭").strip())
+    except (TypeError, ValueError):
+        return 0
+    return slot if 1 <= slot <= 4 else 0
+
+
 def coordinated_axis_settings(char: "BaseChar") -> CoordinatedAxisSettings:
     """Read the shared test/combat timings from Requiem configuration."""
 
@@ -179,10 +190,9 @@ def coordinated_axis_settings(char: "BaseChar") -> CoordinatedAxisSettings:
             getattr(config_task, "CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION", ""),
             0.5,
         ),
-        requiem_real_skill_to_zankou=_config_boolean(
+        requiem_real_skill_switch_slot=_config_switch_slot(
             config_task,
-            getattr(config_task, "CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU", ""),
-            False,
+            getattr(config_task, "CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT", ""),
         ),
     )
 

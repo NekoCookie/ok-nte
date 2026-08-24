@@ -77,7 +77,11 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             "关=保持RU的切人和环合普攻逻辑",
             task.config_description[task.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT],
         )
-        self.assertFalse(task.default_config[task.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU])
+        self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT], "关闭")
+        self.assertEqual(
+            task.config_type[task.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT]["options"],
+            ["关闭", "1", "2", "3", "4"],
+        )
         self.assertFalse(task.default_config[task.CONF_DISABLE_SKILLS])
         self.assertIn("不放E/Q", task.config_description[task.CONF_DISABLE_SKILLS])
         self.assertIn("G和合轴不受影响", task.config_description[task.CONF_DISABLE_SKILLS])
@@ -104,7 +108,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             [
                 task.CONF_COAXIS_COMBAT_ENABLE,
                 task.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT,
-                task.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU,
+                task.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT,
                 task.CONF_COAXIS_TRIGGER_KEY,
                 task.CONF_COAXIS_REQUIEM_SWITCH_KEY,
                 task.CONF_COAXIS_ZANKOU_SWITCH_KEY,

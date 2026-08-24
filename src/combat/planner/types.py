@@ -645,6 +645,7 @@ class FollowupStep:
     target_indices: set[int] = field(default_factory=set)
     target_names: set[str] = field(default_factory=set)
     requires_entry_reaction: bool = False
+    requires_switch: bool = False  # [lw] Complete a strict route on target entry.
     optional: bool = False
 
     @classmethod
@@ -683,6 +684,20 @@ class FollowupStep:
             requires_entry_reaction=True,
         )
 
+    @classmethod
+    def for_switch(
+        cls,
+        target: "BaseChar",
+        reason: str = "",
+    ) -> "FollowupStep":
+        """[lw] Create a strict step completed as soon as the target enters the field."""
+
+        return cls(
+            reason=reason or f"switch to {target}",
+            target_indices={target.index},
+            requires_switch=True,
+        )
+
     def matches_char(self, char: "BaseChar") -> bool:
         """判断角色是否符合此步骤的目标条件。"""
 
@@ -697,7 +712,7 @@ class FollowupStep:
     def wants(self, char: "BaseChar", action: ActionIntent | ActionResult) -> bool:
         """判断某角色动作是否满足此步骤。"""
 
-        if self.requires_entry_reaction:
+        if self.requires_entry_reaction or self.requires_switch:
             return False
         if not self.matches_char(char):
             return False
@@ -715,6 +730,11 @@ class FollowupStep:
         if not self.requires_entry_reaction:
             return False
         return self.matches_char(target_char)
+
+    def wants_switch(self, target_char: "BaseChar") -> bool:
+        """Return whether an actual switch to the target completes this step."""
+
+        return self.requires_switch and self.matches_char(target_char)
 
 
 @dataclass(slots=True)
