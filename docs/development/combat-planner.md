@@ -296,7 +296,7 @@ def combat_plan(self, context):
 - 抢回场后需要优先做某动作时，加 `expected_entry`。
 - 多个 FieldClaim 适合表达多个独立机制入口；planner 不累加 claim 分，只选择最高等级的匹配 claim。
 
-自动战斗的“入场提前执行技能大招”开启时, 拥有环合入场的角色会在环合窗口开始前调用
+安魂曲配置的“入场提前执行技能大招”开启时, 拥有环合入场的角色会在环合窗口开始前调用
 公开的 `CombatPlanner.perform_entry_expected_action(char)`。该调用只执行已经登记的一个
 `ExpectedEntry`, 不会运行普通 entry flow 或站场 fallback; 其 `ActionResult` 会带入
 随后的 `perform_current_char()`, 保证同一个 action 不会重复执行。关闭该配置时, 环合保留

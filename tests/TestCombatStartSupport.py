@@ -12,7 +12,6 @@ from src.combat.BaseCombatTask import BaseCombatTask
 from src.combat.planner import ActionSlot
 from src.char.BaseChar import BaseChar
 from src.lw.combat_templates import BuffSupport
-from src.tasks.trigger.AutoCombatTask import AutoCombatTask
 from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 
 
@@ -134,20 +133,23 @@ class TestCombatStartDispatch(unittest.TestCase):
         char.task.combat_planner.perform_entry_expected_action.assert_called_once_with(char)
         self.assertIn("time_out", char.wait_intro.call_args.kwargs)
 
-    def _switch_input_task(self, enabled=True):
+    def _entry_ability_task(self, enabled=True):
         task = BaseCombatTask.__new__(BaseCombatTask)
         config_task = SimpleNamespace(
-            config={RequiemCombatConfigTask.CONF_COAXIS_SWITCH_ABILITY_INPUT: enabled},
-            CONF_COAXIS_SWITCH_ABILITY_INPUT=(
-                RequiemCombatConfigTask.CONF_COAXIS_SWITCH_ABILITY_INPUT
+            config={RequiemCombatConfigTask.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT: enabled},
+            CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT=(
+                RequiemCombatConfigTask.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT
             ),
         )
-        task.get_task_by_class = mock.MagicMock(return_value=config_task)
-        task.send_key = mock.MagicMock(return_value=True)
+        task.get_task_by_class = mock.MagicMock(
+            side_effect=lambda task_class: config_task
+            if task_class is RequiemCombatConfigTask
+            else (_ for _ in ()).throw(LookupError("unexpected config task"))
+        )
         return task
 
     def test_switch_entry_uses_scoring_ultimate_or_skill_fallback(self):
-        task = self._switch_input_task()
+        task = self._entry_ability_task()
         target = SimpleNamespace(index=1)
         ultimate_decision = SimpleNamespace(
             scoring_action_slot=ActionSlot.ULTIMATE,
@@ -170,7 +172,7 @@ class TestCombatStartDispatch(unittest.TestCase):
         self.assertIsNone(task.lw_switch_expected_entry_for_decision(target, entry_ultimate_decision))
 
     def test_switch_entry_prioritizes_ready_ultimate_over_skill_score(self):
-        task = self._switch_input_task()
+        task = self._entry_ability_task()
         target = SimpleNamespace(
             index=2,
             ultimate_available=mock.MagicMock(return_value=True),
@@ -184,7 +186,7 @@ class TestCombatStartDispatch(unittest.TestCase):
         target.ultimate_available.assert_called_once_with()
 
     def test_switch_entry_keeps_explicit_skill_entry_over_a_ready_ultimate(self):
-        task = self._switch_input_task()
+        task = self._entry_ability_task()
         target = SimpleNamespace(
             index=2,
             ultimate_available=mock.MagicMock(return_value=True),
@@ -228,31 +230,11 @@ class TestCombatStartDispatch(unittest.TestCase):
         task.ensure_main.assert_not_called()
 
     def test_switch_entry_is_disabled_by_default_setting(self):
-        task = self._switch_input_task(enabled=False)
+        task = self._entry_ability_task(enabled=False)
         target = SimpleNamespace(index=1)
         decision = SimpleNamespace(scoring_action_slot=ActionSlot.ULTIMATE, expected_entry=None)
 
         self.assertIsNone(task.lw_switch_expected_entry_for_decision(target, decision))
-
-    def test_auto_combat_entry_ability_setting_enables_switch_entry(self):
-        task = BaseCombatTask.__new__(BaseCombatTask)
-        auto_config = SimpleNamespace(
-            config={AutoCombatTask.CONF_EARLY_ENTRY_ABILITY_INPUT: True},
-            CONF_EARLY_ENTRY_ABILITY_INPUT=AutoCombatTask.CONF_EARLY_ENTRY_ABILITY_INPUT,
-        )
-        task.get_task_by_class = mock.MagicMock(
-            side_effect=lambda task_class: auto_config
-            if task_class is AutoCombatTask
-            else (_ for _ in ()).throw(LookupError("Requiem config unavailable"))
-        )
-        target = SimpleNamespace(index=1)
-        decision = SimpleNamespace(scoring_action_slot=ActionSlot.SKILL, expected_entry=None)
-
-        self.assertTrue(task.lw_early_entry_ability_input_enabled())
-        self.assertEqual(
-            task.lw_switch_expected_entry_for_decision(target, decision).slot,
-            ActionSlot.SKILL,
-        )
 
     def test_regular_switch_registers_the_supplemental_planner_entry_action(self):
         task = BaseCombatTask.__new__(BaseCombatTask)

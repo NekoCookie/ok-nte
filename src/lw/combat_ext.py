@@ -227,41 +227,27 @@ class CombatExtMixin(_TaskProxy):
         return run_zankou_opening_gold_skill(self)
 
     def lw_early_entry_ability_input_enabled(self) -> bool:
-        """Return whether the Auto Combat entry Q/E path is explicitly enabled."""
+        """Return whether the Requiem coaxis entry Q/E path is explicitly enabled."""
 
         get_task_by_class = getattr(self, "get_task_by_class", None)
         if not callable(get_task_by_class):
             return False
 
-        from src.tasks.trigger.AutoCombatTask import AutoCombatTask
+        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 
         try:
-            config_task = get_task_by_class(AutoCombatTask)
+            config_task = get_task_by_class(RequiemCombatConfigTask)
         except (LookupError, RuntimeError, TypeError):
             return False
         config = getattr(config_task, "config", None)
-        key = getattr(config_task, "CONF_EARLY_ENTRY_ABILITY_INPUT", "")
+        key = getattr(config_task, "CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT", "")
         return bool(key and hasattr(config, "get") and config.get(key, False))
 
     def lw_switch_expected_entry_for_decision(self, switch_to, decision):
         """Select a supplemental planner entry action for an ordinary switch."""
 
         early_entry_enabled = self.lw_early_entry_ability_input_enabled()
-        legacy_enabled = False
-        get_task_by_class = getattr(self, "get_task_by_class", None)
-        if callable(get_task_by_class):
-            from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
-
-            try:
-                config_task = get_task_by_class(RequiemCombatConfigTask)
-            except (LookupError, RuntimeError, TypeError):
-                config_task = None
-            config = getattr(config_task, "config", None)
-            enabled_key = getattr(config_task, "CONF_COAXIS_SWITCH_ABILITY_INPUT", "")
-            legacy_enabled = bool(
-                enabled_key and hasattr(config, "get") and config.get(enabled_key, False)
-            )
-        if not legacy_enabled and not early_entry_enabled:
+        if not early_entry_enabled:
             return None
 
         from src.combat.planner import ActionSlot, ExpectedEntry

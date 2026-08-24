@@ -212,6 +212,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     # [lw] Requiem and Zankou main-DPS axis settings, folded away by default.
     CONF_GROUP_COAXIS = "▸ 安魂曲残虹合轴(展开)"
     CONF_COAXIS_COMBAT_ENABLE = "实战启用合轴"
+    CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT = "入场提前执行技能大招"
     CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU = "安魂曲真技能后切残虹"
     CONF_COAXIS_TRIGGER_KEY = "合轴触发键"
     CONF_COAXIS_REQUIEM_SWITCH_KEY = "安魂曲切换键"
@@ -223,7 +224,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT = "残虹强化E打断合轴"
     CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL = "开局残虹黄E后切辅助"
     CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS = "黄E入场小怪也触发"
-    CONF_COAXIS_SWITCH_ABILITY_INPUT = "普通切人重复按技能大招"
     CONF_COAXIS_ZANKOU_HOLD_DURATION = "残虹长按普攻时长(s)"
     CONF_COAXIS_ZANKOU_NORMAL_DURATION = "残虹普攻时长(s)"
     CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION = "残虹声音闪避后普攻时长(s)"
@@ -318,6 +318,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 # [lw] Pair-axis testing and default-off automatic-combat integration.
                 self.CONF_GROUP_COAXIS: False,
                 self.CONF_COAXIS_COMBAT_ENABLE: False,
+                self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT: False,
                 self.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU: False,
                 self.CONF_COAXIS_TRIGGER_KEY: "8",
                 self.CONF_COAXIS_REQUIEM_SWITCH_KEY: "1",
@@ -329,7 +330,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: False,
                 self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: False,
                 self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS: True,
-                self.CONF_COAXIS_SWITCH_ABILITY_INPUT: False,
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.5,
@@ -442,6 +442,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "sub_configs": {
                         True: [
                             self.CONF_COAXIS_COMBAT_ENABLE,
+                            self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT,
                             self.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU,
                             self.CONF_COAXIS_TRIGGER_KEY,
                             self.CONF_COAXIS_REQUIEM_SWITCH_KEY,
@@ -452,7 +453,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                             self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION,
                             self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT,
                             self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL,
-                            self.CONF_COAXIS_SWITCH_ABILITY_INPUT,
                             self.CONF_COAXIS_ZANKOU_HOLD_DURATION,
                             self.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
                             self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
@@ -607,6 +607,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_SUPPORT_ULTIMATE_PREEMPTION: "开=辅助 Q 待铺时在环合前抢占; 关=仅按普通评分参与切人",
                 self.CONF_GROUP_COAXIS: "▸ 分组折叠: 展开安魂曲主C与残虹主C的合轴触发键和时序",
                 self.CONF_COAXIS_COMBAT_ENABLE: "开=两个主C模板同队时自动进入实战合轴; 关=仅保留按键测试",
+                self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT: (
+                    "开=普通入场确认后和环合开始时, 由planner提前执行角色原有Q/E; "
+                    "关=保持RU的切人和环合普攻逻辑"
+                ),
                 self.CONF_COAXIS_REQUIEM_REAL_SKILL_TO_ZANKOU: (
                     "开=安魂曲真技能确认后固定切残虹; 真技能窗口内残虹不切回安魂曲"
                 ),
@@ -633,10 +637,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 ),
                 self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS: (
                     "开=Boss和小怪战斗都插入黄E入场; 关=仅屏幕顶部有Boss血条时插入"
-                ),
-                self.CONF_COAXIS_SWITCH_ABILITY_INPUT: (
-                    "开=普通planner切人未确认时, 大招切人重复按Q, 其他切人重复按E; "
-                    "长按技能按角色自身时长重复发送"
                 ),
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: "残虹合轴阶段长按普攻的持续秒数",
                 self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: "残虹长按结束后按共享间隔持续普攻这么久, 然后切回安魂曲",
