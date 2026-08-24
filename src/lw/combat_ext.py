@@ -247,11 +247,46 @@ class CombatExtMixin(_TaskProxy):
 
         from src.combat.planner import ActionSlot
 
+        expected_entry = getattr(decision, "expected_entry", None)
+        expected_slot = getattr(expected_entry, "slot", None)
+        if expected_slot == ActionSlot.ULTIMATE:
+            return "ultimate"
+        if expected_slot == ActionSlot.SKILL:
+            return "skill"
+
+        ultimate_available = getattr(switch_to, "ultimate_available", None)
+        if callable(ultimate_available):
+            try:
+                if ultimate_available():
+                    return "ultimate"
+            except (AttributeError, RuntimeError, TypeError):
+                pass
+
         action_slot = getattr(decision, "scoring_action_slot", None)
-        if action_slot is None:
-            expected_entry = getattr(decision, "expected_entry", None)
-            action_slot = getattr(expected_entry, "slot", None)
         return "ultimate" if action_slot == ActionSlot.ULTIMATE else "skill"
+
+    def lw_switch_target_entered_during_revive_prompt(self, current_char, switch_to, frame) -> bool:
+        """Confirm the target entered before attributing a revive prompt to it."""
+
+        if current_char is None or switch_to is None or current_char is switch_to:
+            return False
+        try:
+            revive_visible = self.find_confirm(
+                self.box_of_screen(0.655, 0.694, 0.709, 0.787, hcenter=True)
+            )
+            target_is_active = self.is_char_at_index(
+                switch_to.index,
+                frame=frame,
+                char_count=self.team_size,
+            )
+        except (AttributeError, RuntimeError, TypeError):
+            return False
+        if not revive_visible or not target_is_active:
+            return False
+
+        current_char.mark_dead("revive prompt after switch target became active")
+        self.ensure_main(in_world=False)
+        return True
 
     def lw_send_switch_input(self, switch_to, switch_input) -> bool:
         """Send one switch-window Q/E input without changing the target's planner state."""

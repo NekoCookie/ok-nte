@@ -125,6 +125,61 @@ class TestCombatStartDispatch(unittest.TestCase):
         self.assertEqual(task.lw_switch_input_for_decision(target, skill_decision), "skill")
         self.assertEqual(task.lw_switch_input_for_decision(target, entry_ultimate_decision), "ultimate")
 
+    def test_switch_input_prioritizes_ready_ultimate_over_skill_score(self):
+        task = self._switch_input_task()
+        target = SimpleNamespace(
+            index=2,
+            ultimate_available=mock.MagicMock(return_value=True),
+        )
+        decision = SimpleNamespace(scoring_action_slot=ActionSlot.SKILL, expected_entry=None)
+
+        self.assertEqual(task.lw_switch_input_for_decision(target, decision), "ultimate")
+        target.ultimate_available.assert_called_once_with()
+
+    def test_switch_input_keeps_explicit_skill_entry_over_a_ready_ultimate(self):
+        task = self._switch_input_task()
+        target = SimpleNamespace(
+            index=2,
+            ultimate_available=mock.MagicMock(return_value=True),
+        )
+        decision = SimpleNamespace(
+            scoring_action_slot=ActionSlot.ULTIMATE,
+            expected_entry=SimpleNamespace(slot=ActionSlot.SKILL),
+        )
+
+        self.assertEqual(task.lw_switch_input_for_decision(target, decision), "skill")
+        target.ultimate_available.assert_not_called()
+
+    def test_active_switch_target_is_not_marked_dead_by_another_char_revive_prompt(self):
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        current = SimpleNamespace(index=3, mark_dead=mock.MagicMock())
+        target = SimpleNamespace(index=2)
+        task.chars = [SimpleNamespace(), SimpleNamespace(), target, current]
+        task.box_of_screen = mock.MagicMock(return_value="revive_box")
+        task.find_confirm = mock.MagicMock(return_value=True)
+        task.is_char_at_index = mock.MagicMock(return_value=True)
+        task.ensure_main = mock.MagicMock()
+
+        self.assertTrue(task.lw_switch_target_entered_during_revive_prompt(current, target, "frame"))
+
+        current.mark_dead.assert_called_once_with("revive prompt after switch target became active")
+        task.ensure_main.assert_called_once_with(in_world=False)
+
+    def test_inactive_switch_target_keeps_existing_revive_death_handling(self):
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        current = SimpleNamespace(index=3, mark_dead=mock.MagicMock())
+        target = SimpleNamespace(index=2)
+        task.chars = [SimpleNamespace(), SimpleNamespace(), target, current]
+        task.box_of_screen = mock.MagicMock(return_value="revive_box")
+        task.find_confirm = mock.MagicMock(return_value=True)
+        task.is_char_at_index = mock.MagicMock(return_value=False)
+        task.ensure_main = mock.MagicMock()
+
+        self.assertFalse(task.lw_switch_target_entered_during_revive_prompt(current, target, "frame"))
+
+        current.mark_dead.assert_not_called()
+        task.ensure_main.assert_not_called()
+
     def test_switch_input_is_disabled_by_default_setting(self):
         task = self._switch_input_task(enabled=False)
         target = SimpleNamespace(index=1)

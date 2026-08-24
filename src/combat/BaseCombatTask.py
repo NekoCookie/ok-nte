@@ -526,6 +526,16 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
                     if elapsed > 5:
                         self.raise_not_in_combat(info)
 
+                    if self.lw_switch_target_entered_during_revive_prompt(  # [lw]
+                        current_char,
+                        switch_to,
+                        frame,
+                    ):
+                        logger.info(f"{log_prefix} detected by active target during revive prompt")
+                        self._set_current_char(current_char, switch_to, has_intro)
+                        self.lw_record_intro_switch_input(switch_to, switch_input)
+                        break
+
                     if self._mark_dead_char_if_detected(switch_to):
                         return
 
