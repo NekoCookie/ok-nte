@@ -265,6 +265,35 @@ class TestCombatStartDispatch(unittest.TestCase):
             target, task.lw_switch_expected_entry_for_decision.return_value
         )
         self.assertNotIn("send_switch_attack", task._switch_to_char.call_args.kwargs)
+        self.assertTrue(task._switch_to_char.call_args.kwargs["retry_intro"])
+
+    def test_strict_route_does_not_replan_the_switch_target_for_a_late_intro(self):
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        current = mock.MagicMock()
+        target = mock.MagicMock(index=1)
+        expected_entry = SimpleNamespace(slot=ActionSlot.ULTIMATE)
+        task.combat_session = SimpleNamespace(switch_enabled=True)
+        task.chars = [current, target]
+        task._wait_switch_in_guard = mock.MagicMock()
+        task.lw_switch_expected_entry_for_decision = mock.MagicMock()
+        task._switch_to_char = mock.MagicMock()
+        decision = SimpleNamespace(
+            target=target,
+            has_intro=False,
+            expected_entry=expected_entry,
+            reason="strict route to zankou",
+            scoring_action_slot=ActionSlot.ULTIMATE,
+        )
+        task.combat_planner = mock.MagicMock()
+        task.combat_planner.decide_switch.return_value = decision
+        task.combat_planner.has_strict_route.return_value = True
+
+        task.switch_next_char(current)
+
+        task._wait_switch_in_guard.assert_not_called()
+        task._switch_to_char.assert_called_once()
+        self.assertIs(task._switch_to_char.call_args.args[0], target)
+        self.assertFalse(task._switch_to_char.call_args.kwargs["retry_intro"])
 
     def test_completed_lw_opening_skips_the_initial_attack(self):
         task = BaseCombatTask.__new__(BaseCombatTask)

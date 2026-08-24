@@ -685,7 +685,8 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             )
             return
 
-        if not self.combat_planner.has_strict_route(current_char):
+        strict_route_active = self.combat_planner.has_strict_route(current_char)
+        if not strict_route_active:
             self._wait_switch_in_guard(current_char, switch_to, has_intro)
             current_char.wait_switch_cd()
 
@@ -699,7 +700,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             has_intro=has_intro,
             post_action=post_action,
             free_intro=free_intro,
-            retry_intro=True,
+            retry_intro=not strict_route_active,  # [lw] A strict route must keep its chosen target.
             log_prefix=f"planner switch_next_char ({decision.reason})",
         )
 
