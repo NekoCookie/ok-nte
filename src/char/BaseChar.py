@@ -136,7 +136,22 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         self.task.record_first_engage(self)
         if self.has_intro:
             self.add_intro_motion_freeze(self.last_perform)
-            self.wait_intro()
+            early_entry_abilities = getattr(
+                self.task, "lw_early_entry_ability_input_enabled", None
+            )
+            if callable(early_entry_abilities) and early_entry_abilities():  # [lw]
+                perform_entry_expected = getattr(
+                    self.task.combat_planner, "perform_entry_expected_action", None
+                )
+                if callable(perform_entry_expected):
+                    perform_entry_expected(self)
+                remaining_intro = max(
+                    0.0,
+                    self.intro_motion_freeze_duration() - (time.time() - self.last_perform),
+                )
+                self.wait_intro(time_out=remaining_intro)
+            else:
+                self.wait_intro()
         self._try_default_arc_click()
 
         self.task.combat_planner.perform_current_char(self)

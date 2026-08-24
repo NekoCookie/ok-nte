@@ -10,7 +10,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.combat.BaseCombatTask import BaseCombatTask
 from src.combat.planner import ActionSlot
+from src.char.BaseChar import BaseChar
 from src.lw.combat_templates import BuffSupport
+from src.tasks.trigger.AutoCombatTask import AutoCombatTask
 from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 
 
@@ -95,6 +97,43 @@ class TestCombatStartResourceSettle(unittest.TestCase):
 
 
 class TestCombatStartDispatch(unittest.TestCase):
+    def _intro_char(self, early_entry_abilities):
+        task = SimpleNamespace(
+            record_first_engage=mock.MagicMock(),
+            lw_early_entry_ability_input_enabled=mock.MagicMock(
+                return_value=early_entry_abilities
+            ),
+            combat_planner=mock.MagicMock(),
+            refresh_cd=mock.MagicMock(),
+        )
+        char = BaseChar.__new__(BaseChar)
+        char.task = task
+        char.index = 0
+        char.has_intro = True
+        char.add_intro_motion_freeze = mock.MagicMock()
+        char.intro_motion_freeze_duration = mock.MagicMock(return_value=1.5)
+        char.wait_intro = mock.MagicMock()
+        char._try_default_arc_click = mock.MagicMock()
+        char.switch_next_char = mock.MagicMock()
+        char.logger = mock.MagicMock()
+        return char
+
+    def test_intro_keeps_ru_attack_wait_when_early_entry_setting_is_off(self):
+        char = self._intro_char(early_entry_abilities=False)
+
+        BaseChar.perform(char)
+
+        char.wait_intro.assert_called_once_with()
+        char.task.combat_planner.perform_entry_expected_action.assert_not_called()
+
+    def test_intro_runs_planner_entry_action_when_early_entry_setting_is_on(self):
+        char = self._intro_char(early_entry_abilities=True)
+
+        BaseChar.perform(char)
+
+        char.task.combat_planner.perform_entry_expected_action.assert_called_once_with(char)
+        self.assertIn("time_out", char.wait_intro.call_args.kwargs)
+
     def _switch_input_task(self, enabled=True):
         task = BaseCombatTask.__new__(BaseCombatTask)
         config_task = SimpleNamespace(
@@ -195,6 +234,26 @@ class TestCombatStartDispatch(unittest.TestCase):
 
         self.assertIsNone(task.lw_switch_expected_entry_for_decision(target, decision))
 
+    def test_auto_combat_entry_ability_setting_enables_switch_entry(self):
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        auto_config = SimpleNamespace(
+            config={AutoCombatTask.CONF_EARLY_ENTRY_ABILITY_INPUT: True},
+            CONF_EARLY_ENTRY_ABILITY_INPUT=AutoCombatTask.CONF_EARLY_ENTRY_ABILITY_INPUT,
+        )
+        task.get_task_by_class = mock.MagicMock(
+            side_effect=lambda task_class: auto_config
+            if task_class is AutoCombatTask
+            else (_ for _ in ()).throw(LookupError("Requiem config unavailable"))
+        )
+        target = SimpleNamespace(index=1)
+        decision = SimpleNamespace(scoring_action_slot=ActionSlot.SKILL, expected_entry=None)
+
+        self.assertTrue(task.lw_early_entry_ability_input_enabled())
+        self.assertEqual(
+            task.lw_switch_expected_entry_for_decision(target, decision).slot,
+            ActionSlot.SKILL,
+        )
+
     def test_regular_switch_registers_the_supplemental_planner_entry_action(self):
         task = BaseCombatTask.__new__(BaseCombatTask)
         current = mock.MagicMock()
@@ -223,7 +282,7 @@ class TestCombatStartDispatch(unittest.TestCase):
         task.combat_planner.expect_entry_action.assert_called_once_with(
             target, task.lw_switch_expected_entry_for_decision.return_value
         )
-        self.assertFalse(task._switch_to_char.call_args.kwargs["send_switch_attack"])
+        self.assertNotIn("send_switch_attack", task._switch_to_char.call_args.kwargs)
 
     def test_completed_lw_opening_skips_the_initial_attack(self):
         task = BaseCombatTask.__new__(BaseCombatTask)

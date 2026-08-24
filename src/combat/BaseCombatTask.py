@@ -701,7 +701,6 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             free_intro=free_intro,
             retry_intro=True,
             log_prefix=f"planner switch_next_char ({decision.reason})",
-            send_switch_attack=expected_entry is None,  # [lw] Keep the selected planner Q/E first.
         )
 
     def switch_other_char(self, current_char: "BaseChar"):

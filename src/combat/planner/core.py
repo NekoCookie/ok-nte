@@ -156,6 +156,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         self.task = task
         self.state = CombatState()
         self._log_gate = LogGate(logger)
+        self._pre_entry_results: dict[int, dict[str, ActionResult]] = {}
 
     def reset(self, chars: Iterable["BaseChar"]) -> None:
         """重置 planner 管理的队伍角色和运行状态。
@@ -165,6 +166,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         """
 
         self.state.reset(chars)
+        self._pre_entry_results.clear()
         self._apply_combat_policies()
 
     def _apply_combat_policies(self) -> None:
@@ -283,6 +285,24 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
 
         self.state.set_pending_entry_expectation(target_char, expected_entry)
 
+    def perform_entry_expected_action(self, current_char: "BaseChar") -> ActionResult | None:
+        """Execute one pending expected action before an intro wait begins.
+
+        This is intentionally limited to an already registered `ExpectedEntry`; it
+        never starts a normal entry flow or a fallback action. The result is carried
+        into the following `perform_current_char()` call so a generator receives it
+        and the selected action is not executed twice.
+        """
+
+        context = self.context_for(current_char, {})
+        action = self._entry_expected_action(current_char, context)
+        if action is None:
+            return None
+        result, executed = self._execute_entry_action(current_char, action, context)
+        if executed:
+            self._pre_entry_results.setdefault(current_char.index, {})[action.identity_key()] = result
+        return result
+
     def perform_current_char(self, current_char: "BaseChar") -> ActionResult | None:
         """规划并执行当前在场角色的动作。
 
@@ -381,9 +401,14 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
                 request.reason = f"{current_char} planner request"
 
     def _entry_session_for(self, current_char: "BaseChar") -> _EntrySession:
+        pre_entry_results = self._pre_entry_results.pop(current_char.index, {})
+        last_result = next(reversed(pre_entry_results.values()), None)
         return _EntrySession(
             char=current_char,
             context=self.context_for(current_char, {}),
+            performed_results=pre_entry_results,
+            last_result=last_result,
+            successful_action=any(result.success for result in pre_entry_results.values()),
         )
 
     def _next_session_action(

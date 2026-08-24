@@ -1124,6 +1124,36 @@ class TestCombatPlanner(unittest.TestCase):
         self.assertEqual(calls, ["fadia_ultimate"])
         self.assertEqual(result.name, "fadia_ultimate")
 
+    def test_expected_entry_can_run_before_intro_and_replay_into_entry_flow(self):
+        calls = []
+        ultimate = self._action(
+            "fadia_ultimate",
+            {ActionTag.ULTIMATE_ACTION},
+            ActionSlot.ULTIMATE,
+            calls,
+        )
+        skill = self._action(
+            "fadia_skill",
+            {ActionTag.SKILL_ACTION},
+            ActionSlot.SKILL,
+            calls,
+        )
+
+        def entry():
+            if (yield ultimate):
+                yield skill
+
+        char = FakeChar(0, "fadia", plan_items=lambda _: CombatPlan([ultimate, skill], entry=entry))
+        planner = self._planner([char])
+        planner.expect_entry_action(char, ExpectedEntry(slot=ActionSlot.ULTIMATE))
+
+        pre_entry = planner.perform_entry_expected_action(char)
+        result = planner.perform_current_char(char)
+
+        self.assertEqual(pre_entry.name, "fadia_ultimate")
+        self.assertEqual(calls, ["fadia_ultimate", "fadia_skill"])
+        self.assertEqual(result.name, "fadia_skill")
+
     def test_entry_flow_supports_python_boolean_logic(self):
         scenarios = [
             (

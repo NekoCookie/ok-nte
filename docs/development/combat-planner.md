@@ -159,7 +159,8 @@ action 代表该角色参赛。tag 不控制普通入场流程；普通入场由
 控制。
 
 `SwitchDecision.scoring_action_slot` 记录该普通切人评分所选 action 的槽位，只用于
-切人窗口等输入策略；它不等同于 `expected_entry`，也不改变目标角色入场后的 action 顺序。
+LW 可选的补充 `ExpectedEntry` 策略；它不等同于 `expected_entry`，也不改变目标角色
+原有的 entry flow 顺序。
 
 环合资源属于当前角色与其实际环合目标的配对，不能因为当前角色环合已满就传播给任意
 切人目标。planner 会在最终选定目标后确认 `has_intro`；只有目标正是当前环合反应目标时，
@@ -294,6 +295,13 @@ def combat_plan(self, context):
 - 需要“之后抢回场”时用 FieldClaim。
 - 抢回场后需要优先做某动作时，加 `expected_entry`。
 - 多个 FieldClaim 适合表达多个独立机制入口；planner 不累加 claim 分，只选择最高等级的匹配 claim。
+
+自动战斗的“入场提前执行技能大招”开启时, 拥有环合入场的角色会在环合窗口开始前调用
+公开的 `CombatPlanner.perform_entry_expected_action(char)`。该调用只执行已经登记的一个
+`ExpectedEntry`, 不会运行普通 entry flow 或站场 fallback; 其 `ActionResult` 会带入
+随后的 `perform_current_char()`, 保证同一个 action 不会重复执行。关闭该配置时, 环合保留
+RU 原有的完整普攻窗口。提前的 Q/E 仍由 planner 调用角色的标准 action, 而不是由切人代码
+直接发键。
 
 ## combat_policies
 
