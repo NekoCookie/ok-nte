@@ -33,6 +33,7 @@ class CoordinatedAxisSettings:
     zankou_intro_wait_duration: float = 1.5
     zankou_gold_skill_interrupt: bool = False
     opening_zankou_gold_skill: bool = False
+    opening_zankou_gold_skill_non_boss: bool = True
     zankou_hold_duration: float = 2.0
     zankou_normal_attack_duration: float = 2.0
     zankou_dodge_normal_attack_duration: float = 0.5
@@ -156,6 +157,11 @@ def coordinated_axis_settings(char: "BaseChar") -> CoordinatedAxisSettings:
             config_task,
             getattr(config_task, "CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL", ""),
             False,
+        ),
+        opening_zankou_gold_skill_non_boss=_config_boolean(
+            config_task,
+            getattr(config_task, "CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS", ""),
+            True,
         ),
         zankou_hold_duration=_config_number(
             config_task,
@@ -396,6 +402,15 @@ def run_zankou_opening_gold_skill(task) -> bool:
         return False
     settings = coordinated_axis_settings(zankou)
     if not settings.opening_zankou_gold_skill:
+        return False
+    is_boss = getattr(task, "is_boss", None)
+    if not settings.opening_zankou_gold_skill_non_boss and (
+        not callable(is_boss) or not is_boss()
+    ):
+        logger = getattr(task, "logger", None)
+        log_info = getattr(logger, "info", None)
+        if callable(log_info):
+            log_info("combat opening zankou gold skill skipped outside a boss fight")
         return False
     if (
         coordinated_axis_partner(

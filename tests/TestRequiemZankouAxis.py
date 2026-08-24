@@ -140,6 +140,7 @@ class FakeOpeningTask:
                 return_value=SimpleNamespace(target=opening_target, has_intro=True)
             )
         )
+        self.is_boss = mock.MagicMock(return_value=True)
         self.switches = []
         self.switch_attack_options = []
         for char in self.chars:
@@ -182,6 +183,7 @@ def make_config_task(combat_enabled=True, **overrides):
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION: 1.25,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: False,
         RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: False,
+        RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS: True,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_HOLD_DURATION: 1.8,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 0.45,
         RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.5,
@@ -205,6 +207,9 @@ def make_config_task(combat_enabled=True, **overrides):
         ),
         CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL=(
             RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL
+        ),
+        CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS=(
+            RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS
         ),
         CONF_COAXIS_ZANKOU_HOLD_DURATION=(
             RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_HOLD_DURATION
@@ -344,6 +349,28 @@ class TestRequiemZankouAxis(unittest.TestCase):
 
         self.assertEqual(task.switches, [])
         self.assertEqual([event for event in zankou.events if event[0] == "hold"], [("hold", 1.8)])
+
+    def test_opening_gold_skill_can_skip_non_boss_battles(self):
+        config_task = make_config_task(
+            **{
+                RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: True,
+                RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS: False,
+            }
+        )
+        requiem = FakeCombatChar(config_task)
+        requiem.impl_id = REQUIEM_IMPL_ID
+        zankou = FakeCombatChar(config_task, gold_skill_times=(1.0,))
+        zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
+        support = FakeCombatChar(config_task)
+        task = FakeOpeningTask(config_task, requiem, zankou, support)
+        task.is_boss.return_value = False
+
+        self.assertFalse(run_zankou_opening_gold_skill(task))
+
+        task.is_boss.assert_called_once_with()
+        task.combat_planner.decide_combat_start_char.assert_not_called()
+        self.assertEqual(task.switches, [])
+        self.assertEqual([event for event in zankou.events if event[0] == "hold"], [])
 
     def test_requiem_free_skill_uses_axis_followup_instead_of_old_break_sequence(self):
         requiem, zankou, context = make_combat_pair(combat_enabled=True)

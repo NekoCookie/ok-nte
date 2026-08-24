@@ -604,33 +604,49 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         if require_intro and not has_intro:
             return SwitchDecision(current_char, "intro required but not ready", -999999, has_intro)
 
-        route_decision = self._strict_route_decision(current_char, context, has_intro)
+        def finalize(decision: SwitchDecision | None) -> SwitchDecision | None:
+            if decision is None:
+                return None
+            decision.has_intro = self.lw_switch_target_has_intro(  # [lw]
+                current_char,
+                decision.target,
+                decision.has_intro,
+            )
+            if require_intro and not decision.has_intro:
+                return None
+            return decision
+
+        route_decision = finalize(self._strict_route_decision(current_char, context, has_intro))
         if route_decision is not None:
             self._log_switch_decision(current_char, route_decision)
             return route_decision
 
-        entry_request_decision = self._entry_reaction_request_decision(
-            current_char, context, has_intro
+        entry_request_decision = finalize(
+            self._entry_reaction_request_decision(current_char, context, has_intro)
         )
         if entry_request_decision is not None:
             self._log_switch_decision(current_char, entry_request_decision)
             return entry_request_decision
 
-        preemptive_claim_decision = self.lw_preemptive_field_claim_decision(  # [lw]
-            current_char,
-            context,
-            has_intro,
+        preemptive_claim_decision = finalize(
+            self.lw_preemptive_field_claim_decision(  # [lw]
+                current_char,
+                context,
+                has_intro,
+            )
         )
         if preemptive_claim_decision is not None:
             self._log_switch_decision(current_char, preemptive_claim_decision)
             return preemptive_claim_decision
 
-        reaction_decision = self._element_reaction_decision(current_char, has_intro)
+        reaction_decision = finalize(self._element_reaction_decision(current_char, has_intro))
         if reaction_decision is not None:
             self._log_switch_decision(current_char, reaction_decision)
             return reaction_decision
 
-        switch_request_decision = self._switch_request_decision(current_char, context, has_intro)
+        switch_request_decision = finalize(
+            self._switch_request_decision(current_char, context, has_intro)
+        )
         if switch_request_decision is not None:
             self._log_switch_decision(current_char, switch_request_decision)
             return switch_request_decision
@@ -673,6 +689,9 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
                     scoring_action_slot,
                 )
 
+        best_decision = finalize(best_decision)
+        if best_decision is None:
+            return SwitchDecision(current_char, "intro target unavailable", -999999, False)
         self._log_switch_decision(current_char, best_decision)
         return best_decision
 

@@ -391,6 +391,38 @@ class TestCombatPlanner(unittest.TestCase):
         self.assertFalse(decision.has_intro)
         self.assertTrue(is_lw_preemptive_field_claim(list(support.combat_plan(None).claims)[0]))
 
+    def test_preemptive_field_claim_keeps_intro_when_it_is_the_ring_target(self):
+        current = FakeChar(0, "current", cycle_full=True)
+        support = FakeChar(
+            1,
+            "support",
+            claims=[lw_preemptive_field_claim("confirmed buff resource")],
+        )
+        other = FakeChar(2, "other")
+        planner = self._planner([current, support, other])
+        planner.task.reaction_target = support
+
+        decision = planner.decide_switch(current)
+
+        self.assertEqual(decision.target, support)
+        self.assertTrue(decision.has_intro)
+
+    def test_require_intro_skips_preemptive_target_outside_the_ring(self):
+        current = FakeChar(0, "current", cycle_full=True)
+        reaction = FakeChar(1, "reaction")
+        support = FakeChar(
+            2,
+            "support",
+            claims=[lw_preemptive_field_claim("confirmed buff resource")],
+        )
+        planner = self._planner([current, reaction, support])
+        planner.task.reaction_target = reaction
+
+        decision = planner.decide_switch(current, require_intro=True)
+
+        self.assertEqual(decision.target, reaction)
+        self.assertTrue(decision.has_intro)
+
     def test_strict_route_preempts_preemptive_field_claim(self):
         source = FakeChar(0, "source")
         route_target = FakeChar(1, "route_target", tags={ActionTag.SKILL_ACTION})

@@ -161,6 +161,10 @@ action 代表该角色参赛。tag 不控制普通入场流程；普通入场由
 `SwitchDecision.scoring_action_slot` 记录该普通切人评分所选 action 的槽位，只用于
 切人窗口等输入策略；它不等同于 `expected_entry`，也不改变目标角色入场后的 action 顺序。
 
+环合资源属于当前角色与其实际环合目标的配对，不能因为当前角色环合已满就传播给任意
+切人目标。planner 会在最终选定目标后确认 `has_intro`；只有目标正是当前环合反应目标时，
+该次切人才能作为环合入场。优先级提权、路线或普通评分切向其他目标时均为普通入场。
+
 ## ActionSlot
 
 `ActionSlot` 是协作匹配用的动作槽位，比 action name 更推荐。

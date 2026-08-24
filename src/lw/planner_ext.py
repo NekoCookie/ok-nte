@@ -15,6 +15,19 @@ if TYPE_CHECKING:
 class CombatPlannerExtMixin:
     """LW switch policy using the stable RU CombatPlan and FieldClaim contracts."""
 
+    def lw_switch_target_has_intro(self, current_char, target, intro_available: bool) -> bool:
+        """Return whether this target is the current element-ring entry target."""
+
+        if not intro_available or target is None:
+            return False
+        find_target = getattr(self.task, "find_element_reaction_target", None)
+        if not callable(find_target):
+            return False
+        try:
+            return find_target(current_char) is target
+        except (AttributeError, RuntimeError, TypeError):
+            return False
+
     def lw_preemptive_field_claim_decision(
         self,
         current_char: "BaseChar",
@@ -54,7 +67,7 @@ class CombatPlannerExtMixin:
             target=target,
             reason=f"preemptive field claim: {claim.reason}",
             priority=999600,
-            has_intro=False,
+            has_intro=has_intro,
             expected_entry=claim.expected_entry,
         )
 
