@@ -13,6 +13,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from src.char.BaseChar import BaseChar
 from src.combat.BaseCombatTask import BaseCombatTask, SleepCheckSkip
 from src.lw.team_roster import TeamReloadRequested, TeamRosterMonitor
 
@@ -165,6 +166,48 @@ class TestTeamShrinkConfirm(unittest.TestCase):
 
         self.assertEqual(count, 3)
         self.assertEqual(t._do_load_char.call_count, 2)
+
+    def test_initial_snapshot_does_not_expand_from_default_unknown_placeholders(self):
+        t = make_reload_task()
+        t.chars = []
+        unknown = BaseChar.__new__(BaseChar)
+        unknown.char_id = "unknown"
+        unknown.char_name = "default"
+        unknown.confidence = 1.0
+        t._do_load_char = mock.MagicMock(return_value=unknown)
+
+        count = t._expand_initial_snapshot_from_portraits(2, [])
+
+        self.assertEqual(count, 2)
+        t._do_load_char.assert_called_once_with(2, [])
+
+    def test_unconfigured_recognized_character_can_expand_initial_snapshot(self):
+        t = make_reload_task()
+        t.chars = []
+        unconfigured = BaseChar.__new__(BaseChar)
+        unconfigured.char_id = "char_new"
+        unconfigured.char_name = "陌生角色"
+        unconfigured.confidence = 0.95
+        missing = BaseChar.__new__(BaseChar)
+        missing.char_id = "unknown"
+        missing.char_name = "default"
+        missing.confidence = 1.0
+        t._do_load_char = mock.MagicMock(side_effect=[unconfigured, missing])
+
+        count = t._expand_initial_snapshot_from_portraits(2, [])
+
+        self.assertEqual(count, 3)
+        self.assertEqual(t._do_load_char.call_count, 2)
+
+    def test_authoritative_four_slot_snapshot_keeps_unknown_portraits(self):
+        t = make_reload_task()
+        t.chars = []
+        t._do_load_char = mock.MagicMock()
+
+        count = t._expand_initial_snapshot_from_portraits(4, [])
+
+        self.assertEqual(count, 4)
+        t._do_load_char.assert_not_called()
 
     def test_recheck_throttled_within_interval(self):
         # 距上次检测不足 TEAM_RECHECK_INTERVAL → 短路, 不重复识别

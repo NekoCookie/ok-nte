@@ -2,7 +2,7 @@
 import os
 import sys
 import unittest
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -58,6 +58,34 @@ class TestUseUltimateConfig(unittest.TestCase):
 
         t._reload_combat_team.assert_called_once_with()
         t.combat_end.assert_called_once_with()
+
+    def test_roster_reload_monitor_starts_after_one_shot_combat_opening(self):
+        t = make_run_task(True)
+        events = []
+        t.begin_combat_session.side_effect = lambda: events.append("opening")
+
+        @contextmanager
+        def reload_watch():
+            events.append("reload_watch")
+            yield
+
+        t.team_reload_watch = reload_watch
+
+        t.run()
+
+        self.assertEqual(events, ["opening", "reload_watch"])
+        t.combat_end.assert_called_once_with()
+
+    def test_team_reload_skips_one_shot_combat_opening(self):
+        t = AutoCombatTask.__new__(AutoCombatTask)
+        t.load_chars = mock.MagicMock(return_value=True)
+        t.switch_to_combat_start_char = mock.MagicMock()
+        t._in_combat = False
+
+        self.assertTrue(t._reload_combat_team())
+
+        self.assertTrue(t._in_combat)
+        t.switch_to_combat_start_char.assert_called_once_with(lw_opening_checked=True)
 
     def test_action_error_still_runs_combat_cleanup(self):
         t = make_run_task(True)

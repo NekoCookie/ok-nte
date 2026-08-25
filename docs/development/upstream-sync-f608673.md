@@ -330,6 +330,17 @@ at `HEAD` only and was not changed as part of this sync.
 | Manual validation | Start combat once with a full ring whose actual reaction target is Zankou and confirm the log shows the configured silent intro wait before the opening heavy attack. Start once while Zankou is already current and no support resource is ready; confirm yellow E is followed by a switch to Requiem or another planner-selected teammate, with no Zankou ultimate between them. |
 | Status | pending real-window verification |
 
+### P-09: Combat-opening roster reload recovery
+
+| Field | Evidence |
+| --- | --- |
+| Scope | Prevents a confirmed team-roster correction during the one-shot combat opening from terminating Auto Combat or replaying the Zankou yellow-E opening. |
+| Required LW behavior | A portrait lookup miss creates `BaseChar(char_id="unknown", char_name="default")`; that placeholder cannot expand an authoritative initial team snapshot, while a recognized character with a real portrait ID but no configured implementation remains a valid generic `BaseChar` and may expand it. Slots already included by the authoritative team snapshot remain loaded even when their portraits are unknown. The one-shot combat opening completes before `team_reload_watch()` enables roster-change signals. The first guarded combat-loop check then confirms and reloads any real roster correction through the existing recovery path. Every team reload resumes through the ordinary start selector with the one-shot LW opening explicitly marked checked, so yellow E is not replayed. |
+| Boundary | Unknown-character classification, Auto Combat reload handling, and the one-shot-opening skip remain in `src/lw/combat_ext.py`. RU `CombatSession`, `BaseCombatTask.begin_combat_session()`, character actions, and planner APIs are unchanged. |
+| Regression | `TestTeamChangeCheck` distinguishes an unmatched default placeholder from a recognized but unconfigured generic character during initial snapshot expansion. `TestUseUltimateConfig` proves the reload monitor starts only after the one-shot opening, normal action-time reload still works, cleanup still runs, and `_reload_combat_team()` skips the one-shot opening. |
+| Manual validation | Start the two-character Requiem/Zankou team with yellow-E opening enabled and confirm no `initial snapshot expanded ... 2 -> 4` appears from default slots. If a roster correction is logged during opening, Auto Combat must remain enabled and yellow E must occur at most once. Load a real three- or four-character team containing a recognized portrait with no implementation and confirm the slot remains visible as `BaseChar`. |
+| Status | pending real-window verification |
+
 ### R-01: Window layout and focus-stability extension boundary
 
 | Field | Evidence |

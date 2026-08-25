@@ -920,10 +920,10 @@ class CombatExtMixin(_TaskProxy):
 
         self._last_team_recheck = 0.0
         try:
+            self.combat_session.use_ultimate = self.config.get(self.CONF_USE_ULT, True)
+            self.begin_combat_session()
+            ret = True
             with self.team_reload_watch():
-                self.combat_session.use_ultimate = self.config.get(self.CONF_USE_ULT, True)
-                self.begin_combat_session()
-                ret = True
                 while self.in_combat():
                     try:
                         if not self._reload_if_team_size_changed():
@@ -956,7 +956,9 @@ class CombatExtMixin(_TaskProxy):
     def _reload_combat_team(self) -> bool:
         if self.load_chars():
             self._in_combat = True
-            self.switch_to_combat_start_char()
+            # [lw] Team reload resumes the existing combat session. One-shot opening
+            # actions, such as Zankou yellow E, must not run a second time.
+            self.switch_to_combat_start_char(lw_opening_checked=True)
             return True
 
         if self.chars and self.get_current_char() is not None:
@@ -1050,7 +1052,11 @@ class CombatExtMixin(_TaskProxy):
         return bool(str(fixed_slot.get("char_id", "") or "").strip())
 
     def _is_unknown_char(self, char: "BaseChar") -> bool:
-        return type(char) is BaseChar and char.char_name == "unknown"
+        if type(char) is not BaseChar:
+            return False
+        char_id = str(getattr(char, "char_id", "") or "").strip()
+        char_name = str(getattr(char, "char_name", "") or "").strip()
+        return char_id in {"", "unknown"} and char_name in {"", "default", "unknown"}
 
     def _warm_up_background_mouse(self):
         """开战(换队加载成功)时预热后台鼠标状态。LauncherTask 每次"Switching capture to game
