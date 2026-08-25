@@ -54,7 +54,7 @@ class DodgeCounterTrigger:
 
         try:
             logger.info("Executing dodge")
-            self._last_dodge_monotonic = time.monotonic()  # [lw]
+            self._last_dodge_monotonic = time.perf_counter()  # [lw]
             self.dodge_action()
             self._last_dodge_time = now
             logger.info(f"Dodge executed successfully at {now:.3f}")
@@ -96,7 +96,7 @@ class DodgeCounterTrigger:
         try:
             self.task.send_key_down("d")
             time.sleep(0.02)
-            self._last_dodge_monotonic = time.monotonic()  # [lw] First Shift timestamp.
+            self._last_dodge_monotonic = time.perf_counter()  # [lw] First Shift timestamp.
             self.task.send_key("lshift")
             time.sleep(0.02)
         finally:

@@ -245,10 +245,7 @@ class SoundListener(SoundListenerExtMixin):  # [lw]
 
         max_samples = int(self.used_sr * self.sample_len)
         samples_per_check = max(1, int(self.used_sr * self.detection_interval))
-        ring_buffer = np.zeros(max_samples * 2, dtype=np.float64)
-        buffer_pos = 0
-        total_written = 0
-        samples_since_check = 0
+        last_check_position = self.lw_audio_sample_position()  # [lw]
 
         while self._should_run(stop_event):
             if self._capture is None or not self._capture.is_alive():
@@ -261,6 +258,7 @@ class SoundListener(SoundListenerExtMixin):  # [lw]
                     MODE_PROCESS,
                     process_name=self.process_name,
                 )
+                self._capture.lw_set_chunk_observer(self.lw_publish_audio_chunk)  # [lw]
                 if not self._capture.start():
                     logger.warning(
                         "WASAPI process capture not ready for {}: {}".format(
@@ -278,35 +276,14 @@ class SoundListener(SoundListenerExtMixin):  # [lw]
             if current_frame is None or current_frame.size == 0:
                 continue
 
-            self.lw_publish_audio_chunk(current_frame)  # [lw]
-            if current_frame.shape[0] >= ring_buffer.shape[0]:
-                current_frame = current_frame[-ring_buffer.shape[0] :]
-
-            end_pos = buffer_pos + current_frame.shape[0]
-            if end_pos <= ring_buffer.shape[0]:
-                ring_buffer[buffer_pos:end_pos] = current_frame
-            else:
-                first_part = ring_buffer.shape[0] - buffer_pos
-                ring_buffer[buffer_pos:] = current_frame[:first_part]
-                ring_buffer[: end_pos - ring_buffer.shape[0]] = current_frame[first_part:]
-
-            buffer_pos = end_pos % ring_buffer.shape[0]
-            total_written += current_frame.shape[0]
-            samples_since_check += current_frame.shape[0]
-
-            if total_written < max_samples or samples_since_check < samples_per_check:
+            sample_position = self.lw_audio_sample_position()  # [lw]
+            if sample_position - last_check_position < samples_per_check:
                 continue
 
-            samples_since_check = 0
-            if buffer_pos >= max_samples:
-                window = ring_buffer[buffer_pos - max_samples : buffer_pos]
-            else:
-                window = np.concatenate(
-                    [
-                        ring_buffer[-(max_samples - buffer_pos) :],
-                        ring_buffer[:buffer_pos],
-                    ]
-                )
+            last_check_position = sample_position
+            window = self.lw_latest_audio_window(max_samples)  # [lw]
+            if window is None:
+                continue
 
             if self.is_computation_required and not self.is_computation_required():
                 continue

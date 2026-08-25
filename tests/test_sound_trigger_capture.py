@@ -27,6 +27,19 @@ class AudioCaptureSourceTests(unittest.TestCase):
         self.assertEqual(source.read(timeout=0.01).tolist(), [5.0])
         self.assertIsNone(source.read(timeout=0.01))
 
+    def test_producer_observer_receives_chunks_before_backlog_is_dropped(self):
+        source = _TestCaptureSource(queue_max=1)
+        observed = []
+        source.lw_set_chunk_observer(
+            lambda chunk, _ended_at: observed.append(chunk.copy())
+        )
+
+        for value in range(3):
+            source._push(np.array([value], dtype=np.float32))
+
+        self.assertEqual([chunk.tolist() for chunk in observed], [[0.0], [1.0], [2.0]])
+        self.assertEqual(source.read(timeout=0.01).tolist(), [2.0])
+
 
 class ProcessResolverTests(unittest.TestCase):
     def test_name_set_normalizes_scalar_and_collection(self):

@@ -66,6 +66,32 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         self.assertEqual(written[0][0], sample_name)
         self.assertEqual(len(written[0][1]), 48000)
 
+    def test_listener_recording_ignores_chunk_timestamp_jitter_inside_window(self):
+        listener = _ListenerHarness()
+        written = []
+        listener._lw_write_audio_async = lambda name, audio: written.append((name, audio))
+        listener.lw_request_dodge_audio_capture(10.0)
+
+        for value, ended_at in enumerate((10.25, 10.506, 10.744, 11.0), start=1):
+            listener.lw_publish_audio_chunk(
+                np.full(12000, value, dtype=np.float32),
+                ended_at=ended_at,
+            )
+
+        expected = np.repeat(np.arange(1, 5, dtype=np.float32), 12000)
+        np.testing.assert_array_equal(written[0][1], expected)
+
+    def test_listener_returns_latest_continuous_audio_window(self):
+        listener = _ListenerHarness()
+        listener.lw_publish_audio_chunk(np.arange(4, dtype=np.float32), ended_at=1.0)
+        listener.lw_publish_audio_chunk(np.arange(4, 8, dtype=np.float32), ended_at=1.2)
+
+        np.testing.assert_array_equal(
+            listener.lw_latest_audio_window(6),
+            np.arange(2, 8, dtype=np.float32),
+        )
+        self.assertEqual(listener.lw_audio_sample_position(), 8)
+
     def test_audio_sample_retention_keeps_only_latest_files(self):
         listener = _ListenerHarness()
         listener.AUDIO_SAMPLE_LIMIT = 2
@@ -88,18 +114,19 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
 
         class Trigger:
             last_dodge_time = 0.0
-            last_dodge_monotonic = 1.0
+            last_dodge_monotonic = 0.0
 
             def execute_dodge(inner_self):
-                context.lw_observe_sound_scores(0.0, 0.13)
+                inner_self.last_dodge_monotonic = time.perf_counter()
                 inner_self.last_dodge_time = time.time()
+                context.lw_observe_sound_scores(0.0, 0.13)
 
-        started_at = time.monotonic()
+        started_at = time.perf_counter()
         outcome = context.lw_execute_dodge_with_confirmation(Trigger(), task)
         context.lw_dispatch_dodge_outcome(task, outcome)
 
         self.assertTrue(outcome)
-        self.assertLess(time.monotonic() - started_at, 0.1)
+        self.assertLess(time.perf_counter() - started_at, 0.1)
         self.assertEqual(task.outcomes, [True])
 
     def test_ordinary_dodge_waits_then_resumes_normal_flow(self):
@@ -110,21 +137,59 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
 
         class Trigger:
             last_dodge_time = 0.0
-            last_dodge_monotonic = 1.0
+            last_dodge_monotonic = 0.0
 
             def execute_dodge(inner_self):
+                inner_self.last_dodge_monotonic = time.perf_counter()
                 inner_self.last_dodge_time = time.time()
 
         trigger = Trigger()
 
-        started_at = time.monotonic()
+        started_at = time.perf_counter()
         outcome = context.lw_execute_dodge_with_confirmation(trigger, task)
-        elapsed = time.monotonic() - started_at
+        elapsed = time.perf_counter() - started_at
         context.lw_dispatch_dodge_outcome(task, outcome)
 
         self.assertFalse(outcome)
         self.assertGreaterEqual(elapsed, 0.025)
         self.assertEqual(task.outcomes, [False])
+
+    def test_ordinary_dodge_deadline_starts_at_shift_not_attack_cue(self):
+        task = _FakeTask()
+        context = _SoundContextHarness(task)
+        context.lw_update_perfect_dodge_wait(0.03)
+
+        class Trigger:
+            last_dodge_time = 0.0
+            last_dodge_monotonic = 0.0
+
+            def execute_dodge(inner_self):
+                time.sleep(0.02)
+                inner_self.last_dodge_monotonic = time.perf_counter()
+                inner_self.last_dodge_time = time.time()
+
+        started_at = time.perf_counter()
+        outcome = context.lw_execute_dodge_with_confirmation(Trigger(), task)
+
+        self.assertFalse(outcome)
+        self.assertGreaterEqual(time.perf_counter() - started_at, 0.045)
+
+    def test_sound_before_shift_does_not_confirm_current_dodge(self):
+        task = _FakeTask()
+        context = _SoundContextHarness(task)
+        context.lw_update_perfect_dodge_wait(0.02)
+
+        class Trigger:
+            last_dodge_time = 0.0
+            last_dodge_monotonic = 0.0
+
+            def execute_dodge(inner_self):
+                context.lw_observe_sound_scores(0.0, 0.13)
+                time.sleep(0.005)
+                inner_self.last_dodge_monotonic = time.perf_counter()
+                inner_self.last_dodge_time = time.time()
+
+        self.assertFalse(context.lw_execute_dodge_with_confirmation(Trigger(), task))
 
     def test_counter_trigger_confirms_while_action_queue_is_busy(self):
         task = _FakeTask()
@@ -132,7 +197,7 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         context._lw_begin_dodge_confirmation(task)
 
         self.assertTrue(context.lw_confirm_perfect_dodge_trigger())
-        self.assertTrue(context._lw_dodge_confirmation.confirmed)
+        self.assertIsNotNone(context._lw_dodge_confirmation.confirmed_at)
 
     def test_dodge_trigger_publishes_last_successful_input_time(self):
         task = SimpleNamespace()
@@ -159,11 +224,12 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
             def __init__(inner_self):
                 inner_self.task = task
                 inner_self.last_dodge_time = 0.0
-                inner_self.last_dodge_monotonic = 1.0
+                inner_self.last_dodge_monotonic = 0.0
 
             def execute_dodge(inner_self):
-                context._on_counter_triggered()
+                inner_self.last_dodge_monotonic = time.perf_counter()
                 inner_self.last_dodge_time = time.time()
+                context._on_counter_triggered()
 
         context._trigger = Trigger()
         context._pending_task = task

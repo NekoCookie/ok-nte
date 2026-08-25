@@ -20,11 +20,15 @@ logger = Logger.get_logger(__name__)
 @dataclass
 class _DodgeConfirmation:
     task: object
-    started_at: float = field(default_factory=time.monotonic)
+    started_at: float = field(default_factory=time.perf_counter)
+    dodge_started_at: float | None = None
+    confirmed_at: float | None = None
     event: threading.Event = field(default_factory=threading.Event)
     confirmed: bool = False
     cancelled: bool = False
     peak_counter_score: float = 0.0
+    score_observations: list[tuple[float, float]] = field(default_factory=list)
+    confirmation_candidates: list[float] = field(default_factory=list)
     audio_sample_name: str = ""
 
 
@@ -47,6 +51,8 @@ class SoundListenerExtMixin:
         self.on_scores_updated = None
         self._lw_audio_lock = threading.Lock()
         self._lw_audio_history = deque()
+        self._lw_audio_history_samples = 0
+        self._lw_audio_total_samples = 0
         self._lw_audio_captures = []
         self._lw_audio_sequence = 0
 
@@ -60,15 +66,22 @@ class SoundListenerExtMixin:
 
         if chunk is None or len(chunk) == 0:
             return
-        ended_at = time.monotonic() if ended_at is None else ended_at
+        ended_at = time.perf_counter() if ended_at is None else ended_at
         chunk = np.ascontiguousarray(chunk, dtype=np.float32)
         started_at = ended_at - len(chunk) / CAPTURE_SAMPLE_RATE
         completed = []
         with self._lw_audio_lock:
             self._lw_audio_history.append((started_at, ended_at, chunk.copy()))
-            history_start = ended_at - self.AUDIO_HISTORY_SECONDS
-            while self._lw_audio_history and self._lw_audio_history[0][1] < history_start:
-                self._lw_audio_history.popleft()
+            self._lw_audio_history_samples += len(chunk)
+            self._lw_audio_total_samples += len(chunk)
+            history_samples = round(self.AUDIO_HISTORY_SECONDS * CAPTURE_SAMPLE_RATE)
+            while (
+                self._lw_audio_history
+                and self._lw_audio_history_samples - len(self._lw_audio_history[0][2])
+                >= history_samples
+            ):
+                _, _, discarded = self._lw_audio_history.popleft()
+                self._lw_audio_history_samples -= len(discarded)
             pending = []
             for capture in self._lw_audio_captures:
                 if ended_at < capture.ends_at:
@@ -79,6 +92,28 @@ class SoundListenerExtMixin:
             self._lw_audio_captures = pending
         for sample_name, audio in completed:
             self._lw_write_audio_async(sample_name, audio)
+
+    def lw_audio_sample_position(self) -> int:
+        with self._lw_audio_lock:
+            return self._lw_audio_total_samples
+
+    def lw_latest_audio_window(self, sample_count: int) -> np.ndarray | None:
+        """Return the newest continuous producer-side samples without queue gaps."""
+
+        if sample_count <= 0:
+            return np.empty(0, dtype=np.float32)
+        with self._lw_audio_lock:
+            if self._lw_audio_history_samples < sample_count:
+                return None
+            remaining = sample_count
+            parts = []
+            for _, _, chunk in reversed(self._lw_audio_history):
+                if remaining <= 0:
+                    break
+                take = min(remaining, len(chunk))
+                parts.append(chunk[-take:])
+                remaining -= take
+        return np.concatenate(parts[::-1])
 
     def lw_request_dodge_audio_capture(self, started_at: float) -> str:
         """Capture one second from the dodge-input timestamp using the rolling buffer."""
@@ -98,24 +133,26 @@ class SoundListenerExtMixin:
 
     def _lw_extract_audio_window(self, started_at: float, ends_at: float) -> np.ndarray:
         sample_count = max(0, round((ends_at - started_at) * CAPTURE_SAMPLE_RATE))
-        audio = np.zeros(sample_count, dtype=np.float32)
+        if sample_count == 0:
+            return np.empty(0, dtype=np.float32)
+
+        parts = []
+        found_start = False
         for chunk_start, chunk_end, chunk in self._lw_audio_history:
-            overlap_start = max(started_at, chunk_start)
-            overlap_end = min(ends_at, chunk_end)
-            if overlap_end <= overlap_start:
-                continue
-            source_start = max(0, round((overlap_start - chunk_start) * CAPTURE_SAMPLE_RATE))
-            source_end = min(
-                len(chunk),
-                round((overlap_end - chunk_start) * CAPTURE_SAMPLE_RATE),
-            )
-            target_start = max(0, round((overlap_start - started_at) * CAPTURE_SAMPLE_RATE))
-            copied = min(source_end - source_start, sample_count - target_start)
-            if copied > 0:
-                audio[target_start : target_start + copied] = chunk[
-                    source_start : source_start + copied
-                ]
-        return audio
+            if not found_start:
+                if started_at > chunk_end:
+                    continue
+                source_start = round((started_at - chunk_start) * CAPTURE_SAMPLE_RATE)
+                source_start = max(0, min(len(chunk), source_start))
+                chunk = chunk[source_start:]
+                found_start = True
+            if len(chunk) > 0:
+                parts.append(chunk)
+
+        audio = np.concatenate(parts) if parts else np.empty(0, dtype=np.float32)
+        if len(audio) >= sample_count:
+            return np.ascontiguousarray(audio[:sample_count], dtype=np.float32)
+        return np.pad(audio, (0, sample_count - len(audio))).astype(np.float32, copy=False)
 
     def _lw_write_audio_async(self, sample_name: str, audio: np.ndarray) -> None:
         def write_sample():
@@ -188,22 +225,21 @@ class SoundContextExtMixin:
             counter_score = float(counter_score)
         except (TypeError, ValueError):
             return
+        observed_at = time.perf_counter()
         with self._context_lock:
             attempt = self._lw_dodge_confirmation
             if attempt is None or attempt.cancelled:
                 return
-            attempt.peak_counter_score = max(attempt.peak_counter_score, counter_score)
+            attempt.score_observations.append((observed_at, counter_score))
+            if attempt.dodge_started_at is None or observed_at >= attempt.dodge_started_at:
+                attempt.peak_counter_score = max(attempt.peak_counter_score, counter_score)
             listener = self._listener
             threshold = getattr(listener, "counter_attack_threshold", 1.0)
             if counter_score <= 0 or counter_score <= threshold or attempt.confirmed:
                 return
-            attempt.confirmed = True
+            attempt.confirmation_candidates.append(observed_at)
+            attempt.confirmed_at = min(attempt.confirmation_candidates)
             attempt.event.set()
-            elapsed = time.monotonic() - attempt.started_at
-        logger.info(
-            "Perfect dodge sound confirmed: "
-            f"counter_score={counter_score:.4f}, threshold={threshold}, after={elapsed:.3f}s"
-        )
 
     def lw_confirm_perfect_dodge_trigger(self) -> bool:
         """Consume RU's counter callback as confirmation when a dodge is awaiting its outcome."""
@@ -213,10 +249,10 @@ class SoundContextExtMixin:
             if attempt is None or attempt.cancelled:
                 return False
             if not attempt.confirmed:
-                attempt.confirmed = True
+                observed_at = time.perf_counter()
+                attempt.confirmation_candidates.append(observed_at)
+                attempt.confirmed_at = min(attempt.confirmation_candidates)
                 attempt.event.set()
-                elapsed = time.monotonic() - attempt.started_at
-                logger.info(f"Perfect dodge counter trigger confirmed after {elapsed:.3f}s")
             return True
 
     def lw_execute_dodge_with_confirmation(self, trigger, task) -> bool | None:
@@ -231,36 +267,95 @@ class SoundContextExtMixin:
                 self.lw_cancel_dodge_confirmation("dodge input was not executed", attempt)
                 return None
             dodge_started_at = getattr(trigger, "last_dodge_monotonic", attempt.started_at)
+            ignored_before_shift = None
+            with self._context_lock:
+                if self._lw_dodge_confirmation is not attempt or attempt.cancelled:
+                    return None
+                attempt.dodge_started_at = dodge_started_at
+                attempt.peak_counter_score = max(
+                    (
+                        score
+                        for observed_at, score in attempt.score_observations
+                        if observed_at >= dodge_started_at
+                    ),
+                    default=0.0,
+                )
+                attempt.confirmed_at = min(
+                    (
+                        observed_at
+                        for observed_at in attempt.confirmation_candidates
+                        if observed_at >= dodge_started_at
+                    ),
+                    default=None,
+                )
+                ignored_before_shift = max(
+                    (
+                        observed_at
+                        for observed_at in attempt.confirmation_candidates
+                        if observed_at < dodge_started_at
+                    ),
+                    default=None,
+                )
             listener = self._listener
             if listener is not None:
                 attempt.audio_sample_name = listener.lw_request_dodge_audio_capture(
                     dodge_started_at
                 )
-            if self._lw_perfect_dodge_wait > 0 and not attempt.confirmed:
-                elapsed_since_dodge = time.monotonic() - attempt.started_at
-                remaining = self._lw_perfect_dodge_wait - elapsed_since_dodge
-                if remaining > 0:
-                    attempt.event.wait(remaining)
-            with self._context_lock:
-                if self._lw_dodge_confirmation is not attempt or attempt.cancelled:
-                    return None
-                self._lw_dodge_confirmation = None
-                confirmed = attempt.confirmed
-                peak = attempt.peak_counter_score
+            deadline = dodge_started_at + self._lw_perfect_dodge_wait
+            while True:
+                with self._context_lock:
+                    if self._lw_dodge_confirmation is not attempt or attempt.cancelled:
+                        return None
+                    confirmed_at = attempt.confirmed_at
+                    if confirmed_at is not None and confirmed_at < dodge_started_at:
+                        ignored_before_shift = confirmed_at
+                        attempt.confirmed_at = min(
+                            (
+                                observed_at
+                                for observed_at in attempt.confirmation_candidates
+                                if observed_at >= dodge_started_at
+                            ),
+                            default=None,
+                        )
+                        attempt.event.clear()
+                        confirmed_at = attempt.confirmed_at
+                    now = time.perf_counter()
+                    if confirmed_at is not None and confirmed_at <= deadline:
+                        attempt.confirmed = True
+                        self._lw_dodge_confirmation = None
+                        break
+                    if now >= deadline:
+                        attempt.confirmed_at = None
+                        self._lw_dodge_confirmation = None
+                        break
+                    attempt.event.clear()
+                    remaining = deadline - now
+                attempt.event.wait(remaining)
+            confirmed = attempt.confirmed
+            confirmed_at = attempt.confirmed_at
+            peak = attempt.peak_counter_score
         except Exception:
             self.lw_cancel_dodge_confirmation("dodge confirmation raised", attempt)
             raise
 
-        if confirmed:
+        if ignored_before_shift is not None:
             logger.info(
-                "Perfect dodge resolved: "
+                "Ignored perfect dodge sound before Shift: "
+                f"before_shift={dodge_started_at - ignored_before_shift:.3f}s"
+            )
+        if confirmed:
+            after_shift = confirmed_at - dodge_started_at
+            logger.info(
+                "Perfect dodge sound confirmed: "
                 f"peak counter_score={peak:.4f}; "
+                f"after_shift={after_shift:.3f}s; "
                 f"sample={attempt.audio_sample_name or 'none'}"
             )
             return True
         logger.info(
             "No perfect dodge sound within "
-            f"{self._lw_perfect_dodge_wait:.2f}s; peak counter_score={peak:.4f}; "
+            f"{self._lw_perfect_dodge_wait:.2f}s after Shift; "
+            f"peak counter_score={peak:.4f}; "
             f"sample={attempt.audio_sample_name or 'none'}; resuming normal combat"
         )
         return False

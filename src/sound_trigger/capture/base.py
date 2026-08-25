@@ -15,16 +15,19 @@ from typing import Callable, Optional
 import numpy as np
 from ok import Logger
 
+from src.lw.sound_capture_ext import AudioCaptureExtMixin  # [lw]
+
 logger = Logger.get_logger(__name__)
 
 CAPTURE_SAMPLE_RATE = 48000
 PushFn = Callable[[np.ndarray], None]
 
 
-class AudioCaptureSource(ABC):
+class AudioCaptureSource(AudioCaptureExtMixin, ABC):  # [lw]
     sample_rate = CAPTURE_SAMPLE_RATE
 
     def __init__(self, queue_max: int = 4):
+        super().__init__()  # [lw]
         self._queue: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=queue_max)
         self._stop = threading.Event()
         self._ready = threading.Event()
@@ -94,6 +97,7 @@ class AudioCaptureSource(ABC):
         if chunk is None or len(chunk) == 0:
             return
         chunk = np.ascontiguousarray(chunk, dtype=np.float32)
+        self.lw_observe_captured_chunk(chunk)  # [lw]
         while True:
             try:
                 self._queue.put_nowait(chunk)
