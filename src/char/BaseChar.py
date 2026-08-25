@@ -140,6 +140,9 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
                 self.task, "lw_early_entry_ability_input_enabled", None
             )
             if callable(early_entry_abilities) and early_entry_abilities():  # [lw]
+                intro_duration = self.intro_motion_freeze_duration()
+                entry_ability_delay = min(self.INTRO_ENTRY_ABILITY_DELAY, intro_duration)
+                self.wait_intro(time_out=entry_ability_delay)
                 perform_entry_expected = getattr(
                     self.task.combat_planner, "perform_entry_expected_action", None
                 )
@@ -147,7 +150,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
                     perform_entry_expected(self)
                 remaining_intro = max(
                     0.0,
-                    self.intro_motion_freeze_duration() - (time.time() - self.last_perform),
+                    intro_duration - (time.time() - self.last_perform),
                 )
                 self.wait_intro(time_out=remaining_intro)
             else:

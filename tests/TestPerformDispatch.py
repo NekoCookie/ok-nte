@@ -59,13 +59,18 @@ class TestPerformDispatch(unittest.TestCase):
         c.task.refresh_cd = mock.MagicMock()
         c.has_intro = True
         c.add_intro_motion_freeze = mock.MagicMock()
+        c.intro_motion_freeze_duration = mock.MagicMock(return_value=1.5)
         c.wait_intro = mock.MagicMock()
         c._try_default_arc_click = mock.MagicMock()
-        with mock.patch("src.char.BaseChar.time.time", return_value=123.0):
+        c.task.lw_early_entry_ability_input_enabled.return_value = True
+        with mock.patch("src.char.BaseChar.time.time", side_effect=[123.0, 124.0]):
             c.perform()
         self.assertEqual(c.last_perform, 123.0)
         c.add_intro_motion_freeze.assert_called_once_with(123.0)
-        c.wait_intro.assert_called_once()
+        self.assertEqual(
+            c.wait_intro.call_args_list,
+            [mock.call(time_out=1.0), mock.call(time_out=0.5)],
+        )
         c.task.combat_planner.perform_current_char.assert_called_once_with(c)
         c.task.refresh_cd.assert_called_once()
         c.switch_next_char.assert_called_once()

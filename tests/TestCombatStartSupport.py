@@ -128,11 +128,22 @@ class TestCombatStartDispatch(unittest.TestCase):
 
     def test_intro_runs_planner_entry_action_when_early_entry_setting_is_on(self):
         char = self._intro_char(early_entry_abilities=True)
+        timeline = []
+        char.wait_intro.side_effect = lambda *args, **kwargs: timeline.append(
+            ("wait", kwargs.get("time_out"))
+        )
+        char.task.combat_planner.perform_entry_expected_action.side_effect = (
+            lambda _: timeline.append(("action", None))
+        )
 
-        BaseChar.perform(char)
+        with mock.patch("src.char.BaseChar.time.time", side_effect=[100.0, 101.0]):
+            BaseChar.perform(char)
 
         char.task.combat_planner.perform_entry_expected_action.assert_called_once_with(char)
-        self.assertIn("time_out", char.wait_intro.call_args.kwargs)
+        self.assertEqual(
+            timeline[:3],
+            [("wait", 1.0), ("action", None), ("wait", 0.5)],
+        )
 
     def _entry_ability_task(self, enabled=True):
         task = BaseCombatTask.__new__(BaseCombatTask)
