@@ -319,6 +319,17 @@ at `HEAD` only and was not changed as part of this sync.
 | Manual validation | Enable entry ability input and let Requiem finish a normal coaxis phase while Zankou Q is unavailable. Confirm no `planner entry expected action unavailable ... ExpectedEntry(slot=SKILL)` appears before Zankou starts its heavy attack. |
 | Status | pending real-window verification |
 
+### P-08: Zankou yellow-E opening intro and handoff boundary
+
+| Field | Evidence |
+| --- | --- |
+| Scope | Corrects the optional Zankou yellow-E combat opening when Zankou is the actual ring-entry target or is already the current character. This supersedes P-02's earlier current-Zankou no-switch regression statement. |
+| Required LW behavior | Before switching to Zankou, the opening checks both current ring availability and the actual reaction target. A matching Zankou entry keeps `has_intro=True`, records the existing intro freeze, and consumes the configured Zankou silent intro duration before the heavy attack; a non-matching switch remains an ordinary entry with no added wait. After the bounded yellow-E attempt, the opening always leaves Zankou and recalculates whether that actual handoff target receives the current ring entry. It returns to the precomputed ordinary opening target when that target is another character; when Zankou was already the target, planner selection chooses the handoff, with the paired live Requiem as the safe fallback. The completed yellow E can therefore never flow directly into Zankou's ultimate. |
+| Boundary | The opening remains entirely in `src/lw/requiem_zankou_axis.py`; its visible configuration description is updated in `RequiemCombatConfigTask`. It reuses `CombatPlannerExtMixin.lw_switch_target_has_intro()`, Zankou's existing `wait_intro()` override, the standard freeze recorder, planner `decide_switch()`, and the existing `_switch_to_char()` entry. No RU action implementation or raw Q/E input is added. |
+| Regression | `TestRequiemZankouAxis` proves a matching ring target switches with `has_intro=True`, records and waits the configured `1.25s` silently before heavy attack, clears the consumed intro, keeps a full ring for another target from adding a false Zankou wait, preserves ordinary no-intro insertion, and falls back from a current Zankou to its paired Requiem instead of leaving it on field for Q. |
+| Manual validation | Start combat once with a full ring whose actual reaction target is Zankou and confirm the log shows the configured silent intro wait before the opening heavy attack. Start once while Zankou is already current and no support resource is ready; confirm yellow E is followed by a switch to Requiem or another planner-selected teammate, with no Zankou ultimate between them. |
+| Status | pending real-window verification |
+
 ### R-01: Window layout and focus-stability extension boundary
 
 | Field | Evidence |

@@ -393,6 +393,30 @@ def _wait_for_zankou_gold_skill(char: "BaseChar", timeout: float) -> object | No
         char.sleep(min(GOLD_SKILL_CONFIRM_INTERVAL, remaining))
 
 
+def _opening_switch_has_intro(planner, current_char: "BaseChar", target: "BaseChar") -> bool:
+    """Return whether the opening switch consumes the current ring entry."""
+
+    is_cycle_full = getattr(current_char, "is_cycle_full", None)
+    target_has_intro = getattr(planner, "lw_switch_target_has_intro", None)
+    if not callable(is_cycle_full) or not callable(target_has_intro):
+        return False
+    try:
+        intro_available = bool(is_cycle_full())
+        return bool(target_has_intro(current_char, target, intro_available))
+    except (AttributeError, RuntimeError, TypeError):
+        return False
+
+
+def _wait_zankou_opening_intro(zankou: "BaseChar") -> None:
+    """Consume Zankou's custom silent intro before the opening heavy attack."""
+
+    if not bool(getattr(zankou, "has_intro", False)):
+        return
+    zankou.add_intro_motion_freeze(time.time())
+    zankou.wait_intro()
+    zankou.has_intro = False
+
+
 def run_zankou_opening_gold_skill(task) -> bool:
     """Insert Zankou's yellow E before the precomputed ordinary combat opening."""
 
@@ -428,15 +452,13 @@ def run_zankou_opening_gold_skill(task) -> bool:
         if callable(log_info):
             log_info("combat opening zankou gold skill skipped outside a boss fight")
         return False
-    if (
-        coordinated_axis_partner(
-            zankou,
-            None,
-            self_impl_id=ZANKOU_MAIN_DPS_IMPL_ID,
-            partner_impl_id=REQUIEM_IMPL_ID,
-        )
-        is None
-    ):
+    partner = coordinated_axis_partner(
+        zankou,
+        None,
+        self_impl_id=ZANKOU_MAIN_DPS_IMPL_ID,
+        partner_impl_id=REQUIEM_IMPL_ID,
+    )
+    if partner is None:
         return False
 
     opening_decision = planner.decide_combat_start_char(current_char)
@@ -448,21 +470,26 @@ def run_zankou_opening_gold_skill(task) -> bool:
     if callable(log_info):
         log_info("combat opening inserts zankou gold skill before ordinary opening target")
     if current_char is not zankou:
+        zankou_has_intro = _opening_switch_has_intro(planner, current_char, zankou)
         switch_to_char(
             zankou,
             current_char=current_char,
-            has_intro=False,
+            has_intro=zankou_has_intro,
             log_prefix="lw opening zankou gold skill",
             send_switch_attack=False,
         )
     if get_current_char(raise_exception=False) is not zankou:
         return False
 
+    _wait_zankou_opening_intro(zankou)
     zankou.heavy_attack(duration=settings.zankou_hold_duration)
     find_one = _wait_for_zankou_gold_skill(zankou, OPENING_GOLD_SKILL_DETECT_TIMEOUT)
     if find_one is None:
         if callable(log_info):
-            log_info("combat opening zankou gold skill was not detected; returning to ordinary opening")
+            log_info(
+                "combat opening zankou gold skill was not detected; "
+                "returning to ordinary opening"
+            )
     else:
         _send_zankou_gold_skill_until_confirmed(
             zankou,
@@ -471,12 +498,23 @@ def run_zankou_opening_gold_skill(task) -> bool:
             action_name="zankou_opening_gold_skill",
         )
 
+    handoff_has_intro = _opening_switch_has_intro(planner, zankou, opening_target)
     if opening_target is zankou:
-        return True
+        decide_switch = getattr(planner, "decide_switch", None)
+        handoff_decision = decide_switch(zankou) if callable(decide_switch) else None
+        planned_target = getattr(handoff_decision, "target", None)
+        if planned_target is not None and planned_target is not zankou:
+            opening_target = planned_target
+            handoff_has_intro = bool(getattr(handoff_decision, "has_intro", False))
+        else:
+            opening_target = partner
+            handoff_has_intro = _opening_switch_has_intro(planner, zankou, partner)
+        if callable(log_info):
+            log_info(f"combat opening zankou gold skill hands off to {opening_target}")
     switch_to_char(
         opening_target,
         current_char=zankou,
-        has_intro=bool(getattr(opening_decision, "has_intro", False)),
+        has_intro=handoff_has_intro,
         log_prefix="lw opening zankou gold skill return",
         send_switch_attack=False,
     )

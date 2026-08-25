@@ -637,7 +637,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "成功释放后请求切人; 关=忽略强化E"
                 ),
                 self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: (
-                    "开=开局先切残虹释放黄色强化E, 随后立刻切回原开局流程选中的辅助; "
+                    "开=开局先切残虹释放黄色强化E, 随后立刻切往原开局目标; "
+                    "若残虹本就是开局目标, 则由planner选择其他角色; "
                     "关=不插入该步骤"
                 ),
                 self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS: (
