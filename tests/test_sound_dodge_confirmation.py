@@ -2,6 +2,9 @@ import threading
 import time
 import unittest
 from types import SimpleNamespace
+from unittest import mock
+
+import numpy as np
 
 from src.lw.combat_ext import CombatExtMixin
 from src.lw.sound_ext import SoundContextExtMixin, SoundListenerExtMixin
@@ -21,7 +24,10 @@ class _SoundContextHarness(SoundContextExtMixin):
     def __init__(self, task):
         super().__init__()
         self._context_lock = threading.RLock()
-        self._listener = SimpleNamespace(counter_attack_threshold=0.12)
+        self._listener = SimpleNamespace(
+            counter_attack_threshold=0.12,
+            lw_request_dodge_audio_capture=mock.Mock(return_value="dodge.wav"),
+        )
         self._trigger = SimpleNamespace(task=task)
         self._pending_task = task
 
@@ -47,6 +53,34 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
 
         self.assertEqual(observed, [(0.2, 0.13)])
 
+    def test_listener_records_one_second_from_dodge_timestamp(self):
+        listener = _ListenerHarness()
+        written = []
+        listener._lw_write_audio_async = lambda name, audio: written.append((name, audio))
+        sample_name = listener.lw_request_dodge_audio_capture(10.0)
+        chunk = np.ones(12000, dtype=np.float32)
+
+        for ended_at in (10.25, 10.5, 10.75, 11.0):
+            listener.lw_publish_audio_chunk(chunk, ended_at=ended_at)
+
+        self.assertEqual(written[0][0], sample_name)
+        self.assertEqual(len(written[0][1]), 48000)
+
+    def test_audio_sample_retention_keeps_only_latest_files(self):
+        listener = _ListenerHarness()
+        listener.AUDIO_SAMPLE_LIMIT = 2
+        samples = [mock.Mock() for _ in range(3)]
+        for index, sample in enumerate(samples):
+            sample.stat.return_value = SimpleNamespace(st_mtime=index)
+        folder = mock.Mock()
+        folder.glob.return_value = samples
+
+        listener._lw_prune_audio_samples(folder)
+
+        samples[0].unlink.assert_called_once_with(missing_ok=True)
+        samples[1].unlink.assert_not_called()
+        samples[2].unlink.assert_not_called()
+
     def test_perfect_sound_confirms_dodge_immediately(self):
         task = _FakeTask()
         context = _SoundContextHarness(task)
@@ -54,6 +88,7 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
 
         class Trigger:
             last_dodge_time = 0.0
+            last_dodge_monotonic = 1.0
 
             def execute_dodge(inner_self):
                 context.lw_observe_sound_scores(0.0, 0.13)
@@ -70,10 +105,12 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
     def test_ordinary_dodge_waits_then_resumes_normal_flow(self):
         task = _FakeTask()
         context = _SoundContextHarness(task)
+        context._listener.lw_request_dodge_audio_capture = mock.Mock(return_value="dodge.wav")
         context.lw_update_perfect_dodge_wait(0.03)
 
         class Trigger:
             last_dodge_time = 0.0
+            last_dodge_monotonic = 1.0
 
             def execute_dodge(inner_self):
                 inner_self.last_dodge_time = time.time()
@@ -112,13 +149,17 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         task = _FakeTask()
         task.executor = SimpleNamespace(paused=False)
         context = _CombatContextHarness()
-        context._listener = SimpleNamespace(counter_attack_threshold=0.12)
+        context._listener = SimpleNamespace(
+            counter_attack_threshold=0.12,
+            lw_request_dodge_audio_capture=mock.Mock(return_value="dodge.wav"),
+        )
         context.lw_update_perfect_dodge_wait(0.5)
 
         class Trigger:
             def __init__(inner_self):
                 inner_self.task = task
                 inner_self.last_dodge_time = 0.0
+                inner_self.last_dodge_monotonic = 1.0
 
             def execute_dodge(inner_self):
                 context._on_counter_triggered()

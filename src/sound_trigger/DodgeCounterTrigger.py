@@ -28,6 +28,7 @@ class DodgeCounterTrigger:
         self._is_executing = False
         self._execute_lock = threading.Lock()
         self._last_dodge_time = 0.0
+        self._last_dodge_monotonic = 0.0  # [lw]
         self._last_counter_time = 0.0
         self._min_dodge_interval = 0.3
         self._min_counter_interval = 1.0
@@ -53,6 +54,7 @@ class DodgeCounterTrigger:
 
         try:
             logger.info("Executing dodge")
+            self._last_dodge_monotonic = time.monotonic()  # [lw]
             self.dodge_action()
             self._last_dodge_time = now
             logger.info(f"Dodge executed successfully at {now:.3f}")
@@ -64,6 +66,10 @@ class DodgeCounterTrigger:
     @property
     def last_dodge_time(self) -> float:  # [lw]
         return self._last_dodge_time
+
+    @property
+    def last_dodge_monotonic(self) -> float:  # [lw]
+        return self._last_dodge_monotonic
 
     def execute_counter_attack(self):
         now = time.time()
@@ -90,6 +96,7 @@ class DodgeCounterTrigger:
         try:
             self.task.send_key_down("d")
             time.sleep(0.02)
+            self._last_dodge_monotonic = time.monotonic()  # [lw] First Shift timestamp.
             self.task.send_key("lshift")
             time.sleep(0.02)
         finally:

@@ -278,6 +278,7 @@ class SoundListener(SoundListenerExtMixin):  # [lw]
             if current_frame is None or current_frame.size == 0:
                 continue
 
+            self.lw_publish_audio_chunk(current_frame)  # [lw]
             if current_frame.shape[0] >= ring_buffer.shape[0]:
                 current_frame = current_frame[-ring_buffer.shape[0] :]
 

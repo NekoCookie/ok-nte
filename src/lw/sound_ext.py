@@ -3,9 +3,15 @@
 
 import threading
 import time
+import wave
+from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from ok import Logger
+import numpy as np
+from ok import Logger, get_path_relative_to_exe
+
+from src.sound_trigger.capture.base import CAPTURE_SAMPLE_RATE
 
 
 logger = Logger.get_logger(__name__)
@@ -19,19 +25,128 @@ class _DodgeConfirmation:
     confirmed: bool = False
     cancelled: bool = False
     peak_counter_score: float = 0.0
+    audio_sample_name: str = ""
+
+
+@dataclass
+class _AudioDiagnosticCapture:
+    sample_name: str
+    started_at: float
+    ends_at: float
 
 
 class SoundListenerExtMixin:
     """Publish raw match scores before RU trigger debounce or action arbitration."""
 
+    AUDIO_DIAGNOSTIC_SECONDS = 1.0
+    AUDIO_HISTORY_SECONDS = 1.5
+    AUDIO_SAMPLE_LIMIT = 40
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.on_scores_updated = None
+        self._lw_audio_lock = threading.Lock()
+        self._lw_audio_history = deque()
+        self._lw_audio_captures = []
+        self._lw_audio_sequence = 0
 
     def lw_publish_scores(self, dodge_score: float, counter_score: float) -> None:
         callback = self.on_scores_updated
         if callback is not None:
             callback(dodge_score, counter_score)
+
+    def lw_publish_audio_chunk(self, chunk: np.ndarray, ended_at: float | None = None) -> None:
+        """Keep a short rolling buffer and finish requested post-dodge WAV samples."""
+
+        if chunk is None or len(chunk) == 0:
+            return
+        ended_at = time.monotonic() if ended_at is None else ended_at
+        chunk = np.ascontiguousarray(chunk, dtype=np.float32)
+        started_at = ended_at - len(chunk) / CAPTURE_SAMPLE_RATE
+        completed = []
+        with self._lw_audio_lock:
+            self._lw_audio_history.append((started_at, ended_at, chunk.copy()))
+            history_start = ended_at - self.AUDIO_HISTORY_SECONDS
+            while self._lw_audio_history and self._lw_audio_history[0][1] < history_start:
+                self._lw_audio_history.popleft()
+            pending = []
+            for capture in self._lw_audio_captures:
+                if ended_at < capture.ends_at:
+                    pending.append(capture)
+                    continue
+                audio = self._lw_extract_audio_window(capture.started_at, capture.ends_at)
+                completed.append((capture.sample_name, audio))
+            self._lw_audio_captures = pending
+        for sample_name, audio in completed:
+            self._lw_write_audio_async(sample_name, audio)
+
+    def lw_request_dodge_audio_capture(self, started_at: float) -> str:
+        """Capture one second from the dodge-input timestamp using the rolling buffer."""
+
+        with self._lw_audio_lock:
+            self._lw_audio_sequence += 1
+            stamp = time.strftime("%Y%m%d_%H%M%S")
+            sample_name = f"dodge_{stamp}_{self._lw_audio_sequence:04d}.wav"
+            self._lw_audio_captures.append(
+                _AudioDiagnosticCapture(
+                    sample_name=sample_name,
+                    started_at=started_at,
+                    ends_at=started_at + self.AUDIO_DIAGNOSTIC_SECONDS,
+                )
+            )
+        return sample_name
+
+    def _lw_extract_audio_window(self, started_at: float, ends_at: float) -> np.ndarray:
+        sample_count = max(0, round((ends_at - started_at) * CAPTURE_SAMPLE_RATE))
+        audio = np.zeros(sample_count, dtype=np.float32)
+        for chunk_start, chunk_end, chunk in self._lw_audio_history:
+            overlap_start = max(started_at, chunk_start)
+            overlap_end = min(ends_at, chunk_end)
+            if overlap_end <= overlap_start:
+                continue
+            source_start = max(0, round((overlap_start - chunk_start) * CAPTURE_SAMPLE_RATE))
+            source_end = min(
+                len(chunk),
+                round((overlap_end - chunk_start) * CAPTURE_SAMPLE_RATE),
+            )
+            target_start = max(0, round((overlap_start - started_at) * CAPTURE_SAMPLE_RATE))
+            copied = min(source_end - source_start, sample_count - target_start)
+            if copied > 0:
+                audio[target_start : target_start + copied] = chunk[
+                    source_start : source_start + copied
+                ]
+        return audio
+
+    def _lw_write_audio_async(self, sample_name: str, audio: np.ndarray) -> None:
+        def write_sample():
+            try:
+                folder = Path(get_path_relative_to_exe("logs", "sound_dodge_samples"))
+                folder.mkdir(parents=True, exist_ok=True)
+                pcm = np.clip(audio, -1.0, 1.0)
+                pcm = np.asarray(pcm * 32767, dtype="<i2")
+                with wave.open(str(folder / sample_name), "wb") as output:
+                    output.setnchannels(1)
+                    output.setsampwidth(2)
+                    output.setframerate(CAPTURE_SAMPLE_RATE)
+                    output.writeframes(pcm.tobytes())
+                self._lw_prune_audio_samples(folder)
+                logger.info(
+                    f"Saved dodge audio sample: {sample_name}, "
+                    f"duration={len(audio) / CAPTURE_SAMPLE_RATE:.3f}s"
+                )
+            except Exception as exc:
+                logger.error(f"Failed to save dodge audio sample {sample_name}: {exc}")
+
+        threading.Thread(target=write_sample, daemon=True, name="DodgeAudioSampleWriter").start()
+
+    def _lw_prune_audio_samples(self, folder: Path) -> None:
+        samples = sorted(
+            folder.glob("dodge_*.wav"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for old_sample in samples[self.AUDIO_SAMPLE_LIMIT :]:
+            old_sample.unlink(missing_ok=True)
 
 
 class SoundContextExtMixin:
@@ -115,6 +230,12 @@ class SoundContextExtMixin:
             if dodge_at <= previous_dodge_at:
                 self.lw_cancel_dodge_confirmation("dodge input was not executed", attempt)
                 return None
+            dodge_started_at = getattr(trigger, "last_dodge_monotonic", attempt.started_at)
+            listener = self._listener
+            if listener is not None:
+                attempt.audio_sample_name = listener.lw_request_dodge_audio_capture(
+                    dodge_started_at
+                )
             if self._lw_perfect_dodge_wait > 0 and not attempt.confirmed:
                 elapsed_since_dodge = time.monotonic() - attempt.started_at
                 remaining = self._lw_perfect_dodge_wait - elapsed_since_dodge
@@ -131,11 +252,16 @@ class SoundContextExtMixin:
             raise
 
         if confirmed:
+            logger.info(
+                "Perfect dodge resolved: "
+                f"peak counter_score={peak:.4f}; "
+                f"sample={attempt.audio_sample_name or 'none'}"
+            )
             return True
         logger.info(
             "No perfect dodge sound within "
             f"{self._lw_perfect_dodge_wait:.2f}s; peak counter_score={peak:.4f}; "
-            "resuming normal combat"
+            f"sample={attempt.audio_sample_name or 'none'}; resuming normal combat"
         )
         return False
 
