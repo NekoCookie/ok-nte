@@ -16,6 +16,7 @@ import numpy as np
 from ok import Logger
 from scipy.signal import butter, correlate, filtfilt
 
+from src.lw.sound_ext import SoundListenerExtMixin  # [lw]
 from src.sound_trigger.capture import MODE_PROCESS, AudioCaptureSource, create_capture_source
 from src.sound_trigger.capture.base import CAPTURE_SAMPLE_RATE
 from src.utils.log_gate import LogGate
@@ -25,7 +26,7 @@ warnings.filterwarnings("ignore", message="data discontinuity in recording")
 logger = Logger.get_logger(__name__)
 
 
-class SoundListener:
+class SoundListener(SoundListenerExtMixin):  # [lw]
     used_sr = CAPTURE_SAMPLE_RATE
     sample_len = 0.2
     detection_interval = 0.025
@@ -46,6 +47,7 @@ class SoundListener:
         is_allow_successive_trigger: bool = False,
         process_name: str = default_process_name,
     ):
+        super().__init__()  # [lw]
         self.sample_path = sample_path
         self.counter_attack_sample_path = counter_attack_sample_path
         self.threshold = threshold
@@ -317,6 +319,7 @@ class SoundListener:
                     self._counter_sample_waveform,
                 )
 
+            self.lw_publish_scores(dodge_score, counter_score)  # [lw]
             self._check_triggers(dodge_score, counter_score)
 
             # self._draw_debug_visual(dodge_score, counter_score)

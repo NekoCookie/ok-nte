@@ -46,6 +46,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
         if hasattr(self, "_initialized"):
             return
         self._initialized = True
+        super().__init__()  # [lw]
 
         self._listener: Optional["SoundListener"] = None
         self._trigger: Optional[DodgeCounterTrigger] = None
@@ -122,6 +123,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
         dodge_all_attacks: bool = True,
         threshold: float = 0.13,
         counter_attack_threshold: float = 0.12,
+        perfect_dodge_wait: float = 0.5,  # [lw]
         dodge_action: Optional[Callable] = None,
         counter_action: Optional[Callable] = None,
         **kwargs,
@@ -131,12 +133,17 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
                 return
 
             if self._pending_config is not None:
-                enable_sound_trigger, dodge_all_attacks, threshold, counter_attack_threshold = (
-                    self._pending_config
-                )
+                (
+                    enable_sound_trigger,
+                    dodge_all_attacks,
+                    threshold,
+                    counter_attack_threshold,
+                    perfect_dodge_wait,
+                ) = self._pending_config
 
             self._enable_sound_trigger = enable_sound_trigger
             self._dodge_all_attacks = dodge_all_attacks
+            self.lw_update_perfect_dodge_wait(perfect_dodge_wait)  # [lw]
             if dodge_action is not None:
                 self._dodge_action = dodge_action
             if counter_action is not None:
@@ -155,6 +162,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
                 "audio_process_name": audio_process_name,
                 "threshold": threshold,
                 "counter_attack_threshold": counter_attack_threshold,
+                "perfect_dodge_wait": self._lw_perfect_dodge_wait,  # [lw]
             }
 
             from src.sound_trigger.SoundListener import SoundListener
@@ -175,6 +183,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
             self._listener.on_dodge_triggered = self._on_dodge_triggered
             self._listener.on_counter_triggered = self._on_counter_triggered
             self._listener.is_computation_required = self._is_computation_required
+            self.lw_bind_score_listener(self._listener)  # [lw]
 
             self._is_active = True
             logger.info("SoundCombatContext initialized")
@@ -198,6 +207,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
                 return
 
             try:
+                self.lw_cancel_dodge_confirmation("sound context exited")  # [lw]
                 if self._listener:
                     self._listener.stop()
                     self._listener = None
@@ -254,6 +264,8 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
         self._queue_action("dodge")
 
     def _on_counter_triggered(self):
+        if self.lw_confirm_perfect_dodge_trigger():  # [lw]
+            return
         self._queue_action("dodge" if self._dodge_all_attacks else "counter")
 
     def execute_pending_action(self, expected_action=ACTION_UNSET, expected_task=ACTION_UNSET):
@@ -279,15 +291,21 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
             self.exit_priority()
             return
 
+        dodge_outcome = None
         try:
             if action == "dodge":
-                trigger.execute_dodge()
+                dodge_outcome = self.lw_execute_dodge_with_confirmation(  # [lw]
+                    trigger,
+                    task,
+                )
             elif action == "counter":
                 trigger.execute_counter_attack()
         except Exception as e:
             logger.error("Failed to execute sound action", e)
         finally:
             self.exit_priority()
+        if dodge_outcome is not None:
+            self.lw_dispatch_dodge_outcome(task, dodge_outcome)  # [lw]
 
     def update_task(
         self,
@@ -301,6 +319,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
             self._pending_task = task
 
             if task_changed:
+                self.lw_cancel_dodge_confirmation("sound task changed")  # [lw]
                 self._pending_action = None
                 self.clear_priority()
                 self._dodge_action = None if dodge_action is ACTION_UNSET else dodge_action
@@ -329,6 +348,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
             if current_task is not task:
                 return False
             self._pending_task = None
+            self.lw_cancel_dodge_confirmation("sound task cleared")  # [lw]
             self._dodge_action = None
             self._counter_action = None
             if self._trigger:
@@ -349,11 +369,19 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
         dodge_all_attacks: bool,
         dodge_threshold: float,
         counter_threshold: float,
+        perfect_dodge_wait: float = 0.5,  # [lw]
     ):
         with self._context_lock:
-            self._pending_config = (enable, dodge_all_attacks, dodge_threshold, counter_threshold)
+            self._pending_config = (
+                enable,
+                dodge_all_attacks,
+                dodge_threshold,
+                counter_threshold,
+                perfect_dodge_wait,
+            )
             self._enable_sound_trigger = enable
             self._dodge_all_attacks = dodge_all_attacks
+            self.lw_update_perfect_dodge_wait(perfect_dodge_wait)  # [lw]
             if self._listener:
                 self._listener.threshold = dodge_threshold
                 self._listener.counter_attack_threshold = counter_threshold
@@ -405,6 +433,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
             self._counter_action = None
             self._pending_config = None
             self._pending_action = None
+            self.lw_cancel_dodge_confirmation("sound context shutdown")  # [lw]
             logger.info("SoundCombatContext shutdown complete")
 
     def __del__(self):

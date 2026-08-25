@@ -913,9 +913,17 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             dodge_all_attacks = self.sound_config.get("Dodge All Attacks", True)
             dodge_thresh = self.sound_config.get("Dodge Threshold", 0.13)
             counter_thresh = self.sound_config.get("Counter Attack Threshold", 0.12)
+            perfect_dodge_wait = self.sound_config.get("Perfect Dodge Wait", 0.5)  # [lw]
             dodge_thresh = np.clip(dodge_thresh, 0.0, 1.0)
             counter_thresh = np.clip(counter_thresh, 0.0, 1.0)
-            sound_context.update_config(enable, dodge_all_attacks, dodge_thresh, counter_thresh)
+            perfect_dodge_wait = np.clip(perfect_dodge_wait, 0.0, 5.0)  # [lw]
+            sound_context.update_config(  # [lw]
+                enable,
+                dodge_all_attacks,
+                dodge_thresh,
+                counter_thresh,
+                perfect_dodge_wait,
+            )
         sound_context.update_task(self, dodge_action=dodge_action, counter_action=counter_action)
 
     def check_combat(self):

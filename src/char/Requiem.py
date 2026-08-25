@@ -127,8 +127,8 @@ class Requiem(MainDps):
     DODGE_COUNTER_INTERVAL = 0.1
     DODGE_KEY = "lshift"  # 游戏闪避键
     DODGE_DIR_KEY = "w"   # 双4a尾段"带方向闪避"的方向键: 按住W再按闪避
-    # 双4a"窗口内"部分时长(ms): 前段平A的前这么久在 execute_dodge 里打(立即反击+填满声音1秒去抖窗口),
-    # 之后 execute_dodge 返回、"处理这次闪避"结束, 剩余部分交下一次 plan entry 无缝续打。
+    # 双4a首段时长(ms): 完美闪避声音确认后先打前段平A的前这么久, 剩余部分交下一次
+    # plan entry 无缝续打。首段结束后重新决策, 后续仍可被新的声音闪避打断。
     DODGE_WINDOW_FILL_MS = 1000
     # combo 起手前, 若紧接在闪避反击之后, 额外等这么久让反击后摇走完再落第一下(否则 combo 顺序乱)。
     # 只加在 combo 路径; 切人/技能/大招不等→立即执行取消后摇。默认值, 4A 任务里可配。
@@ -192,9 +192,9 @@ class Requiem(MainDps):
         super().__init__(*args, **kwargs)
         self.skill_off_field_until = 0.0
         self._dodge_counter_at = 0.0  # 上次闪避反击出手时刻(供 combo 起手前等后摇)
-        self._pending_double_4a = None   # 非None=双4a窗口外部分待续打(plan entry优先处理)
-        self._d4_front_left_ms = 0.0     # 双4a前段平A在窗口内打掉后剩余的时长(ms)
-        self._d4_seam_t = 0.0            # 窗口内结束时刻(单调时钟), 供诊断续打接缝
+        self._pending_double_4a = None   # 非None=双4a续段待执行(plan entry优先处理)
+        self._d4_front_left_ms = 0.0     # 双4a首段平A打掉后剩余的时长(ms)
+        self._d4_seam_t = 0.0            # 首段结束时刻(单调时钟), 供诊断续打接缝
         self._d4_last_end = 0.0           # 上轮双4a结束时刻(单调时钟), 供诊断 combo 交接
         # [lw] Bypass MainDps field-time hold for one axis handoff.
         self._coaxis_switch_pending = False
@@ -645,14 +645,12 @@ class Requiem(MainDps):
             self.logger.debug(f"directional dodge failed: {e}")
 
     def _dodge_double_4a_inside(self, task):
-        """双4a 的"窗口内"部分(跑在 execute_dodge 里): 只打前段平A 的前 ~1 秒, 填满声音那 1 秒去抖
-        窗口(这 1 秒新攻击本就被去抖丢、打得安心, 且是立即反击)。然后挂起 _pending_double_4a,
-        execute_dodge 就此返回——"处理这次闪避"真的结束了。剩余部分(前段剩余→跳A→后段→尾段闪避→
-        补平A)交下一次 plan entry 无缝续打, 那部分是普通 combo, 被新声音打断时新闪避经正常路径触发
-        自己的新一轮反击, 不再和这次闪避耦合。"""
+        """完美闪避确认后的双4a首段: 先打前段平A的前 ~1 秒, 再挂起
+        _pending_double_4a。剩余部分(前段剩余→跳A→后段→尾段闪避→补平A)交下一次
+        plan entry 无缝续打; 首段和续段都允许新的声音闪避排队并中止当前输入。"""
         front_ms = task._conf_num(task.CONF_D4_FRONT, 950)
         inside_ms = min(front_ms, self.DODGE_WINDOW_FILL_MS)
-        io = _RequiemCombatIO(self, dodge_react=True)  # 窗口内新攻击排不进队, dodge_react 不会误停
+        io = _RequiemCombatIO(self, dodge_react=True)
         t0 = time.perf_counter()
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
@@ -662,12 +660,12 @@ class Requiem(MainDps):
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
         self.logger.info(
-            f"双4a窗口内报告: 标称{inside_ms:.0f}ms 实际{(time.perf_counter() - t0) * 1000:.0f}ms "
+            f"双4a首段报告: 标称{inside_ms:.0f}ms 实际{(time.perf_counter() - t0) * 1000:.0f}ms "
             f"{clicks}点"
             f"{f' 中止({io.abort_reason})' if aborted else ''}"
         )
         self._d4_front_left_ms = max(0.0, front_ms - inside_ms)
-        self._d4_seam_t = time.perf_counter()  # 记窗口内结束时刻, 供续打测接缝延迟
+        self._d4_seam_t = time.perf_counter()  # 记首段结束时刻, 供续打测接缝延迟
         self._pending_double_4a = task     # 交给下一次 plan entry 续打
         self._dodge_counter_at = 0.0
 
@@ -680,9 +678,9 @@ class Requiem(MainDps):
         if task is None:
             return
         seam_ms = (time.perf_counter() - self._d4_seam_t) * 1000
-        self.logger.info(f"安魂曲双4a: 窗口内→续打 接缝延迟 {seam_ms:.0f}ms")
+        self.logger.info(f"安魂曲双4a: 首段→续打 接缝延迟 {seam_ms:.0f}ms")
         p = dict(task._scheme_d4_params())
-        p["front_ms"] = getattr(self, "_d4_front_left_ms", 0.0)  # 前段只打剩余(前~1秒已在窗口内打过)
+        p["front_ms"] = getattr(self, "_d4_front_left_ms", 0.0)  # 前段只打首段剩余部分
         io = _RequiemCombatIO(self)  # 普通io: 新声音即中止(和 combo 一致)
         rep = None
         tail_dodge = tail_clicks = tail_aborted = None
@@ -737,10 +735,10 @@ class Requiem(MainDps):
 
     def on_dodge_counter(self):
         """触发闪避后按"安魂曲配置"的闪避反击方式走对应流程(与测试同一份配置):
-        - 闪双4a: 前段平A的前~1秒在此打(填满声音窗口、立即反击), 剩余交 plan entry 无缝续打
+        - 闪双4a: 完美闪避确认后立即打前段平A的前~1秒, 剩余交 plan entry 无缝续打
           (见 _dodge_double_4a_inside / _run_double_4a_outside, 后段像普通combo可被新声音打断);
         - 方案一(默认): 强制平A打反击(0.1间隔) → 主动闪避取消后摇 → 记时刻, combo起手前等后摇。
-        由 task.after_dodge_executed 在闪避键按下后(主线程内)同步调用。"""
+        由 task.after_sound_dodge_resolved 在完美闪避声音确认后同步调用。"""
         task = self._jump_task()
         style = task.config.get(task.CONF_DODGE_STYLE, task.STYLE_CURRENT) if task is not None else None
         if task is not None and style == task.STYLE_SCHEME_B:

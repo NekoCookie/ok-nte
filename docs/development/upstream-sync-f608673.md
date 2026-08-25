@@ -341,6 +341,17 @@ at `HEAD` only and was not changed as part of this sync.
 | Manual validation | Start the two-character Requiem/Zankou team with yellow-E opening enabled and confirm no `initial snapshot expanded ... 2 -> 4` appears from default slots. If a roster correction is logged during opening, Auto Combat must remain enabled and yellow E must occur at most once. Load a real three- or four-character team containing a recognized portrait with no implementation and confirm the slot remains visible as `BaseChar`. |
 | Status | pending real-window verification |
 
+### P-10: Sound-dodge outcome confirmation boundary
+
+| Field | Evidence |
+| --- | --- |
+| Scope | Replaces the LW behavior that started a character counter sequence immediately after dodge input with a shared two-stage sound outcome. Adds `Perfect Dodge Wait`, default `0.5s`, to Sound Trigger Config. |
+| Required LW behavior | The attack cue still runs RU's ordinary dodge input. During the configured post-input window, every raw counter-sample score is observable even while combat priority is held and regardless of RU's shared trigger debounce. A score above `Counter Attack Threshold` confirms a perfect dodge and immediately publishes `perfect_dodge=True`; timeout publishes `False` and resumes the character's existing normal combat path. Only the confirmed result invokes a character's `on_dodge_counter()` hook, so Requiem cannot start double-4A from an ordinary dodge. Zankou and other logic that observes `last_dodge_time()` resumes after the same shared result window without a character-specific duplicate timer. Task changes, context exit, and failed dodge input cancel the pending result. |
+| Boundary | The confirmation state machine, raw-score observer, timeout and outcome dispatch live in `src/lw/sound_ext.py`. `SoundListener`, `SoundCombatContext`, `DodgeCounterTrigger`, and `BaseCombatTask` retain minimal `[lw]` connections. The existing `counter.wav` remains the candidate sample; the timeout log records its peak score so real-game validation can determine whether the historical sample matches the current perfect-dodge sound. No visual detector or new audio capture path is introduced. |
+| Regression | `test_sound_dodge_confirmation` proves raw score publication, immediate perfect confirmation, configurable ordinary timeout, confirmation while action arbitration is busy, successful-dodge timestamp tracking, and perfect-only character counter dispatch. Existing sound-capture and Requiem/Zankou axis tests retain restart, input-recovery, and normal combat behavior. |
+| Manual validation | Fight a boss with Requiem and inspect `Perfect dodge sound confirmed` versus `No perfect dodge sound ... peak counter_score=...`. Confirm double-4A starts only on the former. If visible perfect dodges consistently time out with peaks below threshold, replace `counter.wav` with a sample captured from the current game's perfect-dodge sound before tuning the threshold. |
+| Status | pending real-window sample verification |
+
 ### R-01: Window layout and focus-stability extension boundary
 
 | Field | Evidence |

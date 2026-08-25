@@ -49,6 +49,7 @@ sound_trigger_config_option = ConfigOption(
         "Dodge All Attacks": True,
         "Dodge Threshold": 0.13,
         "Counter Attack Threshold": 0.12,
+        "Perfect Dodge Wait": 0.5,  # [lw]
     },
     description="Sound-based dodge and counter trigger settings",
     config_description={
@@ -56,6 +57,10 @@ sound_trigger_config_option = ConfigOption(
         "Dodge All Attacks": "Dodge all attacks without performing counter attacks",
         "Dodge Threshold": "Dodge sound recognition threshold (0.0-1.0, lower is more sensitive)",
         "Counter Attack Threshold": "Counter attack sound recognition threshold (0.0-1.0, lower is more sensitive)",
+        "Perfect Dodge Wait": (  # [lw]
+            "Seconds after dodge input to wait for a perfect-dodge sound before normal "
+            "combat resumes"
+        ),
     },
 )
 

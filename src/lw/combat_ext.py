@@ -324,10 +324,13 @@ class CombatExtMixin(_TaskProxy):
         if SoundCombatContext.should_interrupt_combat():
             SoundCombatContext().execute_pending_action()
 
-    def after_dodge_executed(self):
-        """闪避在主线程执行完(键已按下)后的钩子: 当前在场角色若定义了 on_dodge_counter
-        (目前仅安魂曲)就调用它强制平A打出闪避反击; 其它角色无此方法则不做。
-        由 DodgeCounterTrigger.execute_dodge 在闪避键按下后同步调用(主线程内)。"""
+    def after_sound_dodge_resolved(self, perfect_dodge: bool):
+        """声音闪避结果钩子: 仅在完美闪避声音确认后启动角色的闪避反击逻辑。
+
+        普通闪避在公共确认窗口结束后直接恢复原战斗流程; 依赖 last_dodge_time 的角色逻辑
+        (如残虹合轴恢复)会在恢复后照常看到本次闪避。"""
+        if not perfect_dodge:
+            return
         char = self.get_current_char(raise_exception=False)
         hook = getattr(char, "on_dodge_counter", None)
         if hook is not None:
