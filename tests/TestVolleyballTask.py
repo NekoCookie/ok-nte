@@ -1,9 +1,7 @@
 import unittest
 from unittest.mock import Mock, call, patch
 
-from ok import TaskDisabledException
-
-from src.tasks.VolleyballTask import VolleyballTask
+from src.tasks.VolleyballTask import VolleyballMatchState, VolleyballTask
 
 
 class TestVolleyballTask(unittest.TestCase):
@@ -225,7 +223,7 @@ class TestVolleyballTask(unittest.TestCase):
             def __init__(self):
                 self.info_set = Mock()
                 self.click_match_end_button = Mock()
-                self.reset_service_phase = Mock()
+                self.reset_match_state = Mock()
 
         task = ResultHandler()
         button = object()
@@ -242,7 +240,7 @@ class TestVolleyballTask(unittest.TestCase):
             def __init__(self):
                 self.info_set = Mock()
                 self.click_match_end_button = Mock()
-                self.reset_service_phase = Mock()
+                self.reset_match_state = Mock()
 
         task = ResultHandler()
 
@@ -250,48 +248,54 @@ class TestVolleyballTask(unittest.TestCase):
 
         task.info_set.assert_called_once_with(VolleyballTask.INFO_LEVEL_STATUS, "重开当前关")
 
-    def test_missing_exit_checks_for_dialog_skip_during_an_active_match(self):
-        task = Mock()
-        task.handle_match_end.return_value = False
-        skip_task = Mock()
-
-        in_game = VolleyballTask.handle_missing_exit(task, True, skip_task)
-
-        self.assertTrue(in_game)
-        skip_task.check_skip.assert_called_once_with()
-
-    def test_missing_exit_checks_for_dialog_skip_before_match_starts(self):
-        task = Mock()
-        task.handle_match_end.return_value = False
-        skip_task = Mock()
-
-        in_game = VolleyballTask.handle_missing_exit(task, False, skip_task)
-
-        self.assertFalse(in_game)
-        skip_task.check_skip.assert_called_once_with()
-
-    def test_missing_exit_marks_match_inactive_after_result_button_is_handled(self):
-        task = Mock()
-        task.handle_match_end.return_value = True
-        skip_task = Mock()
-
-        in_game = VolleyballTask.handle_missing_exit(task, True, skip_task)
-
-        self.assertFalse(in_game)
-        skip_task.check_skip.assert_not_called()
-
-    def test_match_start_does_not_send_keys_before_exit_is_stable(self):
+    def test_match_start_resets_per_match_state_after_a_recognized_phase(self):
         class MatchStarter:
             def __init__(self):
-                self.find_exit = Mock()
-                self.wait_until = Mock(return_value=False)
+                self._match_result_recorded = True
+                self._play_count = 4
                 self.log_info = Mock()
-                self.handle_service = Mock()
+                self.reset_service_phase = Mock()
+                self.reset_spike_phase = Mock()
 
         task = MatchStarter()
 
-        self.assertFalse(VolleyballTask.begin_match(task))
-        task.handle_service.assert_not_called()
+        self.assertTrue(VolleyballTask.begin_match(task))
+        self.assertFalse(task._match_result_recorded)
+        self.assertEqual(task._play_count, 0)
+        task.reset_service_phase.assert_called_once_with()
+        task.reset_spike_phase.assert_called_once_with()
+
+    def test_match_state_uses_right_side_action_groups_in_priority_order(self):
+        task = Mock()
+        task.is_service.return_value = False
+        task.is_rally.return_value = True
+        task.is_spike.return_value = True
+
+        self.assertEqual(VolleyballTask.get_match_state(task), VolleyballMatchState.RALLY)
+        task.is_spike.assert_not_called()
+
+    def test_unknown_state_keeps_the_last_recognized_state_for_graceful_recovery(self):
+        class StateTask:
+            INFO_LEVEL_STATUS = VolleyballTask.INFO_LEVEL_STATUS
+            MATCH_STATE_LABELS = VolleyballTask.MATCH_STATE_LABELS
+            UNKNOWN_STATE_WARNING_SECONDS = VolleyballTask.UNKNOWN_STATE_WARNING_SECONDS
+
+            def __init__(self):
+                self._match_state = VolleyballMatchState.RALLY
+                self._last_recognized_match_state = VolleyballMatchState.RALLY
+                self._unknown_state_started_at = None
+                self._unknown_state_warning_logged = False
+                self.info_set = Mock()
+                self.log_info = Mock()
+                self.log_warning = Mock()
+
+        task = StateTask()
+
+        self.assertEqual(VolleyballTask.mark_match_state_unknown(task, 10.0), 0.0)
+        self.assertEqual(task._match_state, VolleyballMatchState.UNKNOWN)
+        self.assertEqual(task._last_recognized_match_state, VolleyballMatchState.RALLY)
+        self.assertAlmostEqual(VolleyballTask.mark_match_state_unknown(task, 10.4), 0.4)
+        task.log_warning.assert_not_called()
 
     def test_service_is_handled_after_the_match_has_already_started(self):
         class ServiceTask:
@@ -301,7 +305,6 @@ class TestVolleyballTask(unittest.TestCase):
             MAX_SERVE_DELAY = VolleyballTask.MAX_SERVE_DELAY
             SERVICE_RELEASE_CONFIRM_SECONDS = VolleyballTask.SERVICE_RELEASE_CONFIRM_SECONDS
             SERVICE_PHASE_WARNING_SECONDS = VolleyballTask.SERVICE_PHASE_WARNING_SECONDS
-            SERVICE_PHASE_HARD_TIMEOUT_SECONDS = VolleyballTask.SERVICE_PHASE_HARD_TIMEOUT_SECONDS
 
             def __init__(self):
                 self.config = {self.CONF_SERVE_DELAY: 2.8}
@@ -413,7 +416,6 @@ class TestVolleyballTask(unittest.TestCase):
         class ServiceTask:
             SERVICE_RELEASE_CONFIRM_SECONDS = VolleyballTask.SERVICE_RELEASE_CONFIRM_SECONDS
             SERVICE_PHASE_WARNING_SECONDS = VolleyballTask.SERVICE_PHASE_WARNING_SECONDS
-            SERVICE_PHASE_HARD_TIMEOUT_SECONDS = VolleyballTask.SERVICE_PHASE_HARD_TIMEOUT_SECONDS
 
             def __init__(self):
                 self._service_phase_active = True
@@ -441,7 +443,6 @@ class TestVolleyballTask(unittest.TestCase):
         class ServiceTask:
             SERVICE_RELEASE_CONFIRM_SECONDS = VolleyballTask.SERVICE_RELEASE_CONFIRM_SECONDS
             SERVICE_PHASE_WARNING_SECONDS = VolleyballTask.SERVICE_PHASE_WARNING_SECONDS
-            SERVICE_PHASE_HARD_TIMEOUT_SECONDS = VolleyballTask.SERVICE_PHASE_HARD_TIMEOUT_SECONDS
 
             def __init__(self):
                 self._service_phase_active = True
@@ -461,11 +462,10 @@ class TestVolleyballTask(unittest.TestCase):
         self.assertFalse(VolleyballTask.handle_service_release(task, 2.5))
         task.log_info.assert_called_once_with("service phase cleared")
 
-    def test_service_phase_stops_after_hard_timeout(self):
+    def test_service_phase_only_warns_when_it_remains_visible(self):
         class ServiceTask:
             SERVICE_RELEASE_CONFIRM_SECONDS = VolleyballTask.SERVICE_RELEASE_CONFIRM_SECONDS
             SERVICE_PHASE_WARNING_SECONDS = VolleyballTask.SERVICE_PHASE_WARNING_SECONDS
-            SERVICE_PHASE_HARD_TIMEOUT_SECONDS = VolleyballTask.SERVICE_PHASE_HARD_TIMEOUT_SECONDS
 
             def __init__(self):
                 self._service_phase_active = True
@@ -486,12 +486,14 @@ class TestVolleyballTask(unittest.TestCase):
 
         with patch(
             "src.tasks.VolleyballTask.time.monotonic",
-            return_value=VolleyballTask.SERVICE_PHASE_HARD_TIMEOUT_SECONDS,
+            return_value=VolleyballTask.SERVICE_PHASE_WARNING_SECONDS,
         ):
-            with self.assertRaisesRegex(TaskDisabledException, "Serve UI did not clear"):
-                VolleyballTask.handle_service(task)
+            self.assertTrue(VolleyballTask.handle_service(task))
 
         task.send_key.assert_not_called()
+        task.log_warning.assert_called_once_with(
+            "serve UI has not cleared; continuing recognition without duplicate input"
+        )
 
     def test_play_once_adjusts_position_after_four_hits(self):
         class PlayTask:
@@ -558,42 +560,74 @@ class TestVolleyballTask(unittest.TestCase):
 
     def test_service_requires_both_serve_action_keys_to_be_highlighted(self):
         task = Mock()
-        task.SERVICE_ACTION_ROIS = VolleyballTask.SERVICE_ACTION_ROIS
         task.SERVICE_ACTION_WHITE_THRESHOLD = VolleyballTask.SERVICE_ACTION_WHITE_THRESHOLD
         task.box_of_screen.side_effect = ["toss_key", "serve_key"]
         task.calculate_color_percentage.side_effect = [0.05, 0.06]
 
-        self.assertTrue(VolleyballTask.is_service(task))
+        self.assertTrue(
+            VolleyballTask.are_actions_highlighted(task, VolleyballTask.SERVICE_ACTION_ROIS)
+        )
 
         self.assertEqual(
             task.box_of_screen.call_args_list,
-            [call(*roi) for roi in task.SERVICE_ACTION_ROIS],
+            [call(*roi) for roi in VolleyballTask.SERVICE_ACTION_ROIS],
         )
 
-    def test_service_rejects_a_partially_highlighted_action_pair(self):
+    def test_action_group_rejects_a_partially_highlighted_pair(self):
         task = Mock()
-        task.SERVICE_ACTION_ROIS = VolleyballTask.SERVICE_ACTION_ROIS
         task.SERVICE_ACTION_WHITE_THRESHOLD = VolleyballTask.SERVICE_ACTION_WHITE_THRESHOLD
         task.box_of_screen.side_effect = ["toss_key", "serve_key"]
         task.calculate_color_percentage.side_effect = [0.05, 0.0]
 
-        self.assertFalse(VolleyballTask.is_service(task))
+        self.assertFalse(
+            VolleyballTask.are_actions_highlighted(task, VolleyballTask.SERVICE_ACTION_ROIS)
+        )
 
-    def test_missing_exit_checks_service_but_blocks_regular_controls(self):
+    def test_rally_state_delegates_to_the_rally_action_group(self):
+        task = Mock()
+        task.RALLY_ACTION_ROIS = VolleyballTask.RALLY_ACTION_ROIS
+        task.are_actions_highlighted.return_value = True
+
+        self.assertTrue(VolleyballTask.is_rally(task))
+
+        task.are_actions_highlighted.assert_called_once_with(VolleyballTask.RALLY_ACTION_ROIS)
+
+    def test_unknown_ui_keeps_running_recognition_without_regular_input(self):
         class StopLoop(Exception):
             pass
 
-        task = Mock()
-        task.find_exit.return_value = False
-        task.handle_missing_exit.return_value = True
-        task.handle_service.return_value = False
-        task.sleep.side_effect = StopLoop
+        class RecognitionTask:
+            MATCH_SIGNAL_GRACE_SECONDS = VolleyballTask.MATCH_SIGNAL_GRACE_SECONDS
+            MATCH_STATE_LABELS = VolleyballTask.MATCH_STATE_LABELS
+            UNKNOWN_STATE_WARNING_SECONDS = VolleyballTask.UNKNOWN_STATE_WARNING_SECONDS
+            INFO_LEVEL_STATUS = VolleyballTask.INFO_LEVEL_STATUS
+
+            def __init__(self):
+                self._match_state = VolleyballMatchState.WAITING
+                self._last_recognized_match_state = VolleyballMatchState.WAITING
+                self._unknown_state_started_at = None
+                self._unknown_state_warning_logged = False
+                self.get_task_by_class = Mock(return_value=Mock())
+                self.get_match_state = Mock(return_value=None)
+                self.should_handle_match_end = Mock(return_value=False)
+                self.handle_match_end = Mock(return_value=False)
+                self.handle_service = Mock(return_value=False)
+                self.info_set = Mock()
+                self.log_info = Mock()
+                self.log_warning = Mock()
+                self.play_once = Mock()
+                self.sleep = Mock(side_effect=StopLoop)
+
+            mark_match_state_unknown = VolleyballTask.mark_match_state_unknown
+
+        task = RecognitionTask()
 
         with self.assertRaises(StopLoop):
             VolleyballTask.auto_play(task)
 
-        task.handle_service.assert_called_once_with()
-        task.is_spike.assert_not_called()
+        task.get_match_state.assert_called_once_with()
+        task.handle_service.assert_called_once_with(is_service=False)
+        task.get_task_by_class.return_value.check_skip.assert_called_once_with()
         task.play_once.assert_not_called()
 
 

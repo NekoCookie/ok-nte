@@ -1,5 +1,6 @@
 import re
 import time
+from enum import StrEnum
 
 from ok import TaskDisabledException
 
@@ -9,6 +10,15 @@ from src.tasks.trigger.SkipDialogTask import SkipDialogTask
 
 INST = "进入比赛后开始任务"
 EN_INST = "Start the mission after entering the game"
+
+
+# [lw] The local volleyball HUD is the reliable source for match phase transitions.
+class VolleyballMatchState(StrEnum):
+    WAITING = "waiting"
+    SERVICE = "service"
+    RALLY = "rally"
+    SPIKE = "spike"
+    UNKNOWN = "unknown"
 
 
 class VolleyballTask(NTEOneTimeTask, BaseNTETask):
@@ -41,9 +51,19 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         "b": (0, 140),
     }
     STAR_GOLD_THRESHOLD = 0.15
+    # [lw] Right-side key glyphs provide a fast state signal without OCR or model inference.
     SERVICE_ACTION_ROIS = (
         (0.978, 0.405, 0.986, 0.421),
         (0.978, 0.437, 0.986, 0.453),
+    )
+    RALLY_ACTION_ROIS = (
+        (0.978, 0.518, 0.986, 0.534),
+        (0.978, 0.550, 0.986, 0.566),
+    )
+    SPIKE_ACTION_ROIS = (
+        (0.978, 0.655, 0.986, 0.671),
+        (0.978, 0.687, 0.986, 0.703),
+        (0.975, 0.717, 0.993, 0.743),
     )
     SERVICE_ACTION_WHITE_THRESHOLD = 0.04
     DEFAULT_SERVE_DELAY = 2.5
@@ -57,8 +77,17 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     DEFAULT_POSITION_ADJUST = True
     SERVICE_RELEASE_CONFIRM_SECONDS = 0.5
     SERVICE_PHASE_WARNING_SECONDS = 10.0
-    SERVICE_PHASE_HARD_TIMEOUT_SECONDS = 30.0
+    MATCH_SIGNAL_GRACE_SECONDS = 0.8
+    MATCH_END_CHECK_INTERVAL_SECONDS = 0.5
+    UNKNOWN_STATE_WARNING_SECONDS = 10.0
     POSITION_ADJUST_AFTER_HITS = 4
+    MATCH_STATE_LABELS = {
+        VolleyballMatchState.WAITING: "等待比赛",
+        VolleyballMatchState.SERVICE: "发球",
+        VolleyballMatchState.RALLY: "接球/进攻",
+        VolleyballMatchState.SPIKE: "扣球",
+        VolleyballMatchState.UNKNOWN: "等待识别",
+    }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -93,7 +122,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self.loss_count = 0
         self._match_result_recorded = False
         self._play_count = 0
-        self.reset_service_phase()
+        self.reset_match_state()
 
     def validate_config(self, key, value):
         if key == self.CONF_SERVE_DELAY:
@@ -128,7 +157,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self.loss_count = 0
         self._match_result_recorded = False
         self._play_count = 0
-        self.reset_service_phase()
+        self.reset_match_state()
         self.info_set(self.INFO_MATCH_COUNT, self.match_count)
         self.info_set(self.INFO_WIN_COUNT, self.win_count)
         self.info_set(self.INFO_LOSS_COUNT, self.loss_count)
@@ -141,59 +170,103 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
             self.handle_monthly_card()
 
     def auto_play(self):
+        # [lw] Keep recognizing the local volleyball HUD instead of stopping on one missed signal.
         skip_task = self.get_task_by_class(SkipDialogTask)
         switch_key = False
         key = "j"
-        in_game = True
+        match_started = False
         while True:
-            if not self.find_exit():
-                in_game = self.handle_missing_exit(in_game, skip_task)
-                if not in_game:
+            now = time.monotonic()
+            match_state = self.get_match_state()
+            if match_state is None:
+                if self.should_handle_match_end(now) and self.handle_match_end():
+                    match_started = False
+                    self.reset_match_state()
                     self.sleep(0.1)
                     continue
-                if self.handle_service():
-                    self.sleep(0.1)
-                    continue
+
+                skip_task.check_skip()
+                service_releasing = self.handle_service(is_service=False)
+                unknown_duration = self.mark_match_state_unknown(now)
+                if (
+                    not service_releasing
+                    and self._last_recognized_match_state == VolleyballMatchState.RALLY
+                    and unknown_duration < self.MATCH_SIGNAL_GRACE_SECONDS
+                ):
+                    key, switch_key = self.play_once(key, switch_key)
                 self.sleep(0.1)
                 continue
-            elif not in_game:
-                if not self.begin_match():
+
+            if not match_started:
+                self.begin_match()
+                match_started = True
+            self.mark_match_state(match_state)
+            if match_state != VolleyballMatchState.SPIKE:
+                self.reset_spike_phase()
+
+            if match_state == VolleyballMatchState.SERVICE:
+                self.handle_service(is_service=True)
+            else:
+                if self.handle_service(is_service=False):
                     self.sleep(0.1)
                     continue
-                in_game = True
+                if match_state == VolleyballMatchState.SPIKE:
+                    self.handle_spike()
+                else:
+                    key, switch_key = self.play_once(key, switch_key)
 
-            if self.handle_service():
-                self.sleep(0.1)
-                continue
-
-            if self.is_spike():
-                self.log_info("in spike")
-                self.wait_until(lambda: not self.is_spike(), time_out=1)
-                self.sleep(0.7)
-                self.send_key("k")
-
-            key, switch_key = self.play_once(key, switch_key)
             self.sleep(0.1)
 
     def begin_match(self):
-        if not self.wait_until(
-            self.find_exit,
-            settle_time=1,
-            time_out=1.5,
-            raise_if_not_found=False,
-        ):
-            return False
         self._match_result_recorded = False
         self._play_count = 0
         self.reset_service_phase()
+        self.reset_spike_phase()
         self.log_info("game begin")
-        if not self.handle_service():
-            self.log_info("not service")
         return True
 
-    def handle_service(self):
+    def get_match_state(self):
+        if self.is_service():
+            return VolleyballMatchState.SERVICE
+        if self.is_rally():
+            return VolleyballMatchState.RALLY
+        if self.is_spike():
+            return VolleyballMatchState.SPIKE
+        return None
+
+    def mark_match_state(self, match_state):
+        if self._match_state == match_state:
+            return
+        self._match_state = match_state
+        self._last_recognized_match_state = match_state
+        self._unknown_state_started_at = None
+        self.info_set(self.INFO_LEVEL_STATUS, self.MATCH_STATE_LABELS[match_state])
+        self.log_info(f"volleyball state: {match_state.value}")
+
+    def mark_match_state_unknown(self, now):
+        if self._unknown_state_started_at is None:
+            self._unknown_state_started_at = now
+            self._match_state = VolleyballMatchState.UNKNOWN
+            self.info_set(self.INFO_LEVEL_STATUS, self.MATCH_STATE_LABELS[self._match_state])
+            self.log_info("volleyball state: unknown; continuing recognition")
+
+        unknown_duration = now - self._unknown_state_started_at
+        if unknown_duration >= self.UNKNOWN_STATE_WARNING_SECONDS and not self._unknown_state_warning_logged:
+            self._unknown_state_warning_logged = True
+            self.log_warning("volleyball UI is still unrecognized; continuing recognition without input")
+        return unknown_duration
+
+    def should_handle_match_end(self, now):
+        if now - self._last_match_end_check_at < self.MATCH_END_CHECK_INTERVAL_SECONDS:
+            return False
+        self._last_match_end_check_at = now
+        return True
+
+    def handle_service(self, is_service=None):
         now = time.monotonic()
-        if not self.is_service():
+        if is_service is None:
+            is_service = self.is_service()
+        if not is_service:
             return self.handle_service_release(now)
 
         self._service_release_started_at = None
@@ -250,11 +323,9 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
 
     def check_service_phase_timeout(self, now):
         elapsed = now - self._service_phase_started_at
-        if elapsed >= self.SERVICE_PHASE_HARD_TIMEOUT_SECONDS:
-            raise TaskDisabledException("Serve UI did not clear before the safety timeout")
         if elapsed >= self.SERVICE_PHASE_WARNING_SECONDS and not self._service_phase_warning_logged:
             self._service_phase_warning_logged = True
-            self.log_warning("serve UI has not cleared; input remains locked")
+            self.log_warning("serve UI has not cleared; continuing recognition without duplicate input")
 
     def reset_service_phase(self):
         self._service_phase_active = False
@@ -262,11 +333,26 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self._service_release_started_at = None
         self._service_phase_warning_logged = False
 
-    def handle_missing_exit(self, in_game, skip_task):
-        if self.handle_match_end():
-            return False
-        skip_task.check_skip()
-        return in_game
+    def handle_spike(self):
+        if self._spike_phase_active:
+            return
+        self._spike_phase_active = True
+        self.log_info("in spike")
+        self.wait_until(lambda: not self.is_spike(), time_out=1)
+        self.sleep(0.7)
+        self.send_key("k")
+
+    def reset_spike_phase(self):
+        self._spike_phase_active = False
+
+    def reset_match_state(self):
+        self.reset_service_phase()
+        self.reset_spike_phase()
+        self._match_state = VolleyballMatchState.WAITING
+        self._last_recognized_match_state = VolleyballMatchState.WAITING
+        self._unknown_state_started_at = None
+        self._unknown_state_warning_logged = False
+        self._last_match_end_check_at = 0.0
 
     def play_once(self, key, switch_key):
         match self.config.get(self.CONF_MODE):
@@ -321,7 +407,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         return False
 
     def handle_match_result(self, box, won, next_level):
-        self.reset_service_phase()
+        self.reset_match_state()
         if won:
             status = "进入下一关" if next_level else "重开当前关"
         else:
@@ -372,6 +458,12 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         return bool(self.ocr(box=box, match=result_text_re))
 
     def is_service(self):
+        return self.are_actions_highlighted(self.SERVICE_ACTION_ROIS)
+
+    def is_rally(self):
+        return self.are_actions_highlighted(self.RALLY_ACTION_ROIS)
+
+    def are_actions_highlighted(self, action_rois):
         from src import text_white_color
 
         return all(
@@ -380,10 +472,12 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                 self.box_of_screen(*roi),
             )
             > self.SERVICE_ACTION_WHITE_THRESHOLD
-            for roi in self.SERVICE_ACTION_ROIS
+            for roi in action_rois
         )
 
     def is_spike(self):
+        if self.are_actions_highlighted(self.SPIKE_ACTION_ROIS):
+            return True
         box = self.box_of_screen(0.8562, 0.8500, 0.9137, 0.9243, hcenter=True)
         return self.calculate_color_percentage(spike_bule_color, box) > 0.06
 
