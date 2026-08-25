@@ -76,7 +76,6 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     MAX_PLAY_INTERVAL = 2.0
     PLAY_INTERVAL_RANGE_ERROR = "普通回合按键间隔必须在0.1到2.0秒之间"
     DEFAULT_POSITION_ADJUST = True
-    SERVICE_RELEASE_CONFIRM_SECONDS = 0.5
     SERVICE_PHASE_WARNING_SECONDS = 10.0
     MATCH_RECOGNITION_INTERVAL = 0.05
     MATCH_SIGNAL_GRACE_SECONDS = 0.8
@@ -236,12 +235,14 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     def get_match_state(self):
         if self.is_service():
             return VolleyballMatchState.SERVICE
+        rally_active = self.is_rally()
+        spike_action_active = self.is_spike_action()
         # [lw] The blue cue appears before the short-lived spike action glyphs.
-        if self.is_spike_cue():
+        if self.is_spike_cue() and (rally_active or spike_action_active):
             return VolleyballMatchState.SPIKE_CUE
-        if self.is_spike_action():
+        if spike_action_active:
             return VolleyballMatchState.SPIKE_ACTION
-        if self.is_rally():
+        if rally_active:
             return VolleyballMatchState.RALLY
         return None
 
@@ -278,9 +279,8 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         if is_service is None:
             is_service = self.is_service()
         if not is_service:
-            return self.handle_service_release(now)
+            return self.handle_service_release()
 
-        self._service_release_started_at = None
         if self._service_phase_active:
             self.check_service_phase_timeout(now)
             return True
@@ -316,17 +316,9 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
             return self.DEFAULT_PLAY_INTERVAL
         return max(self.MIN_PLAY_INTERVAL, min(interval, self.MAX_PLAY_INTERVAL))
 
-    def handle_service_release(self, now):
+    def handle_service_release(self):
         if not self._service_phase_active:
             return False
-
-        if self._service_release_started_at is None:
-            self._service_release_started_at = now
-            return True
-
-        self.check_service_phase_timeout(now)
-        if now - self._service_release_started_at < self.SERVICE_RELEASE_CONFIRM_SECONDS:
-            return True
 
         self.log_info("service phase cleared")
         self.reset_service_phase()
@@ -341,7 +333,6 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     def reset_service_phase(self):
         self._service_phase_active = False
         self._service_phase_started_at = 0.0
-        self._service_release_started_at = None
         self._service_phase_warning_logged = False
 
     def handle_spike_cue(self):
@@ -351,6 +342,10 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self.log_info("in spike cue")
         self.wait_until(lambda: not self.is_spike_cue(), time_out=1)
         self.sleep(0.7)
+        if not (self.is_rally() or self.is_spike_action()):
+            self.log_warning("spike cue cleared without active volleyball controls; cancelling K")
+            self.reset_spike_phase()
+            return
         self.send_key("k")
 
     def handle_spike_action(self):

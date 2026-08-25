@@ -273,8 +273,15 @@ class TestVolleyballTask(unittest.TestCase):
         task.is_rally.return_value = True
 
         self.assertEqual(VolleyballTask.get_match_state(task), VolleyballMatchState.SPIKE_CUE)
-        task.is_spike_action.assert_not_called()
-        task.is_rally.assert_not_called()
+
+    def test_blue_signal_without_active_right_side_controls_is_not_a_spike_cue(self):
+        task = Mock()
+        task.is_service.return_value = False
+        task.is_spike_cue.return_value = True
+        task.is_spike_action.return_value = False
+        task.is_rally.return_value = False
+
+        self.assertIsNone(VolleyballTask.get_match_state(task))
 
     def test_spike_action_is_an_immediate_fallback_when_blue_cue_is_missed(self):
         task = Mock()
@@ -284,7 +291,6 @@ class TestVolleyballTask(unittest.TestCase):
         task.is_rally.return_value = True
 
         self.assertEqual(VolleyballTask.get_match_state(task), VolleyballMatchState.SPIKE_ACTION)
-        task.is_rally.assert_not_called()
 
     def test_spike_cue_uses_the_existing_timing_before_sending_k(self):
         class SpikeTask:
@@ -295,6 +301,10 @@ class TestVolleyballTask(unittest.TestCase):
                 self.sleep = Mock()
                 self.send_key = Mock()
                 self.is_spike_cue = Mock(return_value=False)
+                self.is_rally = Mock(return_value=True)
+                self.is_spike_action = Mock(return_value=False)
+                self.log_warning = Mock()
+                self.reset_spike_phase = Mock()
 
         task = SpikeTask()
 
@@ -303,6 +313,27 @@ class TestVolleyballTask(unittest.TestCase):
         task.wait_until.assert_called_once()
         task.sleep.assert_called_once_with(0.7)
         task.send_key.assert_called_once_with("k")
+
+    def test_spike_cue_cancels_k_when_right_side_controls_disappear(self):
+        class SpikeTask:
+            def __init__(self):
+                self._spike_phase_active = False
+                self.log_info = Mock()
+                self.log_warning = Mock()
+                self.wait_until = Mock()
+                self.sleep = Mock()
+                self.send_key = Mock()
+                self.is_spike_cue = Mock(return_value=False)
+                self.is_rally = Mock(return_value=False)
+                self.is_spike_action = Mock(return_value=False)
+                self.reset_spike_phase = Mock()
+
+        task = SpikeTask()
+
+        VolleyballTask.handle_spike_cue(task)
+
+        task.send_key.assert_not_called()
+        task.reset_spike_phase.assert_called_once_with()
 
     def test_spike_action_sends_k_without_waiting_for_the_blue_cue(self):
         class SpikeTask:
@@ -350,14 +381,12 @@ class TestVolleyballTask(unittest.TestCase):
             DEFAULT_SERVE_DELAY = VolleyballTask.DEFAULT_SERVE_DELAY
             MIN_SERVE_DELAY = VolleyballTask.MIN_SERVE_DELAY
             MAX_SERVE_DELAY = VolleyballTask.MAX_SERVE_DELAY
-            SERVICE_RELEASE_CONFIRM_SECONDS = VolleyballTask.SERVICE_RELEASE_CONFIRM_SECONDS
             SERVICE_PHASE_WARNING_SECONDS = VolleyballTask.SERVICE_PHASE_WARNING_SECONDS
 
             def __init__(self):
                 self.config = {self.CONF_SERVE_DELAY: 2.8}
                 self._service_phase_active = False
                 self._service_phase_started_at = 0.0
-                self._service_release_started_at = None
                 self._service_phase_warning_logged = False
                 self.is_service = Mock(return_value=True)
                 self.log_info = Mock()
@@ -388,7 +417,6 @@ class TestVolleyballTask(unittest.TestCase):
                 self.config = {self.CONF_SERVE_DELAY: 2.5}
                 self._service_phase_active = False
                 self._service_phase_started_at = 0.0
-                self._service_release_started_at = None
                 self._service_phase_warning_logged = False
                 self.is_service = Mock(return_value=True)
                 self.log_info = Mock()
@@ -461,13 +489,11 @@ class TestVolleyballTask(unittest.TestCase):
 
     def test_active_service_phase_blocks_duplicate_inputs_after_four_seconds(self):
         class ServiceTask:
-            SERVICE_RELEASE_CONFIRM_SECONDS = VolleyballTask.SERVICE_RELEASE_CONFIRM_SECONDS
             SERVICE_PHASE_WARNING_SECONDS = VolleyballTask.SERVICE_PHASE_WARNING_SECONDS
 
             def __init__(self):
                 self._service_phase_active = True
                 self._service_phase_started_at = 9.0
-                self._service_release_started_at = None
                 self._service_phase_warning_logged = False
                 self.is_service = Mock(return_value=True)
                 self.log_info = Mock()
@@ -486,38 +512,29 @@ class TestVolleyballTask(unittest.TestCase):
 
         task.send_key.assert_not_called()
 
-    def test_service_phase_releases_only_after_stable_non_service(self):
+    def test_service_phase_releases_immediately_after_non_service_is_recognized(self):
         class ServiceTask:
-            SERVICE_RELEASE_CONFIRM_SECONDS = VolleyballTask.SERVICE_RELEASE_CONFIRM_SECONDS
-            SERVICE_PHASE_WARNING_SECONDS = VolleyballTask.SERVICE_PHASE_WARNING_SECONDS
-
             def __init__(self):
                 self._service_phase_active = True
                 self._service_phase_started_at = 1.0
-                self._service_release_started_at = None
                 self._service_phase_warning_logged = False
                 self.log_info = Mock()
-                self.log_warning = Mock()
 
-            check_service_phase_timeout = VolleyballTask.check_service_phase_timeout
             reset_service_phase = VolleyballTask.reset_service_phase
 
         task = ServiceTask()
 
-        self.assertTrue(VolleyballTask.handle_service_release(task, 2.0))
-        self.assertTrue(VolleyballTask.handle_service_release(task, 2.4))
-        self.assertFalse(VolleyballTask.handle_service_release(task, 2.5))
+        self.assertFalse(VolleyballTask.handle_service_release(task))
+        self.assertFalse(task._service_phase_active)
         task.log_info.assert_called_once_with("service phase cleared")
 
     def test_service_phase_only_warns_when_it_remains_visible(self):
         class ServiceTask:
-            SERVICE_RELEASE_CONFIRM_SECONDS = VolleyballTask.SERVICE_RELEASE_CONFIRM_SECONDS
             SERVICE_PHASE_WARNING_SECONDS = VolleyballTask.SERVICE_PHASE_WARNING_SECONDS
 
             def __init__(self):
                 self._service_phase_active = True
                 self._service_phase_started_at = 0.0
-                self._service_release_started_at = None
                 self._service_phase_warning_logged = False
                 self.is_service = Mock(return_value=True)
                 self.log_info = Mock()
