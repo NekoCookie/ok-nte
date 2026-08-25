@@ -265,14 +265,61 @@ class TestVolleyballTask(unittest.TestCase):
         task.reset_service_phase.assert_called_once_with()
         task.reset_spike_phase.assert_called_once_with()
 
-    def test_match_state_uses_right_side_action_groups_in_priority_order(self):
+    def test_spike_cue_takes_priority_over_rally_controls(self):
         task = Mock()
         task.is_service.return_value = False
+        task.is_spike_cue.return_value = True
+        task.is_spike_action.return_value = True
         task.is_rally.return_value = True
-        task.is_spike.return_value = True
 
-        self.assertEqual(VolleyballTask.get_match_state(task), VolleyballMatchState.RALLY)
-        task.is_spike.assert_not_called()
+        self.assertEqual(VolleyballTask.get_match_state(task), VolleyballMatchState.SPIKE_CUE)
+        task.is_spike_action.assert_not_called()
+        task.is_rally.assert_not_called()
+
+    def test_spike_action_is_an_immediate_fallback_when_blue_cue_is_missed(self):
+        task = Mock()
+        task.is_service.return_value = False
+        task.is_spike_cue.return_value = False
+        task.is_spike_action.return_value = True
+        task.is_rally.return_value = True
+
+        self.assertEqual(VolleyballTask.get_match_state(task), VolleyballMatchState.SPIKE_ACTION)
+        task.is_rally.assert_not_called()
+
+    def test_spike_cue_uses_the_existing_timing_before_sending_k(self):
+        class SpikeTask:
+            def __init__(self):
+                self._spike_phase_active = False
+                self.log_info = Mock()
+                self.wait_until = Mock()
+                self.sleep = Mock()
+                self.send_key = Mock()
+                self.is_spike_cue = Mock(return_value=False)
+
+        task = SpikeTask()
+
+        VolleyballTask.handle_spike_cue(task)
+
+        task.wait_until.assert_called_once()
+        task.sleep.assert_called_once_with(0.7)
+        task.send_key.assert_called_once_with("k")
+
+    def test_spike_action_sends_k_without_waiting_for_the_blue_cue(self):
+        class SpikeTask:
+            def __init__(self):
+                self._spike_phase_active = False
+                self.log_info = Mock()
+                self.wait_until = Mock()
+                self.sleep = Mock()
+                self.send_key = Mock()
+
+        task = SpikeTask()
+
+        VolleyballTask.handle_spike_action(task)
+
+        task.wait_until.assert_not_called()
+        task.sleep.assert_not_called()
+        task.send_key.assert_called_once_with("k")
 
     def test_unknown_state_keeps_the_last_recognized_state_for_graceful_recovery(self):
         class StateTask:
@@ -597,6 +644,7 @@ class TestVolleyballTask(unittest.TestCase):
             pass
 
         class RecognitionTask:
+            MATCH_RECOGNITION_INTERVAL = VolleyballTask.MATCH_RECOGNITION_INTERVAL
             MATCH_SIGNAL_GRACE_SECONDS = VolleyballTask.MATCH_SIGNAL_GRACE_SECONDS
             MATCH_STATE_LABELS = VolleyballTask.MATCH_STATE_LABELS
             UNKNOWN_STATE_WARNING_SECONDS = VolleyballTask.UNKNOWN_STATE_WARNING_SECONDS
