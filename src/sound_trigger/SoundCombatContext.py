@@ -300,7 +300,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
                     task,
                 )
             elif action == "manual_perfect":  # [lw]
-                dodge_outcome = True  # [lw] Perfect sound already proves the manual dodge.
+                dodge_outcome = self.lw_resolve_manual_perfect_dodge()  # [lw]
             elif action == "counter":
                 trigger.execute_counter_attack()
         except Exception as e:

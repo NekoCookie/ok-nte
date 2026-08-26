@@ -252,7 +252,6 @@ class SoundContextExtMixin:
                 queue_manual_perfect = True
 
         if queue_manual_perfect:
-            logger.info("Manual perfect dodge sound detected; queuing character follow-up")
             queue_action = getattr(self, "_queue_action", None)
             if callable(queue_action):
                 queue_action("manual_perfect")
@@ -300,8 +299,12 @@ class SoundContextExtMixin:
                 return None
             self._lw_counter_sound_consumed = True
             self._lw_manual_perfect_dodge_time = time.time()
-            logger.info("Manual perfect dodge callback detected; queuing character follow-up")
             return "manual_perfect"
+
+    @staticmethod
+    def lw_resolve_manual_perfect_dodge() -> bool:
+        logger.info("声音闪避结果: 手动完美")
+        return True
 
     def lw_execute_dodge_with_confirmation(self, trigger, task) -> bool | None:
         """Execute dodge, then return True for perfect, False for timeout, or None if cancelled."""
@@ -394,15 +397,15 @@ class SoundContextExtMixin:
         if confirmed:
             after_shift = confirmed_at - dodge_started_at
             logger.info(
-                "Perfect dodge sound confirmed: "
+                "声音闪避结果: 自动完美; "
                 f"peak counter_score={peak:.4f}; "
                 f"after_shift={after_shift:.3f}s; "
                 f"sample={attempt.audio_sample_name or 'none'}"
             )
             return True
         logger.info(
-            "No perfect dodge sound within "
-            f"{self._lw_perfect_dodge_wait:.2f}s after Shift; "
+            "声音闪避结果: 普通闪避; "
+            f"waited={self._lw_perfect_dodge_wait:.2f}s after Shift; "
             f"peak counter_score={peak:.4f}; "
             f"sample={attempt.audio_sample_name or 'none'}; resuming normal combat"
         )
