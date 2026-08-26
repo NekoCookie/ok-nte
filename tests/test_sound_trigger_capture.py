@@ -1,6 +1,8 @@
 import sys
 import threading
 import unittest
+import wave
+from pathlib import Path
 
 import numpy as np
 
@@ -99,6 +101,18 @@ class ProcessLoopbackTests(unittest.TestCase):
 
 
 class SoundListenerTests(unittest.TestCase):
+    def test_counter_sample_fits_listener_matching_window(self):
+        from src.sound_trigger.SoundListener import SoundListener
+
+        sample_path = Path(__file__).resolve().parents[1] / "assets" / "sounds" / "counter.wav"
+        with wave.open(str(sample_path), "rb") as sample:
+            duration = sample.getnframes() / sample.getframerate()
+            self.assertEqual(sample.getframerate(), SoundListener.used_sr)
+            self.assertEqual(sample.getnchannels(), 1)
+            self.assertEqual(sample.getsampwidth(), 2)
+
+        self.assertLessEqual(duration, SoundListener.sample_len)
+
     def test_missing_sample_file_fails_fast(self):
         from src.sound_trigger.SoundListener import SoundListener
 
