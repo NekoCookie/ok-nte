@@ -44,6 +44,10 @@ class _CombatContextHarness(SoundCombatContext):
 
 
 class SoundDodgeConfirmationTests(unittest.TestCase):
+    def setUp(self):
+        _CombatContextHarness._instance = None
+        _CombatContextHarness.clear_priority()
+
     def test_listener_publishes_scores_without_trigger_arbitration(self):
         listener = _ListenerHarness()
         observed = []
@@ -196,8 +200,40 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         context = _SoundContextHarness(task)
         context._lw_begin_dodge_confirmation(task)
 
-        self.assertTrue(context.lw_confirm_perfect_dodge_trigger())
+        self.assertIsNone(context.lw_counter_trigger_action())
         self.assertIsNotNone(context._lw_dodge_confirmation.confirmed_at)
+
+    def test_one_counter_sound_queues_only_one_manual_perfect_action(self):
+        task = _FakeTask()
+        context = _SoundContextHarness(task)
+        queued = []
+        context._queue_action = queued.append
+
+        context.lw_observe_sound_scores(0.0, 0.13)
+        context.lw_observe_sound_scores(0.0, 0.14)
+        context.lw_observe_sound_scores(0.0, 0.0)
+        context.lw_observe_sound_scores(0.0, 0.13)
+
+        self.assertEqual(queued, ["manual_perfect"])
+
+        context.lw_observe_sound_scores(0.0, 0.0)
+        context.lw_observe_sound_scores(0.0, 0.0)
+        context.lw_observe_sound_scores(0.0, 0.13)
+
+        self.assertEqual(queued, ["manual_perfect", "manual_perfect"])
+
+    def test_confirmed_automatic_sound_cannot_restart_as_manual_perfect(self):
+        task = _FakeTask()
+        context = _SoundContextHarness(task)
+        queued = []
+        context._queue_action = queued.append
+        context._lw_begin_dodge_confirmation(task)
+
+        context.lw_observe_sound_scores(0.0, 0.13)
+
+        self.assertIsNone(context.lw_counter_trigger_action())
+        self.assertEqual(queued, [])
+        self.assertEqual(context._lw_manual_perfect_dodge_time, 0.0)
 
     def test_dodge_trigger_publishes_last_successful_input_time(self):
         task = SimpleNamespace()
@@ -238,6 +274,30 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         context.execute_pending_action()
 
         self.assertEqual(task.outcomes, [True])
+        self.assertIsNone(context._pending_action)
+
+    def test_manual_perfect_sound_dispatches_without_extra_input(self):
+        task = _FakeTask()
+        task.executor = SimpleNamespace(paused=False)
+        context = _CombatContextHarness()
+        trigger = SimpleNamespace(
+            task=task,
+            last_dodge_time=0.0,
+            execute_dodge=mock.Mock(),
+            execute_counter_attack=mock.Mock(),
+        )
+        context._listener = SimpleNamespace(counter_attack_threshold=0.12)
+        context._trigger = trigger
+        context._pending_task = task
+
+        context.lw_observe_sound_scores(0.0, 0.13)
+        context._on_counter_triggered()
+        context.execute_pending_action()
+
+        self.assertEqual(task.outcomes, [True])
+        self.assertGreater(context.last_dodge_time(), 0.0)
+        trigger.execute_dodge.assert_not_called()
+        trigger.execute_counter_attack.assert_not_called()
         self.assertIsNone(context._pending_action)
 
 

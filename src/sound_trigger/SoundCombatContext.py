@@ -208,6 +208,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
 
             try:
                 self.lw_cancel_dodge_confirmation("sound context exited")  # [lw]
+                self.lw_reset_counter_sound_event()  # [lw]
                 if self._listener:
                     self._listener.stop()
                     self._listener = None
@@ -264,9 +265,9 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
         self._queue_action("dodge")
 
     def _on_counter_triggered(self):
-        if self.lw_confirm_perfect_dodge_trigger():  # [lw]
-            return
-        self._queue_action("dodge" if self._dodge_all_attacks else "counter")
+        action = self.lw_counter_trigger_action()  # [lw]
+        if action is not None:
+            self._queue_action(action)  # [lw]
 
     def execute_pending_action(self, expected_action=ACTION_UNSET, expected_task=ACTION_UNSET):
         with self._context_lock:
@@ -298,6 +299,8 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
                     trigger,
                     task,
                 )
+            elif action == "manual_perfect":  # [lw]
+                dodge_outcome = True  # [lw] Perfect sound already proves the manual dodge.
             elif action == "counter":
                 trigger.execute_counter_attack()
         except Exception as e:
@@ -320,6 +323,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
 
             if task_changed:
                 self.lw_cancel_dodge_confirmation("sound task changed")  # [lw]
+                self.lw_reset_counter_sound_event()  # [lw]
                 self._pending_action = None
                 self.clear_priority()
                 self._dodge_action = None if dodge_action is ACTION_UNSET else dodge_action
@@ -349,6 +353,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
                 return False
             self._pending_task = None
             self.lw_cancel_dodge_confirmation("sound task cleared")  # [lw]
+            self.lw_reset_counter_sound_event()  # [lw]
             self._dodge_action = None
             self._counter_action = None
             if self._trigger:

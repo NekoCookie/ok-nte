@@ -190,11 +190,16 @@ class SoundContextExtMixin:
     _dodge_paused = False
     DEFAULT_PERFECT_DODGE_WAIT = 0.5
     MAX_PERFECT_DODGE_WAIT = 5.0
+    COUNTER_SOUND_QUIET_FRAMES = 2
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._lw_perfect_dodge_wait = self.DEFAULT_PERFECT_DODGE_WAIT
         self._lw_dodge_confirmation = None
+        self._lw_counter_sound_active = False
+        self._lw_counter_sound_consumed = False
+        self._lw_counter_sound_quiet_frames = 0
+        self._lw_manual_perfect_dodge_time = 0.0
 
     def lw_update_perfect_dodge_wait(self, value) -> None:
         try:
@@ -217,43 +222,86 @@ class SoundContextExtMixin:
             return attempt
 
     def lw_observe_sound_scores(self, _dodge_score: float, counter_score: float) -> None:
-        """Record a perfect-dodge sound even while the dodge action owns combat priority."""
+        """Confirm automatic dodges or queue one follow-up for a manual perfect dodge."""
 
-        if self._lw_dodge_confirmation is None:
-            return
         try:
             counter_score = float(counter_score)
         except (TypeError, ValueError):
             return
         observed_at = time.perf_counter()
+        queue_manual_perfect = False
         with self._context_lock:
-            attempt = self._lw_dodge_confirmation
-            if attempt is None or attempt.cancelled:
-                return
-            attempt.score_observations.append((observed_at, counter_score))
-            if attempt.dodge_started_at is None or observed_at >= attempt.dodge_started_at:
-                attempt.peak_counter_score = max(attempt.peak_counter_score, counter_score)
             listener = self._listener
             threshold = getattr(listener, "counter_attack_threshold", 1.0)
-            if counter_score <= 0 or counter_score <= threshold or attempt.confirmed:
-                return
-            attempt.confirmation_candidates.append(observed_at)
-            attempt.confirmed_at = min(attempt.confirmation_candidates)
-            attempt.event.set()
+            matched = counter_score > 0 and counter_score > threshold
+            self._lw_update_counter_sound_event_locked(matched)
 
-    def lw_confirm_perfect_dodge_trigger(self) -> bool:
-        """Consume RU's counter callback as confirmation when a dodge is awaiting its outcome."""
+            attempt = self._lw_dodge_confirmation
+            if attempt is not None and not attempt.cancelled:
+                attempt.score_observations.append((observed_at, counter_score))
+                if attempt.dodge_started_at is None or observed_at >= attempt.dodge_started_at:
+                    attempt.peak_counter_score = max(attempt.peak_counter_score, counter_score)
+                if matched and not attempt.confirmed:
+                    attempt.confirmation_candidates.append(observed_at)
+                    attempt.confirmed_at = min(attempt.confirmation_candidates)
+                    attempt.event.set()
+                    self._lw_counter_sound_consumed = True
+            elif matched and not self._lw_counter_sound_consumed:
+                self._lw_counter_sound_consumed = True
+                self._lw_manual_perfect_dodge_time = time.time()
+                queue_manual_perfect = True
+
+        if queue_manual_perfect:
+            logger.info("Manual perfect dodge sound detected; queuing character follow-up")
+            queue_action = getattr(self, "_queue_action", None)
+            if callable(queue_action):
+                queue_action("manual_perfect")
+
+    def _lw_update_counter_sound_event_locked(self, matched: bool) -> None:
+        if matched:
+            if not self._lw_counter_sound_active:
+                self._lw_counter_sound_active = True
+                self._lw_counter_sound_consumed = False
+            self._lw_counter_sound_quiet_frames = 0
+            return
+        if not self._lw_counter_sound_active:
+            return
+        self._lw_counter_sound_quiet_frames += 1
+        if self._lw_counter_sound_quiet_frames < self.COUNTER_SOUND_QUIET_FRAMES:
+            return
+        self._lw_counter_sound_active = False
+        self._lw_counter_sound_consumed = False
+        self._lw_counter_sound_quiet_frames = 0
+
+    def lw_reset_counter_sound_event(self) -> None:
+        with self._context_lock:
+            self._lw_counter_sound_active = False
+            self._lw_counter_sound_consumed = False
+            self._lw_counter_sound_quiet_frames = 0
+
+    def lw_counter_trigger_action(self) -> str | None:
+        """Return the sole action for a counter callback, suppressing an already-seen sound."""
 
         with self._context_lock:
+            if self._lw_counter_sound_active and self._lw_counter_sound_consumed:
+                return None
+            if not self._lw_counter_sound_active:
+                self._lw_counter_sound_active = True
+                self._lw_counter_sound_quiet_frames = 0
             attempt = self._lw_dodge_confirmation
-            if attempt is None or attempt.cancelled:
-                return False
-            if not attempt.confirmed:
+            if attempt is not None and not attempt.cancelled:
+                self._lw_counter_sound_consumed = True
+                if attempt.confirmed:
+                    return None
                 observed_at = time.perf_counter()
                 attempt.confirmation_candidates.append(observed_at)
                 attempt.confirmed_at = min(attempt.confirmation_candidates)
                 attempt.event.set()
-            return True
+                return None
+            self._lw_counter_sound_consumed = True
+            self._lw_manual_perfect_dodge_time = time.time()
+            logger.info("Manual perfect dodge callback detected; queuing character follow-up")
+            return "manual_perfect"
 
     def lw_execute_dodge_with_confirmation(self, trigger, task) -> bool | None:
         """Execute dodge, then return True for perfect, False for timeout, or None if cancelled."""
@@ -388,7 +436,8 @@ class SoundContextExtMixin:
         """上次声音触发闪避的时刻(time.time()), 没触发过返回 0。
         闪避是我方主动触发(记了时刻), 所以"放完技能是否立刻闪避"可确定性判断, 不必靠图标猜。"""
         trigger = self._trigger
-        return getattr(trigger, "last_dodge_time", 0.0) if trigger else 0.0
+        automatic_dodge_at = getattr(trigger, "last_dodge_time", 0.0) if trigger else 0.0
+        return max(automatic_dodge_at, self._lw_manual_perfect_dodge_time)
 
     def has_pending_action(self):
         """是否有"新的声音闪避在排队待执行"。用于闪避反击(双4a)期间: 反击本身在处理"当前这次"

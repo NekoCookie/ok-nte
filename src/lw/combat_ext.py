@@ -320,7 +320,7 @@ class CombatExtMixin(_TaskProxy):
         """把声音线程已触发、但还排在队列里没执行的闪避立即落地, 使 last_dodge_time 更新。
         供 settle 在判"放招后是否闪避"前调用: 否则"放招→闪避(还pending)→切人"贴太紧时,
         闪避执行被排在判定之后, last_dodge_time 尚未更新 → settle 漏看这次闪避(哈尼娅实测)。
-        若 pending 是反击(counter)而非闪避, 执行后 last_dodge_time 不更新, settle 仍不介入。"""
+        手动完美闪避的声音动作不补输入, 但会更新时间并派发角色后续。"""
         if SoundCombatContext.should_interrupt_combat():
             SoundCombatContext().execute_pending_action()
 
