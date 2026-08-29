@@ -755,6 +755,14 @@ class Requiem(MainDps):
         self._active_dodge()               # 主动闪避, 取消反击后摇
         self._dodge_counter_at = time.time()  # combo 起手前从这里算"闪避后到首平A"的等待
 
+    def on_ordinary_dodge(self):  # [lw]
+        """Start one ordinary configured combo after the Shift-based wait expires."""
+
+        self._pending_double_4a = None
+        self._d4_front_left_ms = 0.0
+        self.logger.info("安魂曲普通闪避: 等待结束, 直接接combo")
+        self.combo_attack()
+
     def _wait_dodge_counter_recovery(self):
         """combo 起手前: 若紧接在闪避反击之后(在后摇窗口内), 等后摇走完再落第一下, 否则 combo 顺序乱。
         raw sleep 不插帧, 保 combo 起手时机。消费掉标记, 只对紧接反击的这一次 combo 生效。

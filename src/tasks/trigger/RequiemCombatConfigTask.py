@@ -151,7 +151,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     # 双4a(声音闪避版)的可调时序(选"闪双4a"才显示): 声音闪避后 → 前段平A(打第一个4a) → 跳A(空格+
     # 左键同按)代替第二次闪避、续段 → 后段平A(接第二个4a)。三段时长各自可配, 前后平A共用连点按下/抬起
     # (逻辑同光速4a方案四)。精确时序在 requiem_combo.run_scheme_double_4a。
-    CONF_D4_ORDINARY_DODGE_WAIT = "双4a-普通闪避等待(s)"
     CONF_D4_FRONT = "双4a-前段平A(ms)"       # 第一个4a: 跳A之前的平A时长
     CONF_D4_JUMP_HOLD = "双4a-跳A按住(ms)"    # 空格+左键同时按住(代替闪避)
     CONF_D4_BACK = "双4a-后段平A(ms)"        # 第二个4a: 跳A之后的平A时长
@@ -228,6 +227,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_COAXIS_ZANKOU_HOLD_DURATION = "残虹长按普攻时长(s)"
     CONF_COAXIS_ZANKOU_NORMAL_DURATION = "残虹普攻时长(s)"
     CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION = "残虹声音闪避后普攻时长(s)"
+    CONF_ORDINARY_DODGE_WAIT = "普通闪避等待(s)"
     CONF_GROUP_DODGE = "▸ 闪避反击设置(展开)"     # 分组折叠开关: 展开=闪避方式(下拉)+选闪双4a时的时序
     CONF_GROUP_TUNING = "▸ 实战调优参数(展开)"    # 分组折叠开关
     CONF_GROUP_TEST = "▸ 测试开关与测试键(展开)"   # 分组折叠开关
@@ -334,10 +334,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.5,
-                # 闪避反击设置组(折叠)→ 闪避方式(下拉)→ 选"闪双4a"才显示8个时序
+                self.CONF_ORDINARY_DODGE_WAIT: 0.5,
+                # 闪避反击设置组(折叠)→ 闪避方式(下拉)→ 选"闪双4a"才显示7个时序
                 self.CONF_GROUP_DODGE: False,
                 self.CONF_DODGE_STYLE: self.STYLE_SCHEME_B,
-                self.CONF_D4_ORDINARY_DODGE_WAIT: 0.5,
                 self.CONF_D4_FRONT: 1800,
                 self.CONF_D4_JUMP_HOLD: 20,
                 self.CONF_D4_BACK: 700,
@@ -462,6 +462,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                             self.CONF_COAXIS_ZANKOU_HOLD_DURATION,
                             self.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
                             self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
+                            self.CONF_ORDINARY_DODGE_WAIT,
                         ],
                     },
                 },
@@ -538,14 +539,13 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "options": [self.STYLE_CURRENT, self.STYLE_SCHEME_B],
                     # 嵌套第三层(按所选方案显示各自专属参数, 不属于本方案的不显示):
                     #   方案一 → 反击强制平A/主动闪避次数/间隔/combo后摇等待(这套只方案一走);
-                    #   闪双4a → 普通闪避确认等待 + 它的7个专属时序。
+                    #   闪双4a → 它的7个专属时序。
                     "sub_configs": {
                         self.STYLE_CURRENT: [
                             self.CONF_DODGE_COUNTER, self.CONF_DODGE_COUNT,
                             self.CONF_DODGE_GAP, self.CONF_DODGE_COMBO_WAIT,
                         ],
                         self.STYLE_SCHEME_B: [
-                            self.CONF_D4_ORDINARY_DODGE_WAIT,
                             self.CONF_D4_FRONT, self.CONF_D4_JUMP_HOLD, self.CONF_D4_BACK,
                             self.CONF_D4_CLICK_HOLD, self.CONF_D4_CLICK_GAP,
                             self.CONF_D4_TAIL_DODGE, self.CONF_D4_TAIL_FILL,
@@ -580,9 +580,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_G_SKILL_DELAY: "按G后等这么久(ms)再交回决策; 用来测按下G的后摇(后面好接大招)",
                 self.CONF_DODGE_TEST: "开=每次声音闪避走一整轮(关自动战斗后调时间用)",
                 self.CONF_DISABLE_SKILLS: "开=所有LW角色模板不放E/Q; G和合轴不受影响(测手感/闪避用); 刷本记得关",
-                self.CONF_GROUP_DODGE: "▸ 分组折叠: 展开闪避反击设置(闪避方式 + 选闪双4a后的8个时序)",
+                self.CONF_GROUP_DODGE: "▸ 分组折叠: 展开闪避反击设置(闪避方式 + 选闪双4a后的7个时序)",
                 self.CONF_DODGE_STYLE: "闪避反击方式: 方案一 / 闪双4a",
-                self.CONF_D4_ORDINARY_DODGE_WAIT: "从程序首次按Shift开始等待完美闪避声音; 超时则判为普通闪避并回planner",
                 self.CONF_D4_FRONT: "双4a 前段平A毫秒(打第一个4a); 太短会接不出第二个4a",
                 self.CONF_D4_JUMP_HOLD: "双4a 跳A空格+左键同按毫秒(代替闪避)",
                 self.CONF_D4_BACK: "双4a 后段平A毫秒(接第二个4a)",
@@ -650,7 +649,14 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 ),
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: "残虹合轴阶段长按普攻的持续秒数",
                 self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: "残虹长按结束后按共享间隔持续普攻这么久, 然后切回安魂曲",
-                self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: "残虹合轴被声音闪避打断后, 按共享间隔持续普攻这么久, 然后从重击重新开始",
+                self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: (
+                    "仅残虹完美闪避使用: 从完美闪避声音开始计时, 只点2次普攻, "
+                    "剩余时间等待, 然后从重击重新开始"
+                ),
+                self.CONF_ORDINARY_DODGE_WAIT: (
+                    "全角色通用: 从程序首次按Shift开始等待完美闪避声音; "
+                    "超时判为普通闪避, 不补普攻并恢复角色原输出"
+                ),
                 self.CONF_GROUP_TUNING: "▸ 分组折叠: 展开实战调优参数(反击平A/后摇/主动闪避/轮数/技能前平A/脱战复查/让路)",
                 self.CONF_GROUP_TEST: "▸ 分组折叠: 展开测试开关与测试键(闪避反击测试/禁用技能大招/首平A/模拟闪避)",
                 self.CONF_GROUP_GAMEPAD: "▸ 分组折叠: 展开实体手柄与虚拟手柄共存测试",

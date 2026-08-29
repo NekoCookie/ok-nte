@@ -306,6 +306,11 @@ class CombatExtMixin(_TaskProxy):
         """最近一次闪避(我方主动触发)的时刻; 没有则 0。供战斗循环判断"刚是否闪避了"。"""
         return SoundCombatContext().last_dodge_time()
 
+    def last_sound_dodge_outcome(self):
+        """Return the latest resolved sound-dodge type and its timing anchor."""
+
+        return SoundCombatContext().last_dodge_outcome()
+
     def diag_cast(self, char_index, cast_at, tag):
         """放招诊断(临时, 验证完删): 专门盯三条未实战验证的路径——真技能被闪避打断→重试、
         放招后留场读CD、辅助技能差就绪等待。打印: 角色、走了哪条分支(tag)、当前技能图标
@@ -334,15 +339,14 @@ class CombatExtMixin(_TaskProxy):
         (如残虹合轴恢复)会在恢复后照常看到本次闪避。"""
         self._lw_sound_dodge_status = dodge_result
         self.info_set("闪避情况", dodge_result)
-        if not perfect_dodge:
-            return
         char = self.get_current_char(raise_exception=False)
-        hook = getattr(char, "on_dodge_counter", None)
+        hook_name = "on_dodge_counter" if perfect_dodge else "on_ordinary_dodge"
+        hook = getattr(char, hook_name, None)
         if hook is not None:
             try:
                 hook()
             except Exception as e:
-                self.log_error(f"on_dodge_counter failed: {e}")
+                self.log_error(f"{hook_name} failed: {e}")
 
     # ---------- 技能CD锚定 / OCR就绪判定 ----------
 

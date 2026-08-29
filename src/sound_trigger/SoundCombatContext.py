@@ -123,7 +123,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
         dodge_all_attacks: bool = True,
         threshold: float = 0.13,
         counter_attack_threshold: float = 0.12,
-        perfect_dodge_wait: float = 0.5,  # [lw]
+        ordinary_dodge_wait: float = 0.5,  # [lw]
         dodge_action: Optional[Callable] = None,
         counter_action: Optional[Callable] = None,
         **kwargs,
@@ -138,12 +138,12 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
                     dodge_all_attacks,
                     threshold,
                     counter_attack_threshold,
-                    perfect_dodge_wait,
+                    ordinary_dodge_wait,
                 ) = self._pending_config
 
             self._enable_sound_trigger = enable_sound_trigger
             self._dodge_all_attacks = dodge_all_attacks
-            self.lw_update_perfect_dodge_wait(perfect_dodge_wait)  # [lw]
+            self.lw_update_ordinary_dodge_wait(ordinary_dodge_wait)  # [lw]
             if dodge_action is not None:
                 self._dodge_action = dodge_action
             if counter_action is not None:
@@ -162,7 +162,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
                 "audio_process_name": audio_process_name,
                 "threshold": threshold,
                 "counter_attack_threshold": counter_attack_threshold,
-                "perfect_dodge_wait": self._lw_perfect_dodge_wait,  # [lw]
+                "ordinary_dodge_wait": self._lw_ordinary_dodge_wait,  # [lw]
             }
 
             from src.sound_trigger.SoundListener import SoundListener
@@ -382,7 +382,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
         dodge_all_attacks: bool,
         dodge_threshold: float,
         counter_threshold: float,
-        perfect_dodge_wait: float = 0.5,  # [lw]
+        ordinary_dodge_wait: float = 0.5,  # [lw]
     ):
         with self._context_lock:
             self._pending_config = (
@@ -390,11 +390,11 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
                 dodge_all_attacks,
                 dodge_threshold,
                 counter_threshold,
-                perfect_dodge_wait,
+                ordinary_dodge_wait,
             )
             self._enable_sound_trigger = enable
             self._dodge_all_attacks = dodge_all_attacks
-            self.lw_update_perfect_dodge_wait(perfect_dodge_wait)  # [lw]
+            self.lw_update_ordinary_dodge_wait(ordinary_dodge_wait)  # [lw]
             if self._listener:
                 self._listener.threshold = dodge_threshold
                 self._listener.counter_attack_threshold = counter_threshold

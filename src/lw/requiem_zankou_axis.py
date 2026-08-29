@@ -11,6 +11,7 @@ from src.Labels import Labels
 if TYPE_CHECKING:
     from src.char.BaseChar import BaseChar
     from src.combat.planner import CombatContext
+    from src.lw.sound_ext import SoundDodgeOutcome
 
 
 REQUIEM_IMPL_ID = "builtin:requiem"
@@ -218,6 +219,11 @@ def _last_sound_dodge_time(char: "BaseChar") -> float:
         return 0.0
 
 
+def _last_sound_dodge_outcome(char: "BaseChar") -> "SoundDodgeOutcome | None":
+    getter = getattr(getattr(char, "task", None), "last_sound_dodge_outcome", None)
+    return getter() if callable(getter) else None
+
+
 def _flush_pending_sound_dodge(char: "BaseChar") -> None:
     """Execute a queued sound action so a phase-boundary dodge is visible immediately."""
 
@@ -226,10 +232,15 @@ def _flush_pending_sound_dodge(char: "BaseChar") -> None:
         flush_pending_dodge()
 
 
-def _sound_dodge_since(char: "BaseChar", recorded_at: float) -> tuple[bool, float]:
+def _sound_dodge_since(
+    char: "BaseChar",
+    recorded_at: float,
+) -> tuple[bool, float, "SoundDodgeOutcome | None"]:
     _flush_pending_sound_dodge(char)
     current_at = _last_sound_dodge_time(char)
-    return current_at > recorded_at, max(recorded_at, current_at)
+    dodged = current_at > recorded_at
+    outcome = _last_sound_dodge_outcome(char) if dodged else None
+    return dodged, max(recorded_at, current_at), outcome
 
 
 def _try_zankou_gold_skill_interrupt(
@@ -530,7 +541,7 @@ def _run_normal_attacks_until_sound_dodge(
     partner: "BaseChar",
     settings: CoordinatedAxisSettings,
     gold_skill_attempt: _GoldSkillAttempt,
-) -> tuple[bool, bool, float]:
+) -> tuple[bool, bool, float, object | None]:
     while char.now() < deadline:
         if _try_zankou_gold_skill_interrupt(
             char,
@@ -540,11 +551,11 @@ def _run_normal_attacks_until_sound_dodge(
             gold_skill_attempt,
             deadline,
         ):
-            return False, True, dodge_at
+            return False, True, dodge_at, None
         char.normal_attack()
-        dodged, dodge_at = _sound_dodge_since(char, dodge_at)
+        dodged, dodge_at, dodge_outcome = _sound_dodge_since(char, dodge_at)
         if dodged:
-            return True, False, dodge_at
+            return True, False, dodge_at, dodge_outcome
         if _try_zankou_gold_skill_interrupt(
             char,
             context,
@@ -553,47 +564,77 @@ def _run_normal_attacks_until_sound_dodge(
             gold_skill_attempt,
             deadline,
         ):
-            return False, True, dodge_at
+            return False, True, dodge_at, None
         remaining = deadline - char.now()
         if remaining > 0:
             char.sleep(min(interval, remaining))
-            dodged, dodge_at = _sound_dodge_since(char, dodge_at)
+            dodged, dodge_at, dodge_outcome = _sound_dodge_since(char, dodge_at)
             if dodged:
-                return True, False, dodge_at
-    return False, False, dodge_at
+                return True, False, dodge_at, dodge_outcome
+    return False, False, dodge_at, None
 
 
 def _run_zankou_dodge_recovery(
     char: "BaseChar",
     settings: CoordinatedAxisSettings,
     dodge_at: float,
+    dodge_outcome: "SoundDodgeOutcome | None",
 ) -> float:
-    """Recover with normals; a new dodge restarts the configured recovery window."""
+    """Perfect: tap twice then wait from its sound; ordinary already finished its global wait."""
 
-    deadline = char.now() + settings.zankou_dodge_normal_attack_duration
-    while char.now() < deadline:
-        char.normal_attack()
-        dodged, dodge_at = _sound_dodge_since(char, dodge_at)
-        if dodged:
-            deadline = char.now() + settings.zankou_dodge_normal_attack_duration
+    while True:
+        if not bool(getattr(dodge_outcome, "perfect_dodge", False)):
+            return dodge_at
+
+        anchor = getattr(dodge_outcome, "anchor_monotonic", char.now())
+        deadline = anchor + settings.zankou_dodge_normal_attack_duration
+        restart = False
+
+        for attack_index in range(2):
+            char.normal_attack()
+            dodged, dodge_at, next_outcome = _sound_dodge_since(char, dodge_at)
+            if dodged:
+                dodge_outcome = next_outcome
+                restart = True
+                break
+            if attack_index == 0:
+                char.sleep(COAXIS_NORMAL_ATTACK_INTERVAL)
+                dodged, dodge_at, next_outcome = _sound_dodge_since(char, dodge_at)
+                if dodged:
+                    dodge_outcome = next_outcome
+                    restart = True
+                    break
+        if restart:
             continue
-        remaining = deadline - char.now()
-        if remaining <= 0:
-            continue
-        char.sleep(min(COAXIS_NORMAL_ATTACK_INTERVAL, remaining))
-        dodged, dodge_at = _sound_dodge_since(char, dodge_at)
-        if dodged:
-            deadline = char.now() + settings.zankou_dodge_normal_attack_duration
-    return dodge_at
+
+        while char.now() < deadline:
+            char.sleep(min(COAXIS_NORMAL_ATTACK_INTERVAL, deadline - char.now()))
+            dodged, dodge_at, next_outcome = _sound_dodge_since(char, dodge_at)
+            if dodged:
+                dodge_outcome = next_outcome
+                restart = True
+                break
+        if not restart:
+            return dodge_at
 
 
-def _log_zankou_sound_dodge_recovery(char: "BaseChar", duration: float) -> None:
+def _log_zankou_sound_dodge_recovery(
+    char: "BaseChar",
+    duration: float,
+    outcome: "SoundDodgeOutcome | None",
+) -> None:
     logger = getattr(char, "logger", None)
     log_info = getattr(logger, "info", None)
     if callable(log_info):
+        action = (
+            "2 normal attacks then wait"
+            if getattr(outcome, "perfect_dodge", False)
+            else "global wait complete; no normal attack"
+        )
         log_info(
             "zankou coordinated axis interrupted by sound dodge; "
-            f"normal attacks for {duration:.2f}s before restarting"
+            f"result={getattr(outcome, 'result', 'unknown')}; {action}; "
+            f"restart window={duration:.2f}s"
         )
 
 
@@ -716,6 +757,7 @@ def perform_zankou_combat_axis(
     settings = coordinated_axis_settings(char)
     dodge_at = _last_sound_dodge_time(char)
     while True:
+        dodge_outcome = None
         # Entry timing is handled before this action. The combat axis always begins
         # with heavy attack, while the standalone tester keeps its own switch delay.
         char.heavy_attack(duration=settings.zankou_hold_duration)
@@ -730,17 +772,19 @@ def perform_zankou_combat_axis(
             normal_deadline,
         ):
             return True
-        dodged, dodge_at = _sound_dodge_since(char, dodge_at)
+        dodged, dodge_at, dodge_outcome = _sound_dodge_since(char, dodge_at)
         if not dodged:
-            dodged, skill_interrupted, dodge_at = _run_normal_attacks_until_sound_dodge(
-                char,
-                normal_deadline,
-                COAXIS_NORMAL_ATTACK_INTERVAL,
-                dodge_at,
-                context,
-                partner,
-                settings,
-                gold_skill_attempt,
+            dodged, skill_interrupted, dodge_at, dodge_outcome = (
+                _run_normal_attacks_until_sound_dodge(
+                    char,
+                    normal_deadline,
+                    COAXIS_NORMAL_ATTACK_INTERVAL,
+                    dodge_at,
+                    context,
+                    partner,
+                    settings,
+                    gold_skill_attempt,
+                )
             )
             if skill_interrupted:
                 return True
@@ -748,11 +792,16 @@ def perform_zankou_combat_axis(
             _finish_zankou_axis(char, context, partner, reason="zankou coordinated axis complete")
             return True
 
-        _log_zankou_sound_dodge_recovery(char, settings.zankou_dodge_normal_attack_duration)
+        _log_zankou_sound_dodge_recovery(
+            char,
+            settings.zankou_dodge_normal_attack_duration,
+            dodge_outcome,
+        )
         dodge_at = _run_zankou_dodge_recovery(
             char,
             settings,
             dodge_at,
+            dodge_outcome,
         )
 
 

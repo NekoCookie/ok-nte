@@ -118,7 +118,7 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
     def test_perfect_sound_confirms_dodge_immediately(self):
         task = _FakeTask()
         context = _SoundContextHarness(task)
-        context.lw_update_perfect_dodge_wait(0.5)
+        context.lw_update_ordinary_dodge_wait(0.5)
 
         class Trigger:
             last_dodge_time = 0.0
@@ -138,6 +138,10 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         self.assertLess(time.perf_counter() - started_at, 0.1)
         self.assertEqual(task.outcomes, [True])
         self.assertEqual(task.dodge_results, ["自动完美"])
+        resolved = context.last_dodge_outcome()
+        self.assertTrue(resolved.perfect_dodge)
+        self.assertEqual(resolved.result, "自动完美")
+        self.assertLess(abs(time.monotonic() - resolved.anchor_monotonic), 0.1)
         self.assertTrue(
             any("声音闪避结果: 自动完美" in call.args[0] for call in log_info.call_args_list)
         )
@@ -146,7 +150,7 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         task = _FakeTask()
         context = _SoundContextHarness(task)
         context._listener.lw_request_dodge_audio_capture = mock.Mock(return_value="dodge.wav")
-        context.lw_update_perfect_dodge_wait(0.03)
+        context.lw_update_ordinary_dodge_wait(0.03)
 
         class Trigger:
             last_dodge_time = 0.0
@@ -168,6 +172,10 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         self.assertGreaterEqual(elapsed, 0.025)
         self.assertEqual(task.outcomes, [False])
         self.assertEqual(task.dodge_results, ["普通闪避"])
+        resolved = context.last_dodge_outcome()
+        self.assertFalse(resolved.perfect_dodge)
+        self.assertEqual(resolved.result, "普通闪避")
+        self.assertGreaterEqual(time.monotonic() - resolved.anchor_monotonic, 0.025)
         self.assertTrue(
             any("声音闪避结果: 普通闪避" in call.args[0] for call in log_info.call_args_list)
         )
@@ -175,7 +183,7 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
     def test_ordinary_dodge_deadline_starts_at_shift_not_attack_cue(self):
         task = _FakeTask()
         context = _SoundContextHarness(task)
-        context.lw_update_perfect_dodge_wait(0.03)
+        context.lw_update_ordinary_dodge_wait(0.03)
 
         class Trigger:
             last_dodge_time = 0.0
@@ -192,21 +200,16 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         self.assertFalse(outcome)
         self.assertGreaterEqual(time.perf_counter() - started_at, 0.045)
 
-    def test_requiem_double_4a_uses_its_local_ordinary_dodge_wait(self):
+    def test_shared_ordinary_dodge_wait_applies_to_every_character(self):
         task = _FakeTask()
-        requiem = Requiem.__new__(Requiem)
         config_task = SimpleNamespace(
             config={
-                RequiemCombatConfigTask.CONF_DODGE_STYLE: (
-                    RequiemCombatConfigTask.STYLE_SCHEME_B
-                ),
-                RequiemCombatConfigTask.CONF_D4_ORDINARY_DODGE_WAIT: 0.02,
+                RequiemCombatConfigTask.CONF_ORDINARY_DODGE_WAIT: 0.02,
             }
         )
-        task.get_current_char = lambda raise_exception=False: requiem
         task.get_task_by_class = lambda _task_class: config_task
         context = _SoundContextHarness(task)
-        context.lw_update_perfect_dodge_wait(0.5)
+        context.lw_update_ordinary_dodge_wait(0.5)
 
         class Trigger:
             last_dodge_time = 0.0
@@ -223,29 +226,19 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         self.assertFalse(outcome)
         self.assertGreaterEqual(elapsed, 0.015)
         self.assertLess(elapsed, 0.1)
+        self.assertEqual(context.lw_ordinary_dodge_wait_for_task(task), 0.02)
 
-    def test_requiem_non_double_4a_keeps_global_ordinary_dodge_wait(self):
+    def test_shared_ordinary_dodge_wait_falls_back_when_config_is_unavailable(self):
         task = _FakeTask()
-        requiem = Requiem.__new__(Requiem)
-        config_task = SimpleNamespace(
-            config={
-                RequiemCombatConfigTask.CONF_DODGE_STYLE: (
-                    RequiemCombatConfigTask.STYLE_CURRENT
-                ),
-                RequiemCombatConfigTask.CONF_D4_ORDINARY_DODGE_WAIT: 0.02,
-            }
-        )
-        task.get_current_char = lambda raise_exception=False: requiem
-        task.get_task_by_class = lambda _task_class: config_task
         context = _SoundContextHarness(task)
-        context.lw_update_perfect_dodge_wait(0.5)
+        context.lw_update_ordinary_dodge_wait(0.5)
 
-        self.assertEqual(context.lw_perfect_dodge_wait_for_task(task), 0.5)
+        self.assertEqual(context.lw_ordinary_dodge_wait_for_task(task), 0.5)
 
     def test_sound_before_shift_does_not_confirm_current_dodge(self):
         task = _FakeTask()
         context = _SoundContextHarness(task)
-        context.lw_update_perfect_dodge_wait(0.02)
+        context.lw_update_ordinary_dodge_wait(0.02)
 
         class Trigger:
             last_dodge_time = 0.0
@@ -318,7 +311,7 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
             counter_attack_threshold=0.12,
             lw_request_dodge_audio_capture=mock.Mock(return_value="dodge.wav"),
         )
-        context.lw_update_perfect_dodge_wait(0.5)
+        context.lw_update_ordinary_dodge_wait(0.5)
 
         class Trigger:
             def __init__(inner_self):
@@ -363,6 +356,10 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         self.assertEqual(task.outcomes, [True])
         self.assertEqual(task.dodge_results, ["手动完美"])
         self.assertGreater(context.last_dodge_time(), 0.0)
+        resolved = context.last_dodge_outcome()
+        self.assertTrue(resolved.perfect_dodge)
+        self.assertEqual(resolved.result, "手动完美")
+        self.assertLess(abs(time.monotonic() - resolved.anchor_monotonic), 0.1)
         trigger.execute_dodge.assert_not_called()
         trigger.execute_counter_attack.assert_not_called()
         self.assertIsNone(context._pending_action)
@@ -372,9 +369,12 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
 
 
 class CombatDodgeOutcomeTests(unittest.TestCase):
-    def test_only_perfect_dodge_runs_character_counter_hook(self):
+    def test_each_dodge_result_runs_only_its_matching_character_hook(self):
         calls = []
-        char = SimpleNamespace(on_dodge_counter=lambda: calls.append("counter"))
+        char = SimpleNamespace(
+            on_dodge_counter=lambda: calls.append("counter"),
+            on_ordinary_dodge=lambda: calls.append("ordinary"),
+        )
         combat = SimpleNamespace(
             get_current_char=lambda raise_exception=False: char,
             log_error=lambda message: self.fail(message),
@@ -392,7 +392,7 @@ class CombatDodgeOutcomeTests(unittest.TestCase):
             dodge_result="自动完美",
         )
 
-        self.assertEqual(calls, ["counter"])
+        self.assertEqual(calls, ["ordinary", "counter"])
         self.assertEqual(
             combat.info_set.call_args_list,
             [
@@ -400,6 +400,19 @@ class CombatDodgeOutcomeTests(unittest.TestCase):
                 mock.call("闪避情况", "自动完美"),
             ],
         )
+
+    def test_requiem_ordinary_dodge_starts_normal_combo_after_wait(self):
+        requiem = Requiem.__new__(Requiem)
+        requiem._pending_double_4a = object()
+        requiem._d4_front_left_ms = 100.0
+        requiem.logger = mock.MagicMock()
+        requiem.combo_attack = mock.MagicMock()
+
+        requiem.on_ordinary_dodge()
+
+        self.assertIsNone(requiem._pending_double_4a)
+        self.assertEqual(requiem._d4_front_left_ms, 0.0)
+        requiem.combo_attack.assert_called_once_with()
 
 
 if __name__ == "__main__":

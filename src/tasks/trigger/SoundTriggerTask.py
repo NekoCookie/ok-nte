@@ -45,17 +45,12 @@ class SoundTriggerTask(BaseNTETask, TriggerTask):
         counter_thresh = self._clip_threshold(
             self.sound_config.get("Counter Attack Threshold"), 0.12
         )
-        perfect_dodge_wait = self._clip_delay(  # [lw]
-            self.sound_config.get("Perfect Dodge Wait"),
-            0.5,
-        )
 
         context.update_config(  # [lw]
             True,
             dodge_all_attacks,
             dodge_thresh,
             counter_thresh,
-            perfect_dodge_wait,
         )
         context.update_task(self)
 
@@ -66,11 +61,3 @@ class SoundTriggerTask(BaseNTETask, TriggerTask):
         except (TypeError, ValueError):
             value = default
         return max(0.0, min(1.0, value))
-
-    @staticmethod
-    def _clip_delay(value, default):
-        try:
-            value = float(value)
-        except (TypeError, ValueError):
-            value = default
-        return max(0.0, min(5.0, value))

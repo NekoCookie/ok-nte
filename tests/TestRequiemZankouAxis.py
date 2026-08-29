@@ -76,6 +76,7 @@ class FakeCombatChar:
         self,
         config_task,
         dodge_times=(),
+        dodge_results=(),
         gold_skill_times=(),
         gold_skill_consumed=True,
         gold_skill_consumed_after=1,
@@ -84,13 +85,16 @@ class FakeCombatChar:
         self.task = SimpleNamespace(
             get_task_by_class=lambda _: config_task,
             last_dodge_time=lambda: self._last_dodge_time,
+            last_sound_dodge_outcome=lambda: self._last_dodge_outcome,
             find_one=lambda feature: feature == Labels.zankou_skill_gold and self._gold_skill_ready,
         )
         self.clock = 0.0
         self.events = []
         self.last_switch_time = 0.0
         self._dodge_times = list(dodge_times)
+        self._dodge_results = list(dodge_results)
         self._last_dodge_time = 0.0
+        self._last_dodge_outcome = None
         self._gold_skill_times = list(gold_skill_times)
         self._gold_skill_ready = False
         self._gold_skill_consumed = gold_skill_consumed
@@ -139,7 +143,14 @@ class FakeCombatChar:
     def _advance(self, duration):
         end = self.clock + duration
         while self._dodge_times and self._dodge_times[0] <= end:
-            self._last_dodge_time = self._dodge_times.pop(0)
+            dodge_at = self._dodge_times.pop(0)
+            perfect_dodge = self._dodge_results.pop(0) if self._dodge_results else True
+            self._last_dodge_time = dodge_at
+            self._last_dodge_outcome = SimpleNamespace(
+                perfect_dodge=perfect_dodge,
+                result="自动完美" if perfect_dodge else "普通闪避",
+                anchor_monotonic=dodge_at,
+            )
         while self._gold_skill_times and self._gold_skill_times[0] <= end:
             self._gold_skill_ready = True
             self._gold_skill_times.pop(0)
@@ -762,14 +773,11 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [
                 ("tap", 1.8),
                 ("tap", 1.9),
-                ("tap", 2.0),
-                ("tap", 2.1),
-                ("tap", 2.2),
-                ("tap", 4.05),
-                ("tap", 4.15),
-                ("tap", 4.25),
-                ("tap", 4.35),
-                ("tap", 4.45),
+                ("tap", 3.7),
+                ("tap", 3.8),
+                ("tap", 3.9),
+                ("tap", 4.0),
+                ("tap", 4.1),
             ],
         )
         context.request_switch.assert_called_once_with(
@@ -948,14 +956,43 @@ class TestRequiemZankouAxis(unittest.TestCase):
                 ("tap", 1.8),
                 ("tap", 1.9),
                 ("tap", 2.0),
-                ("tap", 2.1),
-                ("tap", 2.2),
-                ("tap", 2.3),
                 ("tap", 4.15),
                 ("tap", 4.25),
                 ("tap", 4.35),
                 ("tap", 4.45),
                 ("tap", 4.55),
+            ],
+        )
+        context.request_switch.assert_called_once_with(
+            requiem,
+            reason="zankou coordinated axis complete",
+        )
+
+    def test_zankou_ordinary_dodge_restarts_heavy_without_recovery_normals(self):
+        config_task = make_config_task(
+            **{
+                RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.45,
+            }
+        )
+        zankou = FakeCombatChar(
+            config_task,
+            dodge_times=(1.9,),
+            dodge_results=(False,),
+        )
+        requiem = FakeCombatChar(config_task)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+
+        self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
+
+        self.assertEqual(
+            [(name, round(at, 2)) for name, at in zankou.events if name == "tap"],
+            [
+                ("tap", 1.8),
+                ("tap", 3.7),
+                ("tap", 3.8),
+                ("tap", 3.9),
+                ("tap", 4.0),
+                ("tap", 4.1),
             ],
         )
         context.request_switch.assert_called_once_with(

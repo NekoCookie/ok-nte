@@ -39,6 +39,13 @@ class _AudioDiagnosticCapture:
     ends_at: float
 
 
+@dataclass(frozen=True)
+class SoundDodgeOutcome:
+    perfect_dodge: bool
+    result: str
+    anchor_monotonic: float
+
+
 class SoundListenerExtMixin:
     """Publish raw match scores before RU trigger debounce or action arbitration."""
 
@@ -188,8 +195,8 @@ class SoundListenerExtMixin:
 
 class SoundContextExtMixin:
     _dodge_paused = False
-    DEFAULT_PERFECT_DODGE_WAIT = 0.5
-    MAX_PERFECT_DODGE_WAIT = 5.0
+    DEFAULT_ORDINARY_DODGE_WAIT = 0.5
+    MAX_ORDINARY_DODGE_WAIT = 5.0
     COUNTER_SOUND_QUIET_FRAMES = 2
     DODGE_RESULT_MANUAL_PERFECT = "手动完美"
     DODGE_RESULT_ORDINARY = "普通闪避"
@@ -197,46 +204,39 @@ class SoundContextExtMixin:
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._lw_perfect_dodge_wait = self.DEFAULT_PERFECT_DODGE_WAIT
+        self._lw_ordinary_dodge_wait = self.DEFAULT_ORDINARY_DODGE_WAIT
         self._lw_dodge_confirmation = None
         self._lw_counter_sound_active = False
         self._lw_counter_sound_consumed = False
         self._lw_counter_sound_quiet_frames = 0
         self._lw_manual_perfect_dodge_time = 0.0
+        self._lw_pending_manual_perfect_wall = 0.0
+        self._lw_pending_manual_perfect_monotonic = 0.0
+        self._lw_last_dodge_outcome = None
 
-    def lw_update_perfect_dodge_wait(self, value) -> None:
+    def lw_update_ordinary_dodge_wait(self, value) -> None:
         try:
             value = float(value)
         except (TypeError, ValueError):
-            value = self.DEFAULT_PERFECT_DODGE_WAIT
-        self._lw_perfect_dodge_wait = max(0.0, min(self.MAX_PERFECT_DODGE_WAIT, value))
+            value = self.DEFAULT_ORDINARY_DODGE_WAIT
+        self._lw_ordinary_dodge_wait = max(0.0, min(self.MAX_ORDINARY_DODGE_WAIT, value))
 
-    def lw_perfect_dodge_wait_for_task(self, task) -> float:
-        """Use Requiem double-4A's local wait; every other path keeps the global value."""
+    def lw_ordinary_dodge_wait_for_task(self, task) -> float:
+        """Read the shared ordinary-dodge wait from the Requiem configuration task."""
 
-        default_wait = self._lw_perfect_dodge_wait
+        default_wait = self._lw_ordinary_dodge_wait
         try:
-            from src.char.Requiem import Requiem
             from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 
-            current_char = task.get_current_char(raise_exception=False)
-            if not isinstance(current_char, Requiem):
-                return default_wait
             config_task = task.get_task_by_class(RequiemCombatConfigTask)
             config = config_task.config
-            style = config.get(
-                RequiemCombatConfigTask.CONF_DODGE_STYLE,
-                RequiemCombatConfigTask.STYLE_SCHEME_B,
-            )
-            if style != RequiemCombatConfigTask.STYLE_SCHEME_B:
-                return default_wait
             value = float(
                 config.get(
-                    RequiemCombatConfigTask.CONF_D4_ORDINARY_DODGE_WAIT,
+                    RequiemCombatConfigTask.CONF_ORDINARY_DODGE_WAIT,
                     default_wait,
                 )
             )
-            return max(0.0, min(self.MAX_PERFECT_DODGE_WAIT, value))
+            return max(0.0, min(self.MAX_ORDINARY_DODGE_WAIT, value))
         except (AttributeError, LookupError, RuntimeError, TypeError, ValueError):
             return default_wait
 
@@ -280,7 +280,8 @@ class SoundContextExtMixin:
                     self._lw_counter_sound_consumed = True
             elif matched and not self._lw_counter_sound_consumed:
                 self._lw_counter_sound_consumed = True
-                self._lw_manual_perfect_dodge_time = time.time()
+                self._lw_pending_manual_perfect_wall = time.time()
+                self._lw_pending_manual_perfect_monotonic = time.monotonic()
                 queue_manual_perfect = True
 
         if queue_manual_perfect:
@@ -309,6 +310,9 @@ class SoundContextExtMixin:
             self._lw_counter_sound_active = False
             self._lw_counter_sound_consumed = False
             self._lw_counter_sound_quiet_frames = 0
+            self._lw_pending_manual_perfect_wall = 0.0
+            self._lw_pending_manual_perfect_monotonic = 0.0
+            self._lw_last_dodge_outcome = None
 
     def lw_counter_trigger_action(self) -> str | None:
         """Return the sole action for a counter callback, suppressing an already-seen sound."""
@@ -330,12 +334,44 @@ class SoundContextExtMixin:
                 attempt.event.set()
                 return None
             self._lw_counter_sound_consumed = True
-            self._lw_manual_perfect_dodge_time = time.time()
+            self._lw_pending_manual_perfect_wall = time.time()
+            self._lw_pending_manual_perfect_monotonic = time.monotonic()
             return "manual_perfect"
 
-    @staticmethod
-    def lw_resolve_manual_perfect_dodge() -> bool:
-        logger.info(f"声音闪避结果: {SoundContextExtMixin.DODGE_RESULT_MANUAL_PERFECT}")
+    def _lw_monotonic_from_perf_counter(self, observed_at: float) -> float:
+        return time.monotonic() - max(0.0, time.perf_counter() - observed_at)
+
+    def _lw_record_dodge_outcome(
+        self,
+        *,
+        perfect_dodge: bool,
+        result: str,
+        anchor_monotonic: float,
+    ) -> None:
+        with self._context_lock:
+            self._lw_last_dodge_outcome = SoundDodgeOutcome(
+                perfect_dodge=perfect_dodge,
+                result=result,
+                anchor_monotonic=anchor_monotonic,
+            )
+
+    def lw_resolve_manual_perfect_dodge(self) -> bool:
+        with self._context_lock:
+            anchor_monotonic = self._lw_pending_manual_perfect_monotonic
+            manual_wall = self._lw_pending_manual_perfect_wall
+            self._lw_pending_manual_perfect_monotonic = 0.0
+            self._lw_pending_manual_perfect_wall = 0.0
+        if anchor_monotonic <= 0:
+            anchor_monotonic = time.monotonic()
+        if manual_wall <= 0:
+            manual_wall = time.time()
+        self._lw_manual_perfect_dodge_time = manual_wall
+        self._lw_record_dodge_outcome(
+            perfect_dodge=True,
+            result=self.DODGE_RESULT_MANUAL_PERFECT,
+            anchor_monotonic=anchor_monotonic,
+        )
+        logger.info(f"声音闪避结果: {self.DODGE_RESULT_MANUAL_PERFECT}")
         return True
 
     def lw_execute_dodge_with_confirmation(self, trigger, task) -> bool | None:
@@ -384,8 +420,8 @@ class SoundContextExtMixin:
                 attempt.audio_sample_name = listener.lw_request_dodge_audio_capture(
                     dodge_started_at
                 )
-            perfect_dodge_wait = self.lw_perfect_dodge_wait_for_task(task)
-            deadline = dodge_started_at + perfect_dodge_wait
+            ordinary_dodge_wait = self.lw_ordinary_dodge_wait_for_task(task)
+            deadline = dodge_started_at + ordinary_dodge_wait
             while True:
                 with self._context_lock:
                     if self._lw_dodge_confirmation is not attempt or attempt.cancelled:
@@ -429,6 +465,11 @@ class SoundContextExtMixin:
             )
         if confirmed:
             after_shift = confirmed_at - dodge_started_at
+            self._lw_record_dodge_outcome(
+                perfect_dodge=True,
+                result=self.DODGE_RESULT_AUTO_PERFECT,
+                anchor_monotonic=self._lw_monotonic_from_perf_counter(confirmed_at),
+            )
             logger.info(
                 f"声音闪避结果: {self.DODGE_RESULT_AUTO_PERFECT}; "
                 f"peak counter_score={peak:.4f}; "
@@ -436,9 +477,14 @@ class SoundContextExtMixin:
                 f"sample={attempt.audio_sample_name or 'none'}"
             )
             return True
+        self._lw_record_dodge_outcome(
+            perfect_dodge=False,
+            result=self.DODGE_RESULT_ORDINARY,
+            anchor_monotonic=self._lw_monotonic_from_perf_counter(dodge_started_at),
+        )
         logger.info(
             f"声音闪避结果: {self.DODGE_RESULT_ORDINARY}; "
-            f"waited={perfect_dodge_wait:.2f}s after Shift; "
+            f"waited={ordinary_dodge_wait:.2f}s after Shift; "
             f"peak counter_score={peak:.4f}; "
             f"sample={attempt.audio_sample_name or 'none'}; resuming normal combat"
         )
@@ -479,6 +525,10 @@ class SoundContextExtMixin:
         trigger = self._trigger
         automatic_dodge_at = getattr(trigger, "last_dodge_time", 0.0) if trigger else 0.0
         return max(automatic_dodge_at, self._lw_manual_perfect_dodge_time)
+
+    def last_dodge_outcome(self) -> SoundDodgeOutcome | None:
+        with self._context_lock:
+            return self._lw_last_dodge_outcome
 
     def has_pending_action(self):
         """是否有"新的声音闪避在排队待执行"。用于闪避反击(双4a)期间: 反击本身在处理"当前这次"
