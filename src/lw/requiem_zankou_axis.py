@@ -574,6 +574,45 @@ def _run_normal_attacks_until_sound_dodge(
     return False, False, dodge_at, None
 
 
+def _run_zankou_heavy_until_sound_dodge(
+    char: "BaseChar",
+    duration: float,
+    dodge_at: float,
+) -> tuple[bool, float, "SoundDodgeOutcome | None"]:
+    """Hold attack while polling sound outcomes; release immediately when dodge input starts."""
+
+    task = getattr(char, "task", None)
+    mouse_down = getattr(task, "mouse_down", None)
+    mouse_up = getattr(task, "mouse_up", None)
+    if not callable(mouse_down) or not callable(mouse_up):
+        char.heavy_attack(duration=duration)
+        dodged, dodge_at, dodge_outcome = _sound_dodge_since(char, dodge_at)
+        return dodged, dodge_at, dodge_outcome
+
+    deadline = char.now() + max(0.0, duration)
+    mouse_down()
+    char._coaxis_heavy_held = True
+    try:
+        while char.now() < deadline:
+            char.sleep(min(COAXIS_NORMAL_ATTACK_INTERVAL, deadline - char.now()))
+            dodged, dodge_at, dodge_outcome = _sound_dodge_since(char, dodge_at)
+            if dodged:
+                return True, dodge_at, dodge_outcome
+            if not getattr(char, "_coaxis_heavy_held", False):
+                # The accepted cue released the hold, but the dodge input itself failed.
+                # Resume the original charge instead of idling until its old deadline.
+                mouse_down()
+                char._coaxis_heavy_held = True
+    finally:
+        if getattr(char, "_coaxis_heavy_held", False):
+            mouse_up()
+            char._coaxis_heavy_held = False
+
+    char.sleep(0.01)
+    dodged, dodge_at, dodge_outcome = _sound_dodge_since(char, dodge_at)
+    return dodged, dodge_at, dodge_outcome
+
+
 def _run_zankou_dodge_recovery(
     char: "BaseChar",
     settings: CoordinatedAxisSettings,
@@ -607,6 +646,9 @@ def _run_zankou_dodge_recovery(
         if restart:
             continue
 
+        # Keep the next held attack away from the second click even when the configured
+        # sound-anchored recovery window has already elapsed due to scheduling jitter.
+        deadline = max(deadline, char.now() + COAXIS_NORMAL_ATTACK_INTERVAL)
         while char.now() < deadline:
             char.sleep(min(COAXIS_NORMAL_ATTACK_INTERVAL, deadline - char.now()))
             dodged, dodge_at, next_outcome = _sound_dodge_since(char, dodge_at)
@@ -760,7 +802,24 @@ def perform_zankou_combat_axis(
         dodge_outcome = None
         # Entry timing is handled before this action. The combat axis always begins
         # with heavy attack, while the standalone tester keeps its own switch delay.
-        char.heavy_attack(duration=settings.zankou_hold_duration)
+        dodged, dodge_at, dodge_outcome = _run_zankou_heavy_until_sound_dodge(
+            char,
+            settings.zankou_hold_duration,
+            dodge_at,
+        )
+        if dodged:
+            _log_zankou_sound_dodge_recovery(
+                char,
+                settings.zankou_dodge_normal_attack_duration,
+                dodge_outcome,
+            )
+            dodge_at = _run_zankou_dodge_recovery(
+                char,
+                settings,
+                dodge_at,
+                dodge_outcome,
+            )
+            continue
         normal_deadline = char.now() + settings.zankou_normal_attack_duration
         gold_skill_attempt = _GoldSkillAttempt()
         if _try_zankou_gold_skill_interrupt(

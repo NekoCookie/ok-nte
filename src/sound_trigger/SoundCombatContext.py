@@ -307,7 +307,7 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
                         else self.DODGE_RESULT_ORDINARY
                     )
             elif action == "manual_perfect":  # [lw]
-                dodge_outcome = self.lw_resolve_manual_perfect_dodge()  # [lw]
+                dodge_outcome = self.lw_resolve_manual_perfect_dodge(task)  # [lw]
                 dodge_result = self.DODGE_RESULT_MANUAL_PERFECT  # [lw]
             elif action == "counter":
                 trigger.execute_counter_attack()

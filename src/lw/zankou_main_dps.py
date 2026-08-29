@@ -50,6 +50,14 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
         self._coaxis_switch_pending = False
         super().switch_out()
 
+    def prepare_for_sound_dodge(self):
+        """Release a coordinated-axis heavy input before dodge handling continues."""
+
+        if not getattr(self, "_coaxis_heavy_held", False):
+            return
+        self.task.mouse_up()
+        self._coaxis_heavy_held = False
+
     def combat_plan(self, context):
         partner = coordinated_axis_partner(
             self,

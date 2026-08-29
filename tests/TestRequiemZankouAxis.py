@@ -87,6 +87,8 @@ class FakeCombatChar:
             last_dodge_time=lambda: self._last_dodge_time,
             last_sound_dodge_outcome=lambda: self._last_dodge_outcome,
             find_one=lambda feature: feature == Labels.zankou_skill_gold and self._gold_skill_ready,
+            mouse_down=self._mouse_down,
+            mouse_up=self._mouse_up,
         )
         self.clock = 0.0
         self.events = []
@@ -102,6 +104,7 @@ class FakeCombatChar:
         self._gold_skill_inputs = 0
         self.has_intro = False
         self._cycle_full = cycle_full
+        self._heavy_started_at = None
 
     def now(self):
         return self.clock
@@ -132,6 +135,18 @@ class FakeCombatChar:
     def heavy_attack(self, duration):
         self.events.append(("hold", duration))
         self._advance(duration)
+
+    def _mouse_down(self):
+        if self._heavy_started_at is not None:
+            raise AssertionError("heavy attack input already held")
+        self._heavy_started_at = self.clock
+        self.events.append(("hold_start", self.clock))
+
+    def _mouse_up(self):
+        if self._heavy_started_at is None:
+            return
+        self.events.append(("hold", self.clock - self._heavy_started_at))
+        self._heavy_started_at = None
 
     def send_skill_key(self, action_name=None, **_kwargs):
         self.events.append(("gold_skill", self.clock, action_name))
@@ -702,8 +717,10 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertFalse(requiem._coaxis_switch_pending)
 
         self.assertTrue(perform_zankou_combat_axis(zankou, zankou_context, requiem))
-        self.assertEqual(zankou.events[0], ("hold", 1.8))
-        self.assertIn(("hold", 1.8), zankou.events)
+        self.assertEqual(
+            [(name, round(duration, 1)) for name, duration in zankou.events if name == "hold"],
+            [("hold", 1.8)],
+        )
         self.assertEqual(
             [(name, round(at, 1)) for name, at in zankou.events if name == "tap"],
             [("tap", 1.8), ("tap", 1.9), ("tap", 2.0), ("tap", 2.1), ("tap", 2.2)],
@@ -765,25 +782,56 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
 
         self.assertEqual(
-            [event for event in zankou.events if event[0] == "hold"],
-            [("hold", 1.8), ("hold", 1.8)],
+            [(name, round(duration, 2)) for name, duration in zankou.events if name == "hold"],
+            [("hold", 0.4), ("hold", 1.8)],
+        )
+        self.assertEqual(
+            [(name, round(at, 2)) for name, at in zankou.events if name == "hold_start"],
+            [("hold_start", 0.0), ("hold_start", 0.85)],
         )
         self.assertEqual(
             [(name, round(at, 2)) for name, at in zankou.events if name == "tap"],
             [
-                ("tap", 1.8),
-                ("tap", 1.9),
-                ("tap", 3.7),
-                ("tap", 3.8),
-                ("tap", 3.9),
-                ("tap", 4.0),
-                ("tap", 4.1),
+                ("tap", 0.4),
+                ("tap", 0.5),
+                ("tap", 2.66),
+                ("tap", 2.76),
+                ("tap", 2.86),
+                ("tap", 2.96),
+                ("tap", 3.06),
             ],
         )
         context.request_switch.assert_called_once_with(
             requiem,
             reason="zankou coordinated axis complete",
         )
+
+    def test_zankou_perfect_dodge_keeps_minimum_gap_before_restarted_heavy(self):
+        config_task = make_config_task(
+            **{
+                RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.05,
+            }
+        )
+        zankou = FakeCombatChar(config_task, dodge_times=(0.4,))
+        requiem = FakeCombatChar(config_task)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+
+        self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
+
+        recovery_taps = [at for name, at in zankou.events if name == "tap"][:2]
+        heavy_starts = [at for name, at in zankou.events if name == "hold_start"]
+        self.assertEqual([round(at, 2) for at in recovery_taps], [0.4, 0.5])
+        self.assertEqual(round(heavy_starts[1] - recovery_taps[1], 2), 0.1)
+
+    def test_zankou_releases_held_coaxis_attack_for_sound_dodge(self):
+        zankou = ZankouMainDps.__new__(ZankouMainDps)
+        zankou._coaxis_heavy_held = True
+        zankou.task = SimpleNamespace(mouse_up=mock.Mock())
+
+        zankou.prepare_for_sound_dodge()
+
+        zankou.task.mouse_up.assert_called_once_with()
+        self.assertFalse(zankou._coaxis_heavy_held)
 
     def test_zankou_combat_axis_does_not_reuse_test_switch_delay(self):
         config_task = make_config_task()
@@ -794,7 +842,10 @@ class TestRequiemZankouAxis(unittest.TestCase):
 
         self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
 
-        self.assertEqual(zankou.events[0], ("hold", 1.8))
+        self.assertEqual(
+            [(name, round(duration, 1)) for name, duration in zankou.events if name == "hold"],
+            [("hold", 1.8)],
+        )
 
     def test_zankou_gold_skill_interrupts_axis_and_requests_partner_switch(self):
         config_task = make_config_task(
@@ -841,21 +892,21 @@ class TestRequiemZankouAxis(unittest.TestCase):
                 if event[0] == "gold_skill"
             ],
             [
-                ("gold_skill", 1.9, "zankou_gold_skill"),
-                ("gold_skill", 2.0, "zankou_gold_skill_retry_2"),
-                ("gold_skill", 2.1, "zankou_gold_skill_retry_3"),
-                ("gold_skill", 2.2, "zankou_gold_skill_retry_4"),
+                ("gold_skill", 1.91, "zankou_gold_skill"),
+                ("gold_skill", 2.01, "zankou_gold_skill_retry_2"),
+                ("gold_skill", 2.11, "zankou_gold_skill_retry_3"),
+                ("gold_skill", 2.21, "zankou_gold_skill_retry_4"),
             ],
         )
-        self.assertEqual(round(zankou.clock, 2), 2.25)
+        self.assertEqual(round(zankou.clock, 2), 2.26)
         self.assertEqual(
             [(event[0], round(event[1], 2)) for event in zankou.events if event[0] == "tap"],
             [
-                ("tap", 1.8),
-                ("tap", 1.9),
-                ("tap", 2.0),
-                ("tap", 2.1),
-                ("tap", 2.2),
+                ("tap", 1.81),
+                ("tap", 1.91),
+                ("tap", 2.01),
+                ("tap", 2.11),
+                ("tap", 2.21),
             ],
         )
         context.request_switch.assert_called_once_with(
@@ -884,10 +935,10 @@ class TestRequiemZankouAxis(unittest.TestCase):
                 if event[0] == "gold_skill"
             ],
             [
-                ("gold_skill", 1.9, "zankou_gold_skill"),
-                ("gold_skill", 2.0, "zankou_gold_skill_retry_2"),
-                ("gold_skill", 2.1, "zankou_gold_skill_retry_3"),
-                ("gold_skill", 2.2, "zankou_gold_skill_retry_4"),
+                ("gold_skill", 1.91, "zankou_gold_skill"),
+                ("gold_skill", 2.01, "zankou_gold_skill_retry_2"),
+                ("gold_skill", 2.11, "zankou_gold_skill_retry_3"),
+                ("gold_skill", 2.21, "zankou_gold_skill_retry_4"),
             ],
         )
         context.request_switch.assert_called_once_with(
@@ -947,20 +998,20 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
 
         self.assertEqual(
-            [event for event in zankou.events if event[0] == "hold"],
+            [(name, round(duration, 2)) for name, duration in zankou.events if name == "hold"],
             [("hold", 1.8), ("hold", 1.8)],
         )
         self.assertEqual(
             [(name, round(at, 2)) for name, at in zankou.events if name == "tap"],
             [
-                ("tap", 1.8),
-                ("tap", 1.9),
-                ("tap", 2.0),
-                ("tap", 4.15),
-                ("tap", 4.25),
-                ("tap", 4.35),
-                ("tap", 4.45),
-                ("tap", 4.55),
+                ("tap", 1.81),
+                ("tap", 1.91),
+                ("tap", 2.01),
+                ("tap", 4.16),
+                ("tap", 4.26),
+                ("tap", 4.36),
+                ("tap", 4.46),
+                ("tap", 4.56),
             ],
         )
         context.request_switch.assert_called_once_with(
@@ -987,12 +1038,12 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertEqual(
             [(name, round(at, 2)) for name, at in zankou.events if name == "tap"],
             [
-                ("tap", 1.8),
-                ("tap", 3.7),
-                ("tap", 3.8),
-                ("tap", 3.9),
-                ("tap", 4.0),
-                ("tap", 4.1),
+                ("tap", 1.81),
+                ("tap", 3.72),
+                ("tap", 3.82),
+                ("tap", 3.92),
+                ("tap", 4.02),
+                ("tap", 4.12),
             ],
         )
         context.request_switch.assert_called_once_with(

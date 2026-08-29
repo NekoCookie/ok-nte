@@ -54,6 +54,11 @@ class DodgeCounterTrigger:
 
         try:
             logger.info("Executing dodge")
+            prepare = getattr(  # [lw]
+                self.task, "prepare_current_char_for_sound_dodge", None
+            )
+            if callable(prepare):  # [lw]
+                prepare()  # [lw]
             self._last_dodge_monotonic = time.perf_counter()  # [lw]
             self.dodge_action()
             self._last_dodge_time = now

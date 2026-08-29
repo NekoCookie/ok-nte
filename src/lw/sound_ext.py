@@ -358,7 +358,18 @@ class SoundContextExtMixin:
                 anchor_monotonic=anchor_monotonic,
             )
 
-    def lw_resolve_manual_perfect_dodge(self) -> bool:
+    @staticmethod
+    def _lw_prepare_current_char_for_sound_dodge(task) -> None:
+        prepare = getattr(task, "prepare_current_char_for_sound_dodge", None)
+        if not callable(prepare):
+            return
+        try:
+            prepare()
+        except Exception as exc:
+            logger.error(f"Character sound-dodge preparation failed: {exc}")
+
+    def lw_resolve_manual_perfect_dodge(self, task=None) -> bool:
+        self._lw_prepare_current_char_for_sound_dodge(task)
         with self._context_lock:
             anchor_monotonic = self._lw_pending_manual_perfect_monotonic
             manual_wall = self._lw_pending_manual_perfect_wall

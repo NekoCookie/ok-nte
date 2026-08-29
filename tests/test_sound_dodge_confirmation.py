@@ -154,6 +154,17 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
             any("声音闪避结果: 自动完美" in call.args[0] for call in log_info.call_args_list)
         )
 
+    def test_character_releases_held_input_only_before_an_accepted_automatic_dodge(self):
+        events = []
+        task = SimpleNamespace(
+            prepare_current_char_for_sound_dodge=lambda: events.append("release")
+        )
+        trigger = DodgeCounterTrigger(task, dodge_action=lambda: events.append("shift"))
+
+        trigger.execute_dodge()
+        trigger.execute_dodge()
+        self.assertEqual(events, ["release", "shift"])
+
     def test_ordinary_dodge_waits_then_resumes_normal_flow(self):
         task = _FakeTask()
         context = _SoundContextHarness(task)
@@ -345,6 +356,8 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
     def test_manual_perfect_sound_dispatches_without_extra_input(self):
         task = _FakeTask()
         task.executor = SimpleNamespace(paused=False)
+        prepare_for_sound_dodge = mock.Mock()
+        task.prepare_current_char_for_sound_dodge = prepare_for_sound_dodge
         context = _CombatContextHarness()
         trigger = SimpleNamespace(
             task=task,
@@ -370,6 +383,7 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         self.assertLess(abs(time.monotonic() - resolved.anchor_monotonic), 0.1)
         trigger.execute_dodge.assert_not_called()
         trigger.execute_counter_attack.assert_not_called()
+        prepare_for_sound_dodge.assert_called_once_with()
         self.assertIsNone(context._pending_action)
         self.assertTrue(
             any("声音闪避结果: 手动完美" in call.args[0] for call in log_info.call_args_list)

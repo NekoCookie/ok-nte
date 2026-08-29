@@ -334,6 +334,18 @@ class CombatExtMixin(_TaskProxy):
         if SoundCombatContext.should_interrupt_combat():
             SoundCombatContext().execute_pending_action()
 
+    def prepare_current_char_for_sound_dodge(self):
+        """Let the current character release an input before an accepted sound dodge."""
+
+        char = self.get_current_char(raise_exception=False)
+        prepare = getattr(char, "prepare_for_sound_dodge", None)
+        if not callable(prepare):
+            return
+        try:
+            prepare()
+        except Exception as exc:
+            self.log_error(f"prepare_for_sound_dodge failed: {exc}")
+
     def after_sound_dodge_resolved(self, perfect_dodge: bool, dodge_result: str):
         """声音闪避结果钩子: 仅在完美闪避声音确认后启动角色的闪避反击逻辑。
 
