@@ -17,6 +17,7 @@ from src.lw.requiem_zankou_axis import (
     ZANKOU_MAIN_DPS_IMPL_ID,
     coordinated_axis_settings,
     perform_requiem_combat_axis,
+    perform_requiem_double_4a_coaxis,
     perform_requiem_free_skill_coaxis,
     perform_zankou_combat_axis,
     run_zankou_opening_gold_skill,
@@ -728,6 +729,75 @@ class TestRequiemZankouAxis(unittest.TestCase):
         zankou_context.request_switch.assert_called_once_with(
             requiem,
             reason="zankou coordinated axis complete",
+        )
+
+    def test_requiem_axis_finishes_pending_double_4a_before_handoff(self):
+        config_task = make_config_task()
+        requiem = FakeCombatChar(config_task)
+        zankou = FakeCombatChar(config_task)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+        requiem._pending_double_4a = None
+
+        original_sleep = requiem.sleep
+
+        def trigger_double_4a(duration):
+            original_sleep(duration)
+            requiem._pending_double_4a = object()
+
+        requiem.sleep = trigger_double_4a
+        requiem._run_double_4a_outside = mock.MagicMock(
+            side_effect=lambda: setattr(requiem, "_pending_double_4a", None)
+        )
+        requiem.logger = mock.MagicMock()
+
+        self.assertTrue(perform_requiem_combat_axis(requiem, context, zankou))
+
+        self.assertEqual(
+            [(name, round(at, 1)) for name, at in requiem.events if name == "tap"],
+            [("tap", 0.0)],
+        )
+        requiem._run_double_4a_outside.assert_called_once_with()
+        context.request_switch.assert_called_once()
+        args, kwargs = context.request_switch.call_args
+        self.assertEqual(args, (zankou,))
+        self.assertEqual(kwargs["reason"], "requiem perfect-dodge double-4a complete")
+        self.assertTrue(requiem._coaxis_switch_pending)
+
+    def test_requiem_pending_double_4a_action_uses_axis_handoff(self):
+        requiem, zankou, context = make_combat_pair(combat_enabled=True)
+        requiem._pending_double_4a = object()
+        plan = requiem.combat_plan(context)
+        continuation = next(
+            action for action in plan.actions if action.name == "Requiem_double_4a_continue"
+        )
+
+        with mock.patch(
+            "src.char.Requiem.perform_requiem_double_4a_coaxis",
+            return_value=True,
+        ) as finish_double_4a:
+            self.assertTrue(continuation.execute(context))
+
+        finish_double_4a.assert_called_once_with(requiem, context, zankou)
+
+    def test_requiem_double_4a_axis_handoff_returns_success(self):
+        config_task = make_config_task()
+        requiem = FakeCombatChar(config_task)
+        zankou = FakeCombatChar(config_task)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+        requiem._pending_double_4a = object()
+        continuations = iter((object(), None))
+        requiem._run_double_4a_outside = mock.MagicMock(
+            side_effect=lambda: setattr(requiem, "_pending_double_4a", next(continuations))
+        )
+        requiem.logger = mock.MagicMock()
+
+        self.assertTrue(perform_requiem_double_4a_coaxis(requiem, context, zankou))
+
+        self.assertEqual(requiem._run_double_4a_outside.call_count, 2)
+        context.request_switch.assert_called_once()
+        self.assertEqual(
+            context.request_switch.call_args.kwargs["reason"],
+            "requiem perfect-dodge double-4a complete",
         )
 
     def test_requiem_free_skill_axis_attacks_then_requests_zankou_without_support_ultimate(self):

@@ -15,6 +15,7 @@ from src.lw.requiem_zankou_axis import (
     coordinated_axis_partner,
     coordinated_axis_settings,
     perform_requiem_combat_axis,
+    perform_requiem_double_4a_coaxis,
     perform_requiem_free_skill_coaxis,
 )
 from src.sound_trigger.SoundCombatContext import SoundCombatContext
@@ -287,7 +288,15 @@ class Requiem(MainDps):
         combo_continue = self.planner_action(
             tags={ActionTag.LEGACY_COMBO},
             slot=ActionSlot.LEGACY_COMBO,
-            execute=lambda _: self._run_double_4a_outside(),
+            execute=lambda continue_context: (
+                perform_requiem_double_4a_coaxis(
+                    self,
+                    continue_context,
+                    coaxis_partner,
+                )
+                if coaxis_partner is not None
+                else self._run_double_4a_outside()
+            ),
             name=f"{self}_double_4a_continue",
             reason="requiem double-4a outside-window continuation",
             can_execute=lambda _: self._pending_double_4a is not None,

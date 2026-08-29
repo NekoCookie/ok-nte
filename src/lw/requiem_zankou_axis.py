@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
 
 from src.Labels import Labels
 
@@ -198,13 +198,22 @@ def coordinated_axis_settings(char: "BaseChar") -> CoordinatedAxisSettings:
     )
 
 
-def _run_combat_normal_attacks(char: "BaseChar", duration: float, interval: float) -> None:
+def _run_combat_normal_attacks(
+    char: "BaseChar",
+    duration: float,
+    interval: float,
+    *,
+    stop_when: Callable[[], bool] | None = None,
+) -> bool:
     deadline = char.now() + duration
     while char.now() < deadline:
+        if stop_when is not None and stop_when():
+            return True
         char.normal_attack()
         remaining = deadline - char.now()
         if remaining > 0:
             char.sleep(min(interval, remaining))
+    return bool(stop_when is not None and stop_when())
 
 
 def _last_sound_dodge_time(char: "BaseChar") -> float:
@@ -688,18 +697,63 @@ def perform_requiem_combat_axis(
     """Run Requiem's no-resource field time, then request Zankou."""
 
     settings = coordinated_axis_settings(char)
-    _run_combat_normal_attacks(
+    double_4a_pending = _run_combat_normal_attacks(
         char,
         settings.requiem_attack_duration,
         COAXIS_NORMAL_ATTACK_INTERVAL,
+        stop_when=lambda: getattr(char, "_pending_double_4a", None) is not None,
     )
+    if double_4a_pending:
+        return perform_requiem_double_4a_coaxis(char, context, partner)
+
+    _request_requiem_axis_handoff(
+        char,
+        context,
+        partner,
+        reason="requiem coordinated axis complete",
+    )
+    return True
+
+
+def _request_requiem_axis_handoff(
+    char: "BaseChar",
+    context: "CombatContext",
+    partner: "BaseChar",
+    *,
+    reason: str,
+) -> None:
+    """End Requiem's field turn while preserving normal planner preemption."""
+
     # MainDps normally keeps the current character until its field-time limit. Mark this
     # completed axis as an explicit departure until the public planner request resolves.
     char._coaxis_switch_pending = True
     context.request_switch(
         partner,
-        reason="requiem coordinated axis complete",
+        reason=reason,
         on_finish=lambda: setattr(char, "_coaxis_switch_pending", False),
+    )
+
+
+def perform_requiem_double_4a_coaxis(
+    char: "BaseChar",
+    context: "CombatContext",
+    partner: "BaseChar",
+) -> bool:
+    """Finish a sound-triggered double-4A, then end this coordinated-axis turn."""
+
+    run_continuation = getattr(char, "_run_double_4a_outside", None)
+    if callable(run_continuation):
+        while getattr(char, "_pending_double_4a", None) is not None:
+            run_continuation()
+    logger = getattr(char, "logger", None)
+    log_info = getattr(logger, "info", None)
+    if callable(log_info):
+        log_info("requiem perfect-dodge double-4a complete; requesting axis handoff")
+    _request_requiem_axis_handoff(
+        char,
+        context,
+        partner,
+        reason="requiem perfect-dodge double-4a complete",
     )
     return True
 
