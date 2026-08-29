@@ -20,6 +20,15 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
     AWAKENED_SECOND_ULTIMATE_WAIT = 0.8
     AWAKENED_SECOND_ULTIMATE_POLL_INTERVAL = 0.1
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._awakened_ultimate_sampled = False
+        self._awakened_double_ultimate_pending = False
+
+    def _clear_awakened_ultimate_entry_state(self):
+        self._awakened_ultimate_sampled = False
+        self._awakened_double_ultimate_pending = False
+
     def _has_coordinated_axis_partner(self):
         return coordinated_axis_partner(
             self,
@@ -50,7 +59,12 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
 
     def switch_out(self):
         self._coaxis_switch_pending = False
+        self._clear_awakened_ultimate_entry_state()
         super().switch_out()
+
+    def reset_state(self):
+        super().reset_state()
+        self._clear_awakened_ultimate_entry_state()
 
     def prepare_for_sound_dodge(self):
         """Release a coordinated-axis heavy input before dodge handling continues."""
@@ -95,13 +109,16 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
             reason="zankou coordinated-axis ultimate",
             can_execute=lambda _: not self.lw_skills_disabled_for_test(),
         )
-        ultimate_state = {"sampled": False, "awakened": False}
         standard_ultimate_execute = ultimate.execute
 
         def execute_ultimate(ultimate_context):
-            if not ultimate_state["sampled"]:
-                ultimate_state["sampled"] = True
-                ultimate_state["awakened"] = self._detect_awakened_double_ultimate()
+            # Expected-entry Q and the subsequent entry generator are built from separate
+            # CombatPlan snapshots. Keep this result on the character until entry consumes it.
+            if not getattr(self, "_awakened_ultimate_sampled", False):
+                self._awakened_ultimate_sampled = True
+                self._awakened_double_ultimate_pending = (
+                    self._detect_awakened_double_ultimate()
+                )
             return standard_ultimate_execute(ultimate_context)
 
         ultimate.execute = execute_ultimate
@@ -119,12 +136,17 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
         )
 
         def entry():
-            if not self.lw_skills_disabled_for_test():
-                ultimate_result = yield ultimate
-                if ultimate_result and ultimate_state["awakened"]:
-                    self.logger.info("zankou awakened first ultimate complete")
-                    if self._wait_for_awakened_second_ultimate():
-                        yield ultimate.repeat_for_entry()
+            try:
+                if not self.lw_skills_disabled_for_test():
+                    ultimate_result = yield ultimate
+                    if ultimate_result and getattr(
+                        self, "_awakened_double_ultimate_pending", False
+                    ):
+                        self.logger.info("zankou awakened first ultimate complete")
+                        if self._wait_for_awakened_second_ultimate():
+                            yield ultimate.repeat_for_entry()
+            finally:
+                self._clear_awakened_ultimate_entry_state()
             yield coaxis
 
         return self.plan(ultimate, coaxis, entry=entry)

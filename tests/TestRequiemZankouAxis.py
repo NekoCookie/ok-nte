@@ -429,6 +429,49 @@ class TestRequiemZankouAxis(unittest.TestCase):
         zankou._wait_for_awakened_second_ultimate.assert_called_once_with()
         zankou.click_ultimate.assert_called_once_with()
 
+    def test_awakened_zankou_keeps_first_q_state_across_plan_snapshots(self):
+        _requiem, zankou, context = make_combat_pair(combat_enabled=True)
+        zankou.find_ult_purple = mock.MagicMock(return_value=True)
+        zankou.click_ultimate = mock.MagicMock(return_value=True)
+        zankou._wait_for_awakened_second_ultimate = mock.MagicMock(return_value=True)
+
+        expected_action_plan = zankou.combat_plan(context)
+        expected_ultimate = next(
+            action
+            for action in expected_action_plan.actions
+            if action.name == "ZankouMainDps_ultimate"
+        )
+        first_result = expected_ultimate.run(context)
+
+        entry_plan = zankou.combat_plan(context)
+        entry = entry_plan.entry()
+        self.assertEqual(next(entry).name, "ZankouMainDps_ultimate")
+        self.assertEqual(entry.send(first_result).name, "ZankouMainDps_ultimate")
+        self.assertEqual(entry.send(True).name, "ZankouMainDps_coordinated_axis")
+
+        zankou.find_ult_purple.assert_called_once_with()
+        zankou._wait_for_awakened_second_ultimate.assert_called_once_with()
+        self.assertFalse(zankou._awakened_ultimate_sampled)
+        self.assertFalse(zankou._awakened_double_ultimate_pending)
+
+    def test_zankou_switch_out_discards_unconsumed_awakened_q_state(self):
+        _requiem, zankou, context = make_combat_pair(combat_enabled=True)
+        zankou.find_ult_purple = mock.MagicMock(return_value=True)
+        zankou.click_ultimate = mock.MagicMock(return_value=True)
+        zankou.last_switch_time = -1
+        zankou.is_current_char = True
+        zankou.has_intro = False
+
+        plan = zankou.combat_plan(context)
+        ultimate = next(
+            action for action in plan.actions if action.name == "ZankouMainDps_ultimate"
+        )
+        ultimate.run(context)
+        zankou.switch_out()
+
+        self.assertFalse(zankou._awakened_ultimate_sampled)
+        self.assertFalse(zankou._awakened_double_ultimate_pending)
+
     def test_awakened_zankou_continues_axis_when_second_ultimate_does_not_appear(self):
         _requiem, zankou, context = make_combat_pair(combat_enabled=True)
         zankou.logger = mock.MagicMock()
