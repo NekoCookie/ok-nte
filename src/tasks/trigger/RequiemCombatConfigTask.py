@@ -151,6 +151,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     # 双4a(声音闪避版)的可调时序(选"闪双4a"才显示): 声音闪避后 → 前段平A(打第一个4a) → 跳A(空格+
     # 左键同按)代替第二次闪避、续段 → 后段平A(接第二个4a)。三段时长各自可配, 前后平A共用连点按下/抬起
     # (逻辑同光速4a方案四)。精确时序在 requiem_combo.run_scheme_double_4a。
+    CONF_D4_ORDINARY_DODGE_WAIT = "双4a-普通闪避等待(s)"
     CONF_D4_FRONT = "双4a-前段平A(ms)"       # 第一个4a: 跳A之前的平A时长
     CONF_D4_JUMP_HOLD = "双4a-跳A按住(ms)"    # 空格+左键同时按住(代替闪避)
     CONF_D4_BACK = "双4a-后段平A(ms)"        # 第二个4a: 跳A之后的平A时长
@@ -333,9 +334,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_ZANKOU_HOLD_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.5,
-                # 闪避反击设置组(折叠)→ 闪避方式(下拉)→ 选"闪双4a"才显示7个时序
+                # 闪避反击设置组(折叠)→ 闪避方式(下拉)→ 选"闪双4a"才显示8个时序
                 self.CONF_GROUP_DODGE: False,
                 self.CONF_DODGE_STYLE: self.STYLE_SCHEME_B,
+                self.CONF_D4_ORDINARY_DODGE_WAIT: 0.5,
                 self.CONF_D4_FRONT: 1800,
                 self.CONF_D4_JUMP_HOLD: 20,
                 self.CONF_D4_BACK: 700,
@@ -536,13 +538,14 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "options": [self.STYLE_CURRENT, self.STYLE_SCHEME_B],
                     # 嵌套第三层(按所选方案显示各自专属参数, 不属于本方案的不显示):
                     #   方案一 → 反击强制平A/主动闪避次数/间隔/combo后摇等待(这套只方案一走);
-                    #   闪双4a → 它那7个专属时序。
+                    #   闪双4a → 普通闪避确认等待 + 它的7个专属时序。
                     "sub_configs": {
                         self.STYLE_CURRENT: [
                             self.CONF_DODGE_COUNTER, self.CONF_DODGE_COUNT,
                             self.CONF_DODGE_GAP, self.CONF_DODGE_COMBO_WAIT,
                         ],
                         self.STYLE_SCHEME_B: [
+                            self.CONF_D4_ORDINARY_DODGE_WAIT,
                             self.CONF_D4_FRONT, self.CONF_D4_JUMP_HOLD, self.CONF_D4_BACK,
                             self.CONF_D4_CLICK_HOLD, self.CONF_D4_CLICK_GAP,
                             self.CONF_D4_TAIL_DODGE, self.CONF_D4_TAIL_FILL,
@@ -577,8 +580,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_G_SKILL_DELAY: "按G后等这么久(ms)再交回决策; 用来测按下G的后摇(后面好接大招)",
                 self.CONF_DODGE_TEST: "开=每次声音闪避走一整轮(关自动战斗后调时间用)",
                 self.CONF_DISABLE_SKILLS: "开=所有LW角色模板不放E/Q; G和合轴不受影响(测手感/闪避用); 刷本记得关",
-                self.CONF_GROUP_DODGE: "▸ 分组折叠: 展开闪避反击设置(闪避方式 + 选闪双4a后的7个时序)",
+                self.CONF_GROUP_DODGE: "▸ 分组折叠: 展开闪避反击设置(闪避方式 + 选闪双4a后的8个时序)",
                 self.CONF_DODGE_STYLE: "闪避反击方式: 方案一 / 闪双4a",
+                self.CONF_D4_ORDINARY_DODGE_WAIT: "从程序首次按Shift开始等待完美闪避声音; 超时则判为普通闪避并回planner",
                 self.CONF_D4_FRONT: "双4a 前段平A毫秒(打第一个4a); 太短会接不出第二个4a",
                 self.CONF_D4_JUMP_HOLD: "双4a 跳A空格+左键同按毫秒(代替闪避)",
                 self.CONF_D4_BACK: "双4a 后段平A毫秒(接第二个4a)",

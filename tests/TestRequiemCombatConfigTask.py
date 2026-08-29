@@ -62,6 +62,28 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             ],
         )
 
+    def test_double_4a_group_contains_requiem_ordinary_dodge_wait(self):
+        task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
+        task.config_type = {}
+        task.config_description = {}
+
+        with mock.patch.object(BaseNTETask, "__init__", return_value=None):
+            RequiemCombatConfigTask.__init__(task)
+
+        self.assertEqual(task.default_config[task.CONF_D4_ORDINARY_DODGE_WAIT], 0.5)
+        self.assertIn(
+            task.CONF_D4_ORDINARY_DODGE_WAIT,
+            task.config_type[task.CONF_DODGE_STYLE]["sub_configs"][task.STYLE_SCHEME_B],
+        )
+        self.assertNotIn(
+            task.CONF_D4_ORDINARY_DODGE_WAIT,
+            task.config_type[task.CONF_DODGE_STYLE]["sub_configs"][task.STYLE_CURRENT],
+        )
+        self.assertIn(
+            "首次按Shift",
+            task.config_description[task.CONF_D4_ORDINARY_DODGE_WAIT],
+        )
+
     def test_coaxis_group_contains_requested_defaults(self):
         task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
         task.config_type = {}

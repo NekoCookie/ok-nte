@@ -6,10 +6,12 @@ from unittest import mock
 
 import numpy as np
 
+from src.char.Requiem import Requiem
 from src.lw.combat_ext import CombatExtMixin
 from src.lw.sound_ext import SoundContextExtMixin, SoundListenerExtMixin
 from src.sound_trigger.DodgeCounterTrigger import DodgeCounterTrigger
 from src.sound_trigger.SoundCombatContext import SoundCombatContext
+from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 
 
 class _FakeTask:
@@ -189,6 +191,56 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
 
         self.assertFalse(outcome)
         self.assertGreaterEqual(time.perf_counter() - started_at, 0.045)
+
+    def test_requiem_double_4a_uses_its_local_ordinary_dodge_wait(self):
+        task = _FakeTask()
+        requiem = Requiem.__new__(Requiem)
+        config_task = SimpleNamespace(
+            config={
+                RequiemCombatConfigTask.CONF_DODGE_STYLE: (
+                    RequiemCombatConfigTask.STYLE_SCHEME_B
+                ),
+                RequiemCombatConfigTask.CONF_D4_ORDINARY_DODGE_WAIT: 0.02,
+            }
+        )
+        task.get_current_char = lambda raise_exception=False: requiem
+        task.get_task_by_class = lambda _task_class: config_task
+        context = _SoundContextHarness(task)
+        context.lw_update_perfect_dodge_wait(0.5)
+
+        class Trigger:
+            last_dodge_time = 0.0
+            last_dodge_monotonic = 0.0
+
+            def execute_dodge(inner_self):
+                inner_self.last_dodge_monotonic = time.perf_counter()
+                inner_self.last_dodge_time = time.time()
+
+        started_at = time.perf_counter()
+        outcome = context.lw_execute_dodge_with_confirmation(Trigger(), task)
+        elapsed = time.perf_counter() - started_at
+
+        self.assertFalse(outcome)
+        self.assertGreaterEqual(elapsed, 0.015)
+        self.assertLess(elapsed, 0.1)
+
+    def test_requiem_non_double_4a_keeps_global_ordinary_dodge_wait(self):
+        task = _FakeTask()
+        requiem = Requiem.__new__(Requiem)
+        config_task = SimpleNamespace(
+            config={
+                RequiemCombatConfigTask.CONF_DODGE_STYLE: (
+                    RequiemCombatConfigTask.STYLE_CURRENT
+                ),
+                RequiemCombatConfigTask.CONF_D4_ORDINARY_DODGE_WAIT: 0.02,
+            }
+        )
+        task.get_current_char = lambda raise_exception=False: requiem
+        task.get_task_by_class = lambda _task_class: config_task
+        context = _SoundContextHarness(task)
+        context.lw_update_perfect_dodge_wait(0.5)
+
+        self.assertEqual(context.lw_perfect_dodge_wait_for_task(task), 0.5)
 
     def test_sound_before_shift_does_not_confirm_current_dodge(self):
         task = _FakeTask()

@@ -211,6 +211,35 @@ class SoundContextExtMixin:
             value = self.DEFAULT_PERFECT_DODGE_WAIT
         self._lw_perfect_dodge_wait = max(0.0, min(self.MAX_PERFECT_DODGE_WAIT, value))
 
+    def lw_perfect_dodge_wait_for_task(self, task) -> float:
+        """Use Requiem double-4A's local wait; every other path keeps the global value."""
+
+        default_wait = self._lw_perfect_dodge_wait
+        try:
+            from src.char.Requiem import Requiem
+            from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
+
+            current_char = task.get_current_char(raise_exception=False)
+            if not isinstance(current_char, Requiem):
+                return default_wait
+            config_task = task.get_task_by_class(RequiemCombatConfigTask)
+            config = config_task.config
+            style = config.get(
+                RequiemCombatConfigTask.CONF_DODGE_STYLE,
+                RequiemCombatConfigTask.STYLE_SCHEME_B,
+            )
+            if style != RequiemCombatConfigTask.STYLE_SCHEME_B:
+                return default_wait
+            value = float(
+                config.get(
+                    RequiemCombatConfigTask.CONF_D4_ORDINARY_DODGE_WAIT,
+                    default_wait,
+                )
+            )
+            return max(0.0, min(self.MAX_PERFECT_DODGE_WAIT, value))
+        except (AttributeError, LookupError, RuntimeError, TypeError, ValueError):
+            return default_wait
+
     def lw_bind_score_listener(self, listener) -> None:
         listener.on_scores_updated = self.lw_observe_sound_scores
 
@@ -355,7 +384,8 @@ class SoundContextExtMixin:
                 attempt.audio_sample_name = listener.lw_request_dodge_audio_capture(
                     dodge_started_at
                 )
-            deadline = dodge_started_at + self._lw_perfect_dodge_wait
+            perfect_dodge_wait = self.lw_perfect_dodge_wait_for_task(task)
+            deadline = dodge_started_at + perfect_dodge_wait
             while True:
                 with self._context_lock:
                     if self._lw_dodge_confirmation is not attempt or attempt.cancelled:
@@ -408,7 +438,7 @@ class SoundContextExtMixin:
             return True
         logger.info(
             f"声音闪避结果: {self.DODGE_RESULT_ORDINARY}; "
-            f"waited={self._lw_perfect_dodge_wait:.2f}s after Shift; "
+            f"waited={perfect_dodge_wait:.2f}s after Shift; "
             f"peak counter_score={peak:.4f}; "
             f"sample={attempt.audio_sample_name or 'none'}; resuming normal combat"
         )
