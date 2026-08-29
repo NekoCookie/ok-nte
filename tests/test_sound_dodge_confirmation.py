@@ -166,6 +166,27 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         trigger.execute_dodge()
         self.assertEqual(events, ["release", "shift"])
 
+    def test_requiem_real_skill_departure_suppresses_automatic_dodge_input(self):
+        task = _FakeTask()
+        current_char = SimpleNamespace(
+            lw_sound_dodge_block_reason=lambda: (
+                "requiem real skill waiting for off-field switch"
+            )
+        )
+        task.get_current_char = lambda raise_exception=False: current_char
+        context = _SoundContextHarness(task)
+        trigger = mock.MagicMock(last_dodge_time=0.0, last_dodge_monotonic=0.0)
+
+        with mock.patch("src.lw.sound_ext.logger.info") as log_info:
+            outcome = context.lw_execute_dodge_with_confirmation(trigger, task)
+
+        self.assertIsNone(outcome)
+        self.assertIsNone(context._lw_dodge_confirmation)
+        trigger.execute_dodge.assert_not_called()
+        log_info.assert_called_once_with(
+            "声音闪避跳过: requiem real skill waiting for off-field switch"
+        )
+
     def test_ordinary_dodge_waits_then_resumes_normal_flow(self):
         task = _FakeTask()
         context = _SoundContextHarness(task)

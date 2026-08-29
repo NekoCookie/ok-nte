@@ -201,6 +201,7 @@ class Requiem(MainDps):
         self._coaxis_switch_pending = False
         self._coaxis_ordinary_dodge_restart_pending = False
         self._coaxis_real_skill_handoff_until = 0.0
+        self._real_skill_sound_dodge_blocked = False  # [lw]
 
     def describe_role(self):
         # 安魂曲一律用主C(MainDps)的 MAIN_DPS 画像, 不再降级到 RU 安魂曲(Lacrimosa)。
@@ -360,6 +361,13 @@ class Requiem(MainDps):
         return time.time() < getattr(self, "skill_off_field_until", 0.0) or getattr(
             self, "_coaxis_switch_pending", False
         )
+
+    def lw_sound_dodge_block_reason(self):  # [lw]
+        """Block automatic sound dodge while a real-skill departure is pending."""
+
+        if getattr(self, "_real_skill_sound_dodge_blocked", False):
+            return "requiem real skill waiting for off-field switch"
+        return None
 
     def lw_can_switch_in(self):
         """Block a premature return during an enabled real-skill axis handoff."""
@@ -787,6 +795,7 @@ class Requiem(MainDps):
         """Discard an unconsumed ordinary-dodge restart after leaving the field."""
 
         self._coaxis_ordinary_dodge_restart_pending = False
+        self._real_skill_sound_dodge_blocked = False  # [lw]
         super().switch_out()
 
     def _wait_dodge_counter_recovery(self):
@@ -987,17 +996,24 @@ class Requiem(MainDps):
         engage = self.engage_attack_duration()
         if engage > 0:
             self.engage_before_skill(engage)
-        if self._try_land_real_skill():
-            self._request_real_skill_configured_handoff(context)
-            return True  # 一次就放进长CD(常见路径)→ 已 overlap
-        # 通用 click_skill 已完成必要的打断恢复；复查最终长短 CD 决定是否下场。
-        if self._real_skill_in_long_cd():
-            self._mark_real_skill_overlap("settled")
-            self._request_real_skill_configured_handoff(context)
-            return True
-        else:
+        self._real_skill_sound_dodge_blocked = True  # [lw]
+        landed = False
+        try:
+            if self._try_land_real_skill():
+                landed = True
+                self._request_real_skill_configured_handoff(context)
+                return True  # 一次就放进长CD(常见路径)→ 已 overlap
+            # 通用 click_skill 已完成必要的打断恢复；复查最终长短 CD 决定是否下场。
+            if self._real_skill_in_long_cd():
+                self._mark_real_skill_overlap("settled")
+                landed = True
+                self._request_real_skill_configured_handoff(context)
+                return True
             self.logger.info("requiem REAL skill 未放进长CD(被打断/没放出), 不切, 下轮重试")
             return False
+        finally:
+            if not landed:
+                self._real_skill_sound_dodge_blocked = False  # [lw]
 
     def _skills_disabled_for_test(self, task=None):
         """Read the shared LW template E/Q test switch."""
@@ -1015,3 +1031,4 @@ class Requiem(MainDps):
         self._coaxis_switch_pending = False
         self._coaxis_ordinary_dodge_restart_pending = False
         self._coaxis_real_skill_handoff_until = 0.0
+        self._real_skill_sound_dodge_blocked = False  # [lw]

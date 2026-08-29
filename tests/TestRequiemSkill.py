@@ -37,6 +37,7 @@ def make_requiem(clock, skill_kind="real", skill_available=True,
     """
     r = Requiem.__new__(Requiem)
     r.skill_off_field_until = 0.0
+    r._real_skill_sound_dodge_blocked = False
     r._pending_double_4a = None
     r.index = 0
     r.task = mock.MagicMock()
@@ -107,6 +108,43 @@ class TestRequiemSkillClassification(unittest.TestCase):
         self.assertTrue(r.should_force_off_field(), "真技能后应触发下场")
         r.free_skill_followup_attack.assert_not_called()
         r._free_skill_break_a5.assert_not_called()  # 真技能分支不走免费打断
+
+    def test_real_skill_blocks_sound_dodge_from_cast_until_switch_out(self):
+        r = make_requiem(self.clock, skill_kind="real")
+        observed_reasons = []
+        r.lw_click_skill_with_settlement.side_effect = lambda **_kwargs: (
+            observed_reasons.append(r.lw_sound_dodge_block_reason()) or True
+        )
+
+        run_requiem_plan(r)
+
+        self.assertEqual(
+            observed_reasons,
+            ["requiem real skill waiting for off-field switch"],
+        )
+        self.assertEqual(
+            r.lw_sound_dodge_block_reason(),
+            "requiem real skill waiting for off-field switch",
+        )
+        r.is_current_char = True
+        r.has_intro = False
+        r.switch_out()
+        self.assertIsNone(r.lw_sound_dodge_block_reason())
+
+    def test_failed_real_skill_restores_sound_dodge(self):
+        r = make_requiem(self.clock, skill_kind="real", in_long_cd=False)
+        observed_reasons = []
+        r.lw_click_skill_with_settlement.side_effect = lambda **_kwargs: (
+            observed_reasons.append(r.lw_sound_dodge_block_reason()) or True
+        )
+
+        run_requiem_plan(r)
+
+        self.assertEqual(
+            observed_reasons,
+            ["requiem real skill waiting for off-field switch"],
+        )
+        self.assertIsNone(r.lw_sound_dodge_block_reason())
 
     # ---- 视觉判免费 → 留场,不切,不起手平A ----
     def test_free_skill_stays_on_field(self):

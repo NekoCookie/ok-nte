@@ -398,9 +398,33 @@ class SoundContextExtMixin:
         logger.info(f"声音闪避结果: {self.DODGE_RESULT_MANUAL_PERFECT}")
         return True
 
+    @staticmethod
+    def _lw_sound_dodge_block_reason(task) -> str | None:
+        get_current_char = getattr(task, "get_current_char", None)
+        if not callable(get_current_char):
+            return None
+        try:
+            current_char = get_current_char(raise_exception=False)
+        except TypeError:
+            current_char = get_current_char()
+        except Exception as exc:
+            logger.error(f"Failed to resolve sound-dodge character policy: {exc}")
+            return None
+        block_reason = getattr(current_char, "lw_sound_dodge_block_reason", None)
+        if not callable(block_reason):
+            return None
+        try:
+            return block_reason()
+        except Exception as exc:
+            logger.error(f"Failed to read sound-dodge character policy: {exc}")
+            return None
+
     def lw_execute_dodge_with_confirmation(self, trigger, task) -> bool | None:
         """Execute dodge, then return True for perfect, False for timeout, or None if cancelled."""
 
+        if block_reason := self._lw_sound_dodge_block_reason(task):
+            logger.info(f"声音闪避跳过: {block_reason}")
+            return None
         attempt = self._lw_begin_dodge_confirmation(task)
         try:
             previous_dodge_at = getattr(trigger, "last_dodge_time", 0.0)
