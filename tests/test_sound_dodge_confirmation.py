@@ -494,9 +494,22 @@ class CombatDodgeOutcomeTests(unittest.TestCase):
         self.assertIsNone(requiem._pending_double_4a)
         self.assertEqual(requiem._d4_front_left_ms, 0.0)
         requiem.combo_attack.assert_not_called()
+        self.assertTrue(requiem._coaxis_ordinary_dodge_restart_pending)
         requiem.logger.info.assert_called_once_with(
-            "安魂曲普通闪避: 专用等待结束, 恢复无取消合轴普攻"
+            "安魂曲普通闪避: 专用等待结束, 请求重开完整无取消合轴普攻"
         )
+
+    def test_requiem_switch_out_discards_unconsumed_ordinary_dodge_restart(self):
+        requiem = Requiem.__new__(Requiem)
+        requiem._coaxis_ordinary_dodge_restart_pending = True
+        requiem.is_current_char = True
+        requiem.has_intro = True
+
+        requiem.switch_out()
+
+        self.assertFalse(requiem._coaxis_ordinary_dodge_restart_pending)
+        self.assertFalse(requiem.is_current_char)
+        self.assertFalse(requiem.has_intro)
 
 
 if __name__ == "__main__":

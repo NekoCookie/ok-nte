@@ -697,14 +697,14 @@ def perform_requiem_combat_axis(
     """Run Requiem's no-resource field time, then request Zankou."""
 
     settings = coordinated_axis_settings(char)
-    double_4a_pending = _run_combat_normal_attacks(
+    interrupted = _run_combat_normal_attacks(
         char,
         settings.requiem_attack_duration,
         COAXIS_NORMAL_ATTACK_INTERVAL,
-        stop_when=lambda: getattr(char, "_pending_double_4a", None) is not None,
+        stop_when=lambda: _requiem_axis_interrupt_pending(char),
     )
-    if double_4a_pending:
-        return perform_requiem_double_4a_coaxis(char, context, partner)
+    if interrupted:
+        return _resume_requiem_axis_after_interrupt(char, context, partner)
 
     _request_requiem_axis_handoff(
         char,
@@ -734,6 +734,72 @@ def _request_requiem_axis_handoff(
     )
 
 
+def _requiem_axis_interrupt_pending(char: "BaseChar") -> bool:
+    return bool(
+        getattr(char, "_pending_double_4a", None) is not None
+        or getattr(char, "_coaxis_ordinary_dodge_restart_pending", False)
+    )
+
+
+def _consume_requiem_ordinary_dodge_restart(char: "BaseChar") -> bool:
+    if not getattr(char, "_coaxis_ordinary_dodge_restart_pending", False):
+        return False
+    char._coaxis_ordinary_dodge_restart_pending = False
+    return True
+
+
+def _resume_requiem_axis_after_interrupt(
+    char: "BaseChar",
+    context: "CombatContext",
+    partner: "BaseChar",
+) -> bool:
+    if getattr(char, "_pending_double_4a", None) is not None:
+        return perform_requiem_double_4a_coaxis(char, context, partner)
+    if getattr(char, "_coaxis_ordinary_dodge_restart_pending", False):
+        return perform_requiem_ordinary_dodge_coaxis(char, context, partner)
+    return True
+
+
+def perform_requiem_ordinary_dodge_coaxis(
+    char: "BaseChar",
+    context: "CombatContext",
+    partner: "BaseChar",
+) -> bool:
+    """Restart one complete plain-normal axis after Requiem's ordinary-dodge wait."""
+
+    settings = coordinated_axis_settings(char)
+    _consume_requiem_ordinary_dodge_restart(char)
+    logger = getattr(char, "logger", None)
+    log_info = getattr(logger, "info", None)
+    while True:
+        if callable(log_info):
+            log_info(
+                "requiem ordinary dodge starts full coordinated-axis normals; "
+                f"duration={settings.requiem_attack_duration:.2f}s"
+            )
+        interrupted = _run_combat_normal_attacks(
+            char,
+            settings.requiem_attack_duration,
+            COAXIS_NORMAL_ATTACK_INTERVAL,
+            stop_when=lambda: _requiem_axis_interrupt_pending(char),
+        )
+        if not interrupted:
+            break
+        if getattr(char, "_pending_double_4a", None) is not None:
+            return perform_requiem_double_4a_coaxis(char, context, partner)
+        if _consume_requiem_ordinary_dodge_restart(char):
+            continue
+        break
+
+    _request_requiem_axis_handoff(
+        char,
+        context,
+        partner,
+        reason="requiem ordinary-dodge coordinated axis complete",
+    )
+    return True
+
+
 def perform_requiem_double_4a_coaxis(
     char: "BaseChar",
     context: "CombatContext",
@@ -745,6 +811,12 @@ def perform_requiem_double_4a_coaxis(
     if callable(run_continuation):
         while getattr(char, "_pending_double_4a", None) is not None:
             run_continuation()
+    if getattr(char, "_coaxis_ordinary_dodge_restart_pending", False):
+        logger = getattr(char, "logger", None)
+        log_info = getattr(logger, "info", None)
+        if callable(log_info):
+            log_info("requiem double-4a interrupted by ordinary dodge; restarting plain axis")
+        return perform_requiem_ordinary_dodge_coaxis(char, context, partner)
     logger = getattr(char, "logger", None)
     log_info = getattr(logger, "info", None)
     if callable(log_info):
@@ -766,14 +838,14 @@ def perform_requiem_free_skill_coaxis(
     """Finish Requiem's free skill with axis normals before returning to Zankou."""
 
     settings = coordinated_axis_settings(char)
-    double_4a_pending = _run_combat_normal_attacks(
+    interrupted = _run_combat_normal_attacks(
         char,
         settings.requiem_free_skill_attack_duration,
         COAXIS_NORMAL_ATTACK_INTERVAL,
-        stop_when=lambda: getattr(char, "_pending_double_4a", None) is not None,
+        stop_when=lambda: _requiem_axis_interrupt_pending(char),
     )
-    if double_4a_pending:
-        return perform_requiem_double_4a_coaxis(char, context, partner)
+    if interrupted:
+        return _resume_requiem_axis_after_interrupt(char, context, partner)
     if _support_ultimate_pending(char):
         logger = getattr(char, "logger", None)
         log_info = getattr(logger, "info", None)

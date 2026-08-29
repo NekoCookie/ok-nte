@@ -199,6 +199,7 @@ class Requiem(MainDps):
         self._d4_last_end = 0.0           # 上轮双4a结束时刻(单调时钟), 供诊断 combo 交接
         # [lw] Bypass MainDps field-time hold for one axis handoff.
         self._coaxis_switch_pending = False
+        self._coaxis_ordinary_dodge_restart_pending = False
         self._coaxis_real_skill_handoff_until = 0.0
 
     def describe_role(self):
@@ -776,10 +777,17 @@ class Requiem(MainDps):
             partner_impl_id=ZANKOU_MAIN_DPS_IMPL_ID,
         )
         if coaxis_partner is not None:
-            self.logger.info("安魂曲普通闪避: 专用等待结束, 恢复无取消合轴普攻")
+            self._coaxis_ordinary_dodge_restart_pending = True
+            self.logger.info("安魂曲普通闪避: 专用等待结束, 请求重开完整无取消合轴普攻")
             return
         self.logger.info("安魂曲普通闪避: 等待结束, 直接接combo")
         self.combo_attack()
+
+    def switch_out(self):  # [lw]
+        """Discard an unconsumed ordinary-dodge restart after leaving the field."""
+
+        self._coaxis_ordinary_dodge_restart_pending = False
+        super().switch_out()
 
     def _wait_dodge_counter_recovery(self):
         """combo 起手前: 若紧接在闪避反击之后(在后摇窗口内), 等后摇走完再落第一下, 否则 combo 顺序乱。
@@ -1005,4 +1013,5 @@ class Requiem(MainDps):
         self._d4_seam_t = 0.0
         self._d4_last_end = 0.0
         self._coaxis_switch_pending = False
+        self._coaxis_ordinary_dodge_restart_pending = False
         self._coaxis_real_skill_handoff_until = 0.0

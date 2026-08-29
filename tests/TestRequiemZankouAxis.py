@@ -763,6 +763,37 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertEqual(kwargs["reason"], "requiem perfect-dodge double-4a complete")
         self.assertTrue(requiem._coaxis_switch_pending)
 
+    def test_requiem_ordinary_dodge_restarts_full_axis_duration(self):
+        config_task = make_config_task()
+        requiem = FakeCombatChar(config_task)
+        zankou = FakeCombatChar(config_task)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+        requiem._pending_double_4a = None
+        requiem._coaxis_ordinary_dodge_restart_pending = False
+        requiem.logger = mock.MagicMock()
+        original_sleep = requiem.sleep
+        triggered = False
+
+        def trigger_ordinary_dodge(duration):
+            nonlocal triggered
+            original_sleep(duration)
+            if not triggered:
+                triggered = True
+                requiem._coaxis_ordinary_dodge_restart_pending = True
+
+        requiem.sleep = trigger_ordinary_dodge
+
+        self.assertTrue(perform_requiem_combat_axis(requiem, context, zankou))
+
+        tap_times = [round(at, 2) for name, at in requiem.events if name == "tap"]
+        self.assertEqual(tap_times, [0.0, 0.1, 0.2, 0.3, 0.4, 0.5])
+        self.assertAlmostEqual(requiem.clock, 0.55)
+        self.assertEqual(
+            context.request_switch.call_args.kwargs["reason"],
+            "requiem ordinary-dodge coordinated axis complete",
+        )
+        self.assertFalse(requiem._coaxis_ordinary_dodge_restart_pending)
+
     def test_requiem_pending_double_4a_action_uses_axis_handoff(self):
         requiem, zankou, context = make_combat_pair(combat_enabled=True)
         requiem._pending_double_4a = object()
@@ -798,6 +829,38 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertEqual(
             context.request_switch.call_args.kwargs["reason"],
             "requiem perfect-dodge double-4a complete",
+        )
+
+    def test_requiem_double_4a_interrupted_by_ordinary_dodge_restarts_plain_axis(self):
+        config_task = make_config_task()
+        requiem = FakeCombatChar(config_task)
+        zankou = FakeCombatChar(config_task)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+        requiem._pending_double_4a = object()
+        requiem._coaxis_ordinary_dodge_restart_pending = False
+
+        def ordinary_interrupt():
+            requiem._pending_double_4a = None
+            requiem._coaxis_ordinary_dodge_restart_pending = True
+
+        requiem._run_double_4a_outside = mock.MagicMock(side_effect=ordinary_interrupt)
+        requiem.logger = mock.MagicMock()
+
+        self.assertTrue(perform_requiem_double_4a_coaxis(requiem, context, zankou))
+
+        self.assertEqual(
+            [round(at, 2) for name, at in requiem.events if name == "tap"],
+            [0.0, 0.1, 0.2, 0.3, 0.4],
+        )
+        self.assertEqual(
+            context.request_switch.call_args.kwargs["reason"],
+            "requiem ordinary-dodge coordinated axis complete",
+        )
+        self.assertFalse(
+            any(
+                "perfect-dodge double-4a complete" in call.args[0]
+                for call in requiem.logger.info.call_args_list
+            )
         )
 
     def test_requiem_free_skill_axis_attacks_then_requests_zankou_without_support_ultimate(self):
@@ -851,6 +914,36 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertEqual(
             context.request_switch.call_args.kwargs["reason"],
             "requiem perfect-dodge double-4a complete",
+        )
+
+    def test_requiem_free_skill_ordinary_dodge_uses_standard_full_axis_duration(self):
+        config_task = make_config_task(
+            **{RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: 0.2}
+        )
+        requiem = FakeCombatChar(config_task)
+        zankou = FakeCombatChar(config_task)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+        requiem._pending_double_4a = None
+        requiem._coaxis_ordinary_dodge_restart_pending = False
+        requiem.logger = mock.MagicMock()
+        original_sleep = requiem.sleep
+        triggered = False
+
+        def trigger_ordinary_dodge(duration):
+            nonlocal triggered
+            original_sleep(duration)
+            if not triggered:
+                triggered = True
+                requiem._coaxis_ordinary_dodge_restart_pending = True
+
+        requiem.sleep = trigger_ordinary_dodge
+
+        self.assertTrue(perform_requiem_free_skill_coaxis(requiem, context, zankou))
+
+        self.assertAlmostEqual(requiem.clock, 0.55)
+        self.assertEqual(
+            context.request_switch.call_args.kwargs["reason"],
+            "requiem ordinary-dodge coordinated axis complete",
         )
 
     def test_requiem_free_skill_axis_defers_to_pending_support_ultimate(self):
