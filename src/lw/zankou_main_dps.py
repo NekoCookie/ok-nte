@@ -72,6 +72,13 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
                 return False
             self.sleep(min(self.AWAKENED_SECOND_ULTIMATE_POLL_INTERVAL, remaining))
 
+    def _detect_awakened_double_ultimate(self) -> bool:
+        # The switch confirmation frame may still contain the previous character's action UI.
+        self.task.next_frame()
+        detected = bool(self.find_ult_purple())
+        self.logger.info(f"zankou awakened purple ultimate detected={detected}")
+        return detected
+
     def combat_plan(self, context):
         partner = coordinated_axis_partner(
             self,
@@ -103,7 +110,7 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
 
         def entry():
             if not self.lw_skills_disabled_for_test():
-                awakened_double_ultimate = bool(self.find_ult_purple())
+                awakened_double_ultimate = self._detect_awakened_double_ultimate()
                 ultimate_result = yield ultimate
                 if ultimate_result and awakened_double_ultimate:
                     self.logger.info("zankou awakened first ultimate complete")

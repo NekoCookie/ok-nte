@@ -292,7 +292,11 @@ def make_config_task(combat_enabled=True, **overrides):
 
 def make_combat_pair(combat_enabled=True):
     config_task = make_config_task(combat_enabled=combat_enabled)
-    task = SimpleNamespace(chars=[], get_task_by_class=lambda _: config_task)
+    task = SimpleNamespace(
+        chars=[],
+        get_task_by_class=lambda _: config_task,
+        next_frame=mock.MagicMock(),
+    )
     requiem = Requiem.__new__(Requiem)
     requiem.index = 0
     requiem.impl_id = REQUIEM_IMPL_ID
@@ -304,6 +308,7 @@ def make_combat_pair(combat_enabled=True):
     zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
     zankou.is_dead = False
     zankou.task = task
+    zankou.logger = mock.MagicMock()
     task.chars = [requiem, zankou]
     context = SimpleNamespace(chars=task.chars)
     return requiem, zankou, context
@@ -361,7 +366,27 @@ class TestRequiemZankouAxis(unittest.TestCase):
         zankou_entry = zankou_plan.entry()
         self.assertEqual(next(zankou_entry).name, "ZankouMainDps_ultimate")
         self.assertEqual(zankou_entry.send(True).name, "ZankouMainDps_coordinated_axis")
+        zankou.task.next_frame.assert_called_once_with()
         zankou.find_ult_purple.assert_called_once_with()
+
+    def test_zankou_refreshes_switch_frame_before_awakened_detection(self):
+        _requiem, zankou, _context = make_combat_pair(combat_enabled=True)
+        zankou.logger = mock.MagicMock()
+        events = []
+        zankou.task.next_frame.side_effect = lambda: events.append("frame")
+
+        def find_purple():
+            events.append("purple")
+            return True
+
+        zankou.find_ult_purple = mock.MagicMock(side_effect=find_purple)
+
+        self.assertTrue(zankou._detect_awakened_double_ultimate())
+
+        self.assertEqual(events, ["frame", "purple"])
+        zankou.logger.info.assert_called_once_with(
+            "zankou awakened purple ultimate detected=True"
+        )
 
     def test_awakened_zankou_repeats_standard_ultimate_before_axis(self):
         _requiem, zankou, context = make_combat_pair(combat_enabled=True)
@@ -431,6 +456,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         entry = zankou.combat_plan(context).entry()
 
         self.assertEqual(next(entry).name, "ZankouMainDps_coordinated_axis")
+        zankou.task.next_frame.assert_not_called()
         zankou.find_ult_purple.assert_not_called()
 
     def test_combat_switch_requires_both_exact_main_dps_templates(self):
