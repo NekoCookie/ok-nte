@@ -15,9 +15,11 @@ from src.sound_trigger.SoundCombatContext import SoundCombatContext
 class _FakeTask:
     def __init__(self):
         self.outcomes = []
+        self.dodge_results = []
 
-    def after_sound_dodge_resolved(self, *, perfect_dodge):
+    def after_sound_dodge_resolved(self, *, perfect_dodge, dodge_result):
         self.outcomes.append(perfect_dodge)
+        self.dodge_results.append(dodge_result)
 
 
 class _SoundContextHarness(SoundContextExtMixin):
@@ -128,11 +130,12 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         started_at = time.perf_counter()
         with mock.patch("src.lw.sound_ext.logger.info") as log_info:
             outcome = context.lw_execute_dodge_with_confirmation(Trigger(), task)
-        context.lw_dispatch_dodge_outcome(task, outcome)
+        context.lw_dispatch_dodge_outcome(task, outcome, context.DODGE_RESULT_AUTO_PERFECT)
 
         self.assertTrue(outcome)
         self.assertLess(time.perf_counter() - started_at, 0.1)
         self.assertEqual(task.outcomes, [True])
+        self.assertEqual(task.dodge_results, ["自动完美"])
         self.assertTrue(
             any("声音闪避结果: 自动完美" in call.args[0] for call in log_info.call_args_list)
         )
@@ -157,11 +160,12 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         with mock.patch("src.lw.sound_ext.logger.info") as log_info:
             outcome = context.lw_execute_dodge_with_confirmation(trigger, task)
         elapsed = time.perf_counter() - started_at
-        context.lw_dispatch_dodge_outcome(task, outcome)
+        context.lw_dispatch_dodge_outcome(task, outcome, context.DODGE_RESULT_ORDINARY)
 
         self.assertFalse(outcome)
         self.assertGreaterEqual(elapsed, 0.025)
         self.assertEqual(task.outcomes, [False])
+        self.assertEqual(task.dodge_results, ["普通闪避"])
         self.assertTrue(
             any("声音闪避结果: 普通闪避" in call.args[0] for call in log_info.call_args_list)
         )
@@ -282,6 +286,7 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         context.execute_pending_action()
 
         self.assertEqual(task.outcomes, [True])
+        self.assertEqual(task.dodge_results, ["自动完美"])
         self.assertIsNone(context._pending_action)
 
     def test_manual_perfect_sound_dispatches_without_extra_input(self):
@@ -304,6 +309,7 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
             context.execute_pending_action()
 
         self.assertEqual(task.outcomes, [True])
+        self.assertEqual(task.dodge_results, ["手动完美"])
         self.assertGreater(context.last_dodge_time(), 0.0)
         trigger.execute_dodge.assert_not_called()
         trigger.execute_counter_attack.assert_not_called()
@@ -320,12 +326,28 @@ class CombatDodgeOutcomeTests(unittest.TestCase):
         combat = SimpleNamespace(
             get_current_char=lambda raise_exception=False: char,
             log_error=lambda message: self.fail(message),
+            info_set=mock.Mock(),
         )
 
-        CombatExtMixin.after_sound_dodge_resolved(combat, perfect_dodge=False)
-        CombatExtMixin.after_sound_dodge_resolved(combat, perfect_dodge=True)
+        CombatExtMixin.after_sound_dodge_resolved(
+            combat,
+            perfect_dodge=False,
+            dodge_result="普通闪避",
+        )
+        CombatExtMixin.after_sound_dodge_resolved(
+            combat,
+            perfect_dodge=True,
+            dodge_result="自动完美",
+        )
 
         self.assertEqual(calls, ["counter"])
+        self.assertEqual(
+            combat.info_set.call_args_list,
+            [
+                mock.call("闪避情况", "普通闪避"),
+                mock.call("闪避情况", "自动完美"),
+            ],
+        )
 
 
 if __name__ == "__main__":

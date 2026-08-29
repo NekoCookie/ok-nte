@@ -293,22 +293,30 @@ class SoundCombatContext(SoundContextExtMixin):  # [lw] 插入用户扩展基类
             return
 
         dodge_outcome = None
+        dodge_result = None  # [lw]
         try:
             if action == "dodge":
                 dodge_outcome = self.lw_execute_dodge_with_confirmation(  # [lw]
                     trigger,
                     task,
                 )
+                if dodge_outcome is not None:  # [lw]
+                    dodge_result = (  # [lw]
+                        self.DODGE_RESULT_AUTO_PERFECT
+                        if dodge_outcome
+                        else self.DODGE_RESULT_ORDINARY
+                    )
             elif action == "manual_perfect":  # [lw]
                 dodge_outcome = self.lw_resolve_manual_perfect_dodge()  # [lw]
+                dodge_result = self.DODGE_RESULT_MANUAL_PERFECT  # [lw]
             elif action == "counter":
                 trigger.execute_counter_attack()
         except Exception as e:
             logger.error("Failed to execute sound action", e)
         finally:
             self.exit_priority()
-        if dodge_outcome is not None:
-            self.lw_dispatch_dodge_outcome(task, dodge_outcome)  # [lw]
+        if dodge_outcome is not None and dodge_result is not None:
+            self.lw_dispatch_dodge_outcome(task, dodge_outcome, dodge_result)  # [lw]
 
     def update_task(
         self,

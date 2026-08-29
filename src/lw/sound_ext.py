@@ -191,6 +191,9 @@ class SoundContextExtMixin:
     DEFAULT_PERFECT_DODGE_WAIT = 0.5
     MAX_PERFECT_DODGE_WAIT = 5.0
     COUNTER_SOUND_QUIET_FRAMES = 2
+    DODGE_RESULT_MANUAL_PERFECT = "手动完美"
+    DODGE_RESULT_ORDINARY = "普通闪避"
+    DODGE_RESULT_AUTO_PERFECT = "自动完美"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -303,7 +306,7 @@ class SoundContextExtMixin:
 
     @staticmethod
     def lw_resolve_manual_perfect_dodge() -> bool:
-        logger.info("声音闪避结果: 手动完美")
+        logger.info(f"声音闪避结果: {SoundContextExtMixin.DODGE_RESULT_MANUAL_PERFECT}")
         return True
 
     def lw_execute_dodge_with_confirmation(self, trigger, task) -> bool | None:
@@ -397,14 +400,14 @@ class SoundContextExtMixin:
         if confirmed:
             after_shift = confirmed_at - dodge_started_at
             logger.info(
-                "声音闪避结果: 自动完美; "
+                f"声音闪避结果: {self.DODGE_RESULT_AUTO_PERFECT}; "
                 f"peak counter_score={peak:.4f}; "
                 f"after_shift={after_shift:.3f}s; "
                 f"sample={attempt.audio_sample_name or 'none'}"
             )
             return True
         logger.info(
-            "声音闪避结果: 普通闪避; "
+            f"声音闪避结果: {self.DODGE_RESULT_ORDINARY}; "
             f"waited={self._lw_perfect_dodge_wait:.2f}s after Shift; "
             f"peak counter_score={peak:.4f}; "
             f"sample={attempt.audio_sample_name or 'none'}; resuming normal combat"
@@ -422,7 +425,12 @@ class SoundContextExtMixin:
         logger.info(f"Dodge confirmation cancelled: {reason}")
         return True
 
-    def lw_dispatch_dodge_outcome(self, task, perfect_dodge: bool) -> None:
+    def lw_dispatch_dodge_outcome(
+        self,
+        task,
+        perfect_dodge: bool,
+        dodge_result: str,
+    ) -> None:
         with self._context_lock:
             current_task = self._trigger.task if self._trigger else self._pending_task
         if current_task is not task:
@@ -431,7 +439,7 @@ class SoundContextExtMixin:
         if callback is None:
             return
         try:
-            callback(perfect_dodge=perfect_dodge)
+            callback(perfect_dodge=perfect_dodge, dodge_result=dodge_result)
         except Exception as exc:
             logger.error(f"Sound dodge outcome callback failed: {exc}")
 

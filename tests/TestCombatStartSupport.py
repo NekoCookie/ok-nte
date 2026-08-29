@@ -363,6 +363,7 @@ class TestCombatStartDispatch(unittest.TestCase):
         calls = []
         task = BaseCombatTask.__new__(BaseCombatTask)
         task.in_animation = True
+        task.info_set = mock.MagicMock()
         task.lw_settle_combat_start_resources = mock.MagicMock(
             side_effect=lambda: calls.append("settle")
         )
@@ -379,6 +380,7 @@ class TestCombatStartDispatch(unittest.TestCase):
 
         self.assertEqual(calls, ["settle", "decide"])
         self.assertFalse(task.in_animation)
+        task.info_set.assert_called_once_with("闪避情况", "等待触发")
         task._switch_to_char.assert_not_called()
 
 

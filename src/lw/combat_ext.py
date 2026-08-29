@@ -76,6 +76,7 @@ class CombatExtMixin(_TaskProxy):
         self._team_change_checking = False
         self._last_team_recheck = 0.0  # AutoCombatTask 的队伍重载节流
         self._team_reload_enabled = False
+        self._lw_sound_dodge_status = "等待触发"
 
     def lw_add_freeze_duration(self, start, duration=-1.0, freeze_time=0.1, cause=""):
         """Record LW diagnostic context without changing the RU freeze tuple contract."""
@@ -219,6 +220,8 @@ class CombatExtMixin(_TaskProxy):
         """Apply LW-only state cleanup and support observation before the RU first switch."""
 
         self.in_animation = False
+        self._lw_sound_dodge_status = "等待触发"
+        self.info_set("闪避情况", self._lw_sound_dodge_status)
         self.lw_settle_combat_start_resources()
         if not self.combat_session.switch_enabled:
             return False
@@ -324,11 +327,13 @@ class CombatExtMixin(_TaskProxy):
         if SoundCombatContext.should_interrupt_combat():
             SoundCombatContext().execute_pending_action()
 
-    def after_sound_dodge_resolved(self, perfect_dodge: bool):
+    def after_sound_dodge_resolved(self, perfect_dodge: bool, dodge_result: str):
         """声音闪避结果钩子: 仅在完美闪避声音确认后启动角色的闪避反击逻辑。
 
         普通闪避在公共确认窗口结束后直接恢复原战斗流程; 依赖 last_dodge_time 的角色逻辑
         (如残虹合轴恢复)会在恢复后照常看到本次闪避。"""
+        self._lw_sound_dodge_status = dodge_result
+        self.info_set("闪避情况", dodge_result)
         if not perfect_dodge:
             return
         char = self.get_current_char(raise_exception=False)
@@ -1144,6 +1149,7 @@ class CombatExtMixin(_TaskProxy):
         fixed_slots = self._get_fixed_slots()
         count = self._expand_initial_snapshot_from_portraits(count, fixed_slots)
         self.log_info(f"load_chars count {count} current_index {current_index}")
+        self.info_set("闪避情况", self._lw_sound_dodge_status)
         resnap_weak_single_unknown = True
         while True:
             restart_with_new_snapshot = False

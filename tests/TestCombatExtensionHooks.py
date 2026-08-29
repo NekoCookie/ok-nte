@@ -6,6 +6,31 @@ from src.combat.BaseCombatTask import BaseCombatTask
 
 
 class TestCombatExtensionHooks(unittest.TestCase):
+    def test_dodge_status_row_is_inserted_immediately_after_log(self):
+        task = object.__new__(BaseCombatTask)
+        info_calls = mock.Mock()
+        task.load_hotkey = mock.Mock()
+        task._get_valid_team_snapshot = mock.Mock(return_value=(0, 0))
+        task._get_fixed_slots = mock.Mock(return_value=[])
+        task._expand_initial_snapshot_from_portraits = mock.Mock(return_value=0)
+        task.log_info = info_calls.log_info
+        task.info_set = info_calls.info_set
+        task._lw_sound_dodge_status = "等待触发"
+        task.chars = []
+        task._is_weak_single_unknown_team = mock.Mock(return_value=False)
+        task._is_weak_unknown_expansion = mock.Mock(return_value=False)
+        task._commit_loaded_chars = mock.Mock(return_value=True)
+
+        self.assertTrue(task.lw_load_chars())
+
+        self.assertEqual(
+            info_calls.mock_calls[:2],
+            [
+                mock.call.log_info("load_chars count 0 current_index 0"),
+                mock.call.info_set("闪避情况", "等待触发"),
+            ],
+        )
+
     def test_current_ru_get_cd_delegates_the_snapshot_to_the_lw_policy(self):
         task = object.__new__(BaseCombatTask)
         task.refresh_cd = mock.Mock()
@@ -20,11 +45,14 @@ class TestCombatExtensionHooks(unittest.TestCase):
     def test_lw_preparation_clears_animation_before_resource_observation(self):
         task = object.__new__(BaseCombatTask)
         task.in_animation = True
+        task.info_set = mock.Mock()
         task.lw_settle_combat_start_resources = mock.Mock()
+        task._combat_session = SimpleNamespace(switch_enabled=False)
 
-        task.lw_prepare_combat_start()
+        self.assertFalse(task.lw_prepare_combat_start())
 
         self.assertFalse(task.in_animation)
+        task.info_set.assert_called_once_with("闪避情况", "等待触发")
         task.lw_settle_combat_start_resources.assert_called_once_with()
 
     def test_loaded_character_info_uses_the_localized_template_name(self):
