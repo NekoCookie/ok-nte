@@ -766,11 +766,14 @@ def perform_requiem_free_skill_coaxis(
     """Finish Requiem's free skill with axis normals before returning to Zankou."""
 
     settings = coordinated_axis_settings(char)
-    _run_combat_normal_attacks(
+    double_4a_pending = _run_combat_normal_attacks(
         char,
         settings.requiem_free_skill_attack_duration,
         COAXIS_NORMAL_ATTACK_INTERVAL,
+        stop_when=lambda: getattr(char, "_pending_double_4a", None) is not None,
     )
+    if double_4a_pending:
+        return perform_requiem_double_4a_coaxis(char, context, partner)
     if _support_ultimate_pending(char):
         logger = getattr(char, "logger", None)
         log_info = getattr(logger, "info", None)

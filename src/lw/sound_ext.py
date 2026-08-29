@@ -225,18 +225,28 @@ class SoundContextExtMixin:
         self._lw_ordinary_dodge_wait = max(0.0, min(self.MAX_ORDINARY_DODGE_WAIT, value))
 
     def lw_ordinary_dodge_wait_for_task(self, task) -> float:
-        """Read the shared ordinary-dodge wait from the Requiem configuration task."""
+        """Read the ordinary-dodge wait selected for the current character."""
 
         default_wait = self._lw_ordinary_dodge_wait
         try:
+            from src.lw.requiem_zankou_axis import REQUIEM_IMPL_ID
             from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 
             config_task = task.get_task_by_class(RequiemCombatConfigTask)
             config = config_task.config
+            config_key = RequiemCombatConfigTask.CONF_ORDINARY_DODGE_WAIT
+            fallback_wait = default_wait
+            get_current_char = getattr(task, "get_current_char", None)
+            current_char = (
+                get_current_char(raise_exception=False) if callable(get_current_char) else None
+            )
+            if getattr(current_char, "impl_id", "") == REQUIEM_IMPL_ID:
+                config_key = RequiemCombatConfigTask.CONF_REQUIEM_ORDINARY_DODGE_WAIT
+                fallback_wait = self.DEFAULT_ORDINARY_DODGE_WAIT
             value = float(
                 config.get(
-                    RequiemCombatConfigTask.CONF_ORDINARY_DODGE_WAIT,
-                    default_wait,
+                    config_key,
+                    fallback_wait,
                 )
             )
             return max(0.0, min(self.MAX_ORDINARY_DODGE_WAIT, value))

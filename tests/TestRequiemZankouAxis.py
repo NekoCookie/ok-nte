@@ -820,6 +820,39 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertEqual(kwargs["reason"], "requiem free skill coordinated axis complete")
         self.assertTrue(requiem._coaxis_switch_pending)
 
+    def test_requiem_free_skill_axis_finishes_pending_double_4a_before_handoff(self):
+        config_task = make_config_task(
+            **{RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: 0.45}
+        )
+        requiem = FakeCombatChar(config_task)
+        zankou = FakeCombatChar(config_task)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+        requiem._pending_double_4a = None
+
+        original_sleep = requiem.sleep
+
+        def trigger_double_4a(duration):
+            original_sleep(duration)
+            requiem._pending_double_4a = object()
+
+        requiem.sleep = trigger_double_4a
+        requiem._run_double_4a_outside = mock.MagicMock(
+            side_effect=lambda: setattr(requiem, "_pending_double_4a", None)
+        )
+        requiem.logger = mock.MagicMock()
+
+        self.assertTrue(perform_requiem_free_skill_coaxis(requiem, context, zankou))
+
+        self.assertEqual(
+            [(name, round(at, 1)) for name, at in requiem.events if name == "tap"],
+            [("tap", 0.0)],
+        )
+        requiem._run_double_4a_outside.assert_called_once_with()
+        self.assertEqual(
+            context.request_switch.call_args.kwargs["reason"],
+            "requiem perfect-dodge double-4a complete",
+        )
+
     def test_requiem_free_skill_axis_defers_to_pending_support_ultimate(self):
         config_task = make_config_task(
             **{RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: 0.2}

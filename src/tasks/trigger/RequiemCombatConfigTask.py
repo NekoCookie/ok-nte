@@ -228,6 +228,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_COAXIS_ZANKOU_NORMAL_DURATION = "残虹普攻时长(s)"
     CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION = "残虹声音闪避后普攻时长(s)"
     CONF_ORDINARY_DODGE_WAIT = "普通闪避等待(s)"
+    CONF_REQUIEM_ORDINARY_DODGE_WAIT = "安魂曲普通闪避等待(s)"
     CONF_GROUP_DODGE = "▸ 闪避反击设置(展开)"     # 分组折叠开关: 展开=闪避方式(下拉)+选闪双4a时的时序
     CONF_GROUP_TUNING = "▸ 实战调优参数(展开)"    # 分组折叠开关
     CONF_GROUP_TEST = "▸ 测试开关与测试键(展开)"   # 分组折叠开关
@@ -335,6 +336,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 2.0,
                 self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.5,
                 self.CONF_ORDINARY_DODGE_WAIT: 0.5,
+                self.CONF_REQUIEM_ORDINARY_DODGE_WAIT: 0.5,
                 # 闪避反击设置组(折叠)→ 闪避方式(下拉)→ 选"闪双4a"才显示7个时序
                 self.CONF_GROUP_DODGE: False,
                 self.CONF_DODGE_STYLE: self.STYLE_SCHEME_B,
@@ -463,6 +465,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                             self.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
                             self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
                             self.CONF_ORDINARY_DODGE_WAIT,
+                            self.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
                         ],
                     },
                 },
@@ -654,8 +657,12 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "剩余时间等待, 然后从重击重新开始"
                 ),
                 self.CONF_ORDINARY_DODGE_WAIT: (
-                    "全角色通用: 从程序首次按Shift开始等待完美闪避声音; "
+                    "除安魂曲主C外的角色通用: 从程序首次按Shift开始等待完美闪避声音; "
                     "超时判为普通闪避, 不补普攻并恢复角色原输出"
+                ),
+                self.CONF_REQUIEM_ORDINARY_DODGE_WAIT: (
+                    "仅安魂曲主C使用: 从程序首次按Shift开始等待完美闪避声音; "
+                    "超时判为普通闪避, 等待期间不攻击; 合轴时恢复纯普攻, 非合轴时接combo"
                 ),
                 self.CONF_GROUP_TUNING: "▸ 分组折叠: 展开实战调优参数(反击平A/后摇/主动闪避/轮数/技能前平A/脱战复查/让路)",
                 self.CONF_GROUP_TEST: "▸ 分组折叠: 展开测试开关与测试键(闪避反击测试/禁用技能大招/首平A/模拟闪避)",

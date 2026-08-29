@@ -62,7 +62,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             ],
         )
 
-    def test_ordinary_dodge_wait_is_global_and_follows_zankou_perfect_recovery(self):
+    def test_ordinary_dodge_waits_follow_zankou_perfect_recovery(self):
         task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
         task.config_type = {}
         task.config_description = {}
@@ -71,18 +71,31 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             RequiemCombatConfigTask.__init__(task)
 
         self.assertEqual(task.default_config[task.CONF_ORDINARY_DODGE_WAIT], 0.5)
+        self.assertEqual(task.default_config[task.CONF_REQUIEM_ORDINARY_DODGE_WAIT], 0.5)
         self.assertNotIn(
             task.CONF_ORDINARY_DODGE_WAIT,
+            task.config_type[task.CONF_DODGE_STYLE]["sub_configs"][task.STYLE_SCHEME_B],
+        )
+        self.assertNotIn(
+            task.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
             task.config_type[task.CONF_DODGE_STYLE]["sub_configs"][task.STYLE_SCHEME_B],
         )
         coaxis_configs = task.config_type[task.CONF_GROUP_COAXIS]["sub_configs"][True]
         zankou_index = coaxis_configs.index(task.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION)
         self.assertEqual(coaxis_configs[zankou_index + 1], task.CONF_ORDINARY_DODGE_WAIT)
+        self.assertEqual(
+            coaxis_configs[zankou_index + 2],
+            task.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
+        )
         self.assertIn(
             "首次按Shift",
             task.config_description[task.CONF_ORDINARY_DODGE_WAIT],
         )
-        self.assertIn("全角色通用", task.config_description[task.CONF_ORDINARY_DODGE_WAIT])
+        self.assertIn("除安魂曲主C外", task.config_description[task.CONF_ORDINARY_DODGE_WAIT])
+        self.assertIn(
+            "仅安魂曲主C使用",
+            task.config_description[task.CONF_REQUIEM_ORDINARY_DODGE_WAIT],
+        )
         self.assertIn(
             "仅残虹完美闪避使用",
             task.config_description[task.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION],
@@ -129,6 +142,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_NORMAL_DURATION], 2.0)
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION], 0.5)
         self.assertEqual(task.default_config[task.CONF_ORDINARY_DODGE_WAIT], 0.5)
+        self.assertEqual(task.default_config[task.CONF_REQUIEM_ORDINARY_DODGE_WAIT], 0.5)
         self.assertEqual(task.default_config[task.CONF_FREE_BREAK_TEST_KEY], "9")
         self.assertEqual(
             task.config_type[task.CONF_GROUP_COAXIS]["sub_configs"][True],
@@ -149,6 +163,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
                 task.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
                 task.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
                 task.CONF_ORDINARY_DODGE_WAIT,
+                task.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
             ],
         )
 

@@ -8,6 +8,7 @@ import numpy as np
 
 from src.char.Requiem import Requiem
 from src.lw.combat_ext import CombatExtMixin
+from src.lw.requiem_zankou_axis import REQUIEM_IMPL_ID, ZANKOU_MAIN_DPS_IMPL_ID
 from src.lw.sound_ext import SoundContextExtMixin, SoundListenerExtMixin
 from src.sound_trigger.DodgeCounterTrigger import DodgeCounterTrigger
 from src.sound_trigger.SoundCombatContext import SoundCombatContext
@@ -219,7 +220,7 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         self.assertFalse(outcome)
         self.assertGreaterEqual(time.perf_counter() - started_at, 0.045)
 
-    def test_shared_ordinary_dodge_wait_applies_to_every_character(self):
+    def test_global_ordinary_dodge_wait_applies_to_non_requiem_character(self):
         task = _FakeTask()
         config_task = SimpleNamespace(
             config={
@@ -246,6 +247,37 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         self.assertGreaterEqual(elapsed, 0.015)
         self.assertLess(elapsed, 0.1)
         self.assertEqual(context.lw_ordinary_dodge_wait_for_task(task), 0.02)
+
+    def test_requiem_ordinary_dodge_wait_uses_dedicated_value(self):
+        task = _FakeTask()
+        config_task = SimpleNamespace(
+            config={
+                RequiemCombatConfigTask.CONF_ORDINARY_DODGE_WAIT: 0.02,
+                RequiemCombatConfigTask.CONF_REQUIEM_ORDINARY_DODGE_WAIT: 0.07,
+            }
+        )
+        task.get_task_by_class = lambda _task_class: config_task
+        task.get_current_char = lambda raise_exception=False: SimpleNamespace(
+            impl_id=REQUIEM_IMPL_ID
+        )
+        context = _SoundContextHarness(task)
+        context.lw_update_ordinary_dodge_wait(0.5)
+
+        self.assertEqual(context.lw_ordinary_dodge_wait_for_task(task), 0.07)
+
+    def test_requiem_ordinary_dodge_wait_does_not_fall_back_to_global_value(self):
+        task = _FakeTask()
+        config_task = SimpleNamespace(
+            config={RequiemCombatConfigTask.CONF_ORDINARY_DODGE_WAIT: 0.02}
+        )
+        task.get_task_by_class = lambda _task_class: config_task
+        task.get_current_char = lambda raise_exception=False: SimpleNamespace(
+            impl_id=REQUIEM_IMPL_ID
+        )
+        context = _SoundContextHarness(task)
+        context.lw_update_ordinary_dodge_wait(0.02)
+
+        self.assertEqual(context.lw_ordinary_dodge_wait_for_task(task), 0.5)
 
     def test_shared_ordinary_dodge_wait_falls_back_when_config_is_unavailable(self):
         task = _FakeTask()
@@ -435,6 +467,36 @@ class CombatDodgeOutcomeTests(unittest.TestCase):
         self.assertIsNone(requiem._pending_double_4a)
         self.assertEqual(requiem._d4_front_left_ms, 0.0)
         requiem.combo_attack.assert_called_once_with()
+
+    def test_requiem_ordinary_dodge_resumes_plain_normals_during_coaxis(self):
+        config_task = SimpleNamespace(
+            config={RequiemCombatConfigTask.CONF_COAXIS_COMBAT_ENABLE: True},
+            CONF_COAXIS_COMBAT_ENABLE=RequiemCombatConfigTask.CONF_COAXIS_COMBAT_ENABLE,
+        )
+        requiem = Requiem.__new__(Requiem)
+        requiem.impl_id = REQUIEM_IMPL_ID
+        requiem.is_dead = False
+        requiem._pending_double_4a = object()
+        requiem._d4_front_left_ms = 100.0
+        requiem.logger = mock.MagicMock()
+        requiem.combo_attack = mock.MagicMock()
+        zankou = SimpleNamespace(
+            impl_id=ZANKOU_MAIN_DPS_IMPL_ID,
+            is_dead=False,
+        )
+        requiem.task = SimpleNamespace(
+            chars=[requiem, zankou],
+            get_task_by_class=lambda _task_class: config_task,
+        )
+
+        requiem.on_ordinary_dodge()
+
+        self.assertIsNone(requiem._pending_double_4a)
+        self.assertEqual(requiem._d4_front_left_ms, 0.0)
+        requiem.combo_attack.assert_not_called()
+        requiem.logger.info.assert_called_once_with(
+            "安魂曲普通闪避: 专用等待结束, 恢复无取消合轴普攻"
+        )
 
 
 if __name__ == "__main__":

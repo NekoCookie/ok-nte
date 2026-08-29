@@ -765,10 +765,19 @@ class Requiem(MainDps):
         self._dodge_counter_at = time.time()  # combo 起手前从这里算"闪避后到首平A"的等待
 
     def on_ordinary_dodge(self):  # [lw]
-        """Start one ordinary configured combo after the Shift-based wait expires."""
+        """Resume plain axis normals, or use the configured combo outside the axis."""
 
         self._pending_double_4a = None
         self._d4_front_left_ms = 0.0
+        coaxis_partner = coordinated_axis_partner(
+            self,
+            None,
+            self_impl_id=REQUIEM_IMPL_ID,
+            partner_impl_id=ZANKOU_MAIN_DPS_IMPL_ID,
+        )
+        if coaxis_partner is not None:
+            self.logger.info("安魂曲普通闪避: 专用等待结束, 恢复无取消合轴普攻")
+            return
         self.logger.info("安魂曲普通闪避: 等待结束, 直接接combo")
         self.combo_attack()
 
