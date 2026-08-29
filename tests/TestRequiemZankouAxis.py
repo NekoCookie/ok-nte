@@ -357,10 +357,80 @@ class TestRequiemZankouAxis(unittest.TestCase):
             {"ZankouMainDps_ultimate", "ZankouMainDps_coordinated_axis"},
         )
         self.assertFalse(any(action.slot == ActionSlot.SKILL for action in zankou_plan.actions))
-        zankou.find_ult_purple = mock.MagicMock()
+        zankou.find_ult_purple = mock.MagicMock(return_value=False)
         zankou_entry = zankou_plan.entry()
         self.assertEqual(next(zankou_entry).name, "ZankouMainDps_ultimate")
         self.assertEqual(zankou_entry.send(True).name, "ZankouMainDps_coordinated_axis")
+        zankou.find_ult_purple.assert_called_once_with()
+
+    def test_awakened_zankou_repeats_standard_ultimate_before_axis(self):
+        _requiem, zankou, context = make_combat_pair(combat_enabled=True)
+        zankou.logger = mock.MagicMock()
+        zankou.find_ult_purple = mock.MagicMock(return_value=True)
+        zankou._wait_for_awakened_second_ultimate = mock.MagicMock(return_value=True)
+
+        entry = zankou.combat_plan(context).entry()
+        first_ultimate = next(entry)
+        second_ultimate = entry.send(True)
+        coaxis = entry.send(True)
+
+        self.assertEqual(first_ultimate.name, "ZankouMainDps_ultimate")
+        self.assertEqual(second_ultimate.name, "ZankouMainDps_ultimate")
+        self.assertIs(first_ultimate.execute, second_ultimate.execute)
+        self.assertNotEqual(first_ultimate.identity_key(), second_ultimate.identity_key())
+        self.assertEqual(coaxis.name, "ZankouMainDps_coordinated_axis")
+        zankou.find_ult_purple.assert_called_once_with()
+        zankou._wait_for_awakened_second_ultimate.assert_called_once_with()
+
+    def test_awakened_zankou_continues_axis_when_second_ultimate_does_not_appear(self):
+        _requiem, zankou, context = make_combat_pair(combat_enabled=True)
+        zankou.logger = mock.MagicMock()
+        zankou.find_ult_purple = mock.MagicMock(return_value=True)
+        zankou._wait_for_awakened_second_ultimate = mock.MagicMock(return_value=False)
+
+        entry = zankou.combat_plan(context).entry()
+        self.assertEqual(next(entry).name, "ZankouMainDps_ultimate")
+        self.assertEqual(entry.send(True).name, "ZankouMainDps_coordinated_axis")
+
+    def test_zankou_does_not_wait_for_second_ultimate_after_failed_first_stage(self):
+        _requiem, zankou, context = make_combat_pair(combat_enabled=True)
+        zankou.find_ult_purple = mock.MagicMock(return_value=True)
+        zankou._wait_for_awakened_second_ultimate = mock.MagicMock()
+
+        entry = zankou.combat_plan(context).entry()
+        self.assertEqual(next(entry).name, "ZankouMainDps_ultimate")
+        self.assertEqual(entry.send(False).name, "ZankouMainDps_coordinated_axis")
+        zankou._wait_for_awakened_second_ultimate.assert_not_called()
+
+    def test_zankou_second_ultimate_poll_uses_bounded_point_one_second_cadence(self):
+        _requiem, zankou, _context = make_combat_pair(combat_enabled=True)
+        zankou.logger = mock.MagicMock()
+        clock = [0.0]
+        sleeps = []
+        zankou.now = lambda: clock[0]
+
+        def sleep(duration):
+            sleeps.append(duration)
+            clock[0] += duration
+
+        zankou.sleep = sleep
+        zankou.ultimate_available = mock.MagicMock(return_value=False)
+
+        self.assertFalse(zankou._wait_for_awakened_second_ultimate())
+
+        self.assertAlmostEqual(sum(sleeps), 0.8)
+        self.assertTrue(all(duration <= 0.1 for duration in sleeps))
+        self.assertEqual(zankou.ultimate_available.call_count, len(sleeps) + 1)
+
+    def test_test_switch_skips_awakened_ultimate_detection_in_axis_plan(self):
+        _requiem, zankou, context = make_combat_pair(combat_enabled=True)
+        config_task = zankou.task.get_task_by_class(None)
+        config_task.config[RequiemCombatConfigTask.CONF_DISABLE_SKILLS] = True
+        zankou.find_ult_purple = mock.MagicMock()
+
+        entry = zankou.combat_plan(context).entry()
+
+        self.assertEqual(next(entry).name, "ZankouMainDps_coordinated_axis")
         zankou.find_ult_purple.assert_not_called()
 
     def test_combat_switch_requires_both_exact_main_dps_templates(self):

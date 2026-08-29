@@ -17,6 +17,8 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
 
     en_name = "Zankou Main DPS"
     cn_name = "残虹主C"
+    AWAKENED_SECOND_ULTIMATE_WAIT = 0.8
+    AWAKENED_SECOND_ULTIMATE_POLL_INTERVAL = 0.1
 
     def _has_coordinated_axis_partner(self):
         return coordinated_axis_partner(
@@ -58,6 +60,18 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
         self.task.mouse_up()
         self._coaxis_heavy_held = False
 
+    def _wait_for_awakened_second_ultimate(self) -> bool:
+        deadline = self.now() + self.AWAKENED_SECOND_ULTIMATE_WAIT
+        while True:
+            if self.ultimate_available():
+                self.logger.info("zankou awakened second ultimate available")
+                return True
+            remaining = deadline - self.now()
+            if remaining <= 0:
+                self.logger.info("zankou awakened second ultimate unavailable; continuing axis")
+                return False
+            self.sleep(min(self.AWAKENED_SECOND_ULTIMATE_POLL_INTERVAL, remaining))
+
     def combat_plan(self, context):
         partner = coordinated_axis_partner(
             self,
@@ -89,7 +103,12 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
 
         def entry():
             if not self.lw_skills_disabled_for_test():
-                yield ultimate
+                awakened_double_ultimate = bool(self.find_ult_purple())
+                ultimate_result = yield ultimate
+                if ultimate_result and awakened_double_ultimate:
+                    self.logger.info("zankou awakened first ultimate complete")
+                    if self._wait_for_awakened_second_ultimate():
+                        yield ultimate.repeat_for_entry()
             yield coaxis
 
         return self.plan(ultimate, coaxis, entry=entry)
