@@ -172,7 +172,7 @@ class Requiem(MainDps):
     G_SKILL_MIN_CONF = 0.35        # 两模板都低于此 = 没识别到(遮挡/切场/背景太乱), 不按
     G_SKILL_MARGIN = 0.08          # 番茄要比平底锅高出此值才算就绪, 否则分不清 → 不按(宁漏勿乱)
     G_SKILL_DELAY_MS = 300         # 按G后摇默认延迟(配置读不到时用)
-    G_SKILL_DEBUG_DUMP = True      # [诊断] 每轮打印两模板匹配值+存裁剪图到 box_debug; 调好后置 False
+    G_SKILL_DEBUG_DUMP = False     # [诊断] 临时采图开关; 实战默认关闭, 避免同步写盘阻塞战斗
     FREE_SKILL_ATTACK_INTERVAL = 0.1
     FREE_SKILL_FOLLOWUP_ATTACK_DURATION = 0.85
     # 免费技能后普攻会顺出又慢又低伤的第五下平A(a5); 放完免费技能用闪避打断它(实测只有闪避能打断,
@@ -470,7 +470,7 @@ class Requiem(MainDps):
         conf_pan, conf_ready = confs
         ready = self._g_icon_ready(conf_pan, conf_ready)
         # [诊断] 每轮打印两模板匹配值 + 存裁剪图, 确认坐标对没对准、平底锅态/番茄态各是多少值。
-        # 排查完把 G_SKILL_DEBUG_DUMP 关掉即可(默认 True, 临时诊断用)。
+        # 临时排查时才手动打开 G_SKILL_DEBUG_DUMP; 实战默认关闭。
         if self.G_SKILL_DEBUG_DUMP:
             self.logger.info(
                 f"G技能检测: 平底锅={conf_pan:.2f} 番茄={conf_ready:.2f} "

@@ -43,7 +43,7 @@ class CombatExtMixin(_TaskProxy):
     SKILL_READY_TEMPLATE_THRESHOLD = 0.7
     # CD 诊断开关: 平时 False(不影响实战); 想观察"切早/切晚/空切"或采技能样本时翻成 True。
     # 开启后会打 cd-truth 切上场对照日志, 并把技能图标存到 logs/box_debug(含同步磁盘写)。
-    SKILL_CD_DIAG = True
+    SKILL_CD_DIAG = False
 
     LOAD_CHARS_WEAK_RETRY = 2
     LOAD_CHARS_WEAK_RETRY_INTERVAL = 0.25
@@ -315,6 +315,8 @@ class CombatExtMixin(_TaskProxy):
         """放招诊断(临时, 验证完删): 专门盯三条未实战验证的路径——真技能被闪避打断→重试、
         放招后留场读CD、辅助技能差就绪等待。打印: 角色、走了哪条分支(tag)、当前技能图标
         CD读数、最近闪避相对本次放招(cast_at)的时刻(标出是否邻近)。前缀 [放招诊断] 便于 grep。"""
+        if not self.SKILL_CD_DIAG:
+            return
         dodge_at = self.last_dodge_time()
         rel = dodge_at - cast_at if cast_at else None
         if rel is not None and -0.5 <= rel < 2.5:

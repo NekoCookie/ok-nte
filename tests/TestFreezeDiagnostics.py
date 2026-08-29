@@ -25,6 +25,16 @@ class TestFreezeDiagnostics(unittest.TestCase):
         self.assertEqual(task._lw_freeze_causes, {100.0: "ultimate"})
         task.log_info.assert_called_once()
 
+    def test_cast_diagnostic_is_inert_by_default(self):
+        task = self._task()
+        task.SKILL_CD_DIAG = False
+        task.get_cd = mock.Mock()
+
+        task.diag_cast(0, 100.0, "diagnostic")
+
+        task.get_cd.assert_not_called()
+        task.log_info.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -63,6 +63,7 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
 
     def test_listener_records_one_second_from_dodge_timestamp(self):
         listener = _ListenerHarness()
+        listener.AUDIO_DIAGNOSTIC_CAPTURE = True
         written = []
         listener._lw_write_audio_async = lambda name, audio: written.append((name, audio))
         sample_name = listener.lw_request_dodge_audio_capture(10.0)
@@ -76,6 +77,7 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
 
     def test_listener_recording_ignores_chunk_timestamp_jitter_inside_window(self):
         listener = _ListenerHarness()
+        listener.AUDIO_DIAGNOSTIC_CAPTURE = True
         written = []
         listener._lw_write_audio_async = lambda name, audio: written.append((name, audio))
         listener.lw_request_dodge_audio_capture(10.0)
@@ -88,6 +90,12 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
 
         expected = np.repeat(np.arange(1, 5, dtype=np.float32), 12000)
         np.testing.assert_array_equal(written[0][1], expected)
+
+    def test_listener_does_not_capture_dodge_audio_by_default(self):
+        listener = _ListenerHarness()
+
+        self.assertEqual(listener.lw_request_dodge_audio_capture(10.0), "")
+        self.assertEqual(listener._lw_audio_captures, [])
 
     def test_listener_returns_latest_continuous_audio_window(self):
         listener = _ListenerHarness()

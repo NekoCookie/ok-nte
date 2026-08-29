@@ -49,6 +49,7 @@ class SoundDodgeOutcome:
 class SoundListenerExtMixin:
     """Publish raw match scores before RU trigger debounce or action arbitration."""
 
+    AUDIO_DIAGNOSTIC_CAPTURE = False
     AUDIO_DIAGNOSTIC_SECONDS = 1.0
     AUDIO_HISTORY_SECONDS = 1.5
     AUDIO_SAMPLE_LIMIT = 40
@@ -125,6 +126,8 @@ class SoundListenerExtMixin:
     def lw_request_dodge_audio_capture(self, started_at: float) -> str:
         """Capture one second from the dodge-input timestamp using the rolling buffer."""
 
+        if not self.AUDIO_DIAGNOSTIC_CAPTURE:
+            return ""
         with self._lw_audio_lock:
             self._lw_audio_sequence += 1
             stamp = time.strftime("%Y%m%d_%H%M%S")
