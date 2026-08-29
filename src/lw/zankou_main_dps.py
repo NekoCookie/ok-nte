@@ -95,6 +95,16 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
             reason="zankou coordinated-axis ultimate",
             can_execute=lambda _: not self.lw_skills_disabled_for_test(),
         )
+        ultimate_state = {"sampled": False, "awakened": False}
+        standard_ultimate_execute = ultimate.execute
+
+        def execute_ultimate(ultimate_context):
+            if not ultimate_state["sampled"]:
+                ultimate_state["sampled"] = True
+                ultimate_state["awakened"] = self._detect_awakened_double_ultimate()
+            return standard_ultimate_execute(ultimate_context)
+
+        ultimate.execute = execute_ultimate
         coaxis = self.planner_action(
             tags={ActionTag.LEGACY_COMBO, ActionTag.DAMAGE, ActionTag.FIELD_TIME},
             slot=ActionSlot.LEGACY_COMBO,
@@ -110,9 +120,8 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
 
         def entry():
             if not self.lw_skills_disabled_for_test():
-                awakened_double_ultimate = self._detect_awakened_double_ultimate()
                 ultimate_result = yield ultimate
-                if ultimate_result and awakened_double_ultimate:
+                if ultimate_result and ultimate_state["awakened"]:
                     self.logger.info("zankou awakened first ultimate complete")
                     if self._wait_for_awakened_second_ultimate():
                         yield ultimate.repeat_for_entry()

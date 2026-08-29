@@ -363,9 +363,17 @@ class TestRequiemZankouAxis(unittest.TestCase):
         )
         self.assertFalse(any(action.slot == ActionSlot.SKILL for action in zankou_plan.actions))
         zankou.find_ult_purple = mock.MagicMock(return_value=False)
+        zankou.click_ultimate = mock.MagicMock(return_value=True)
+        ultimate = next(
+            action for action in zankou_plan.actions if action.name == "ZankouMainDps_ultimate"
+        )
+        ultimate_result = ultimate.run(context)
         zankou_entry = zankou_plan.entry()
         self.assertEqual(next(zankou_entry).name, "ZankouMainDps_ultimate")
-        self.assertEqual(zankou_entry.send(True).name, "ZankouMainDps_coordinated_axis")
+        self.assertEqual(
+            zankou_entry.send(ultimate_result).name,
+            "ZankouMainDps_coordinated_axis",
+        )
         zankou.task.next_frame.assert_called_once_with()
         zankou.find_ult_purple.assert_called_once_with()
 
@@ -391,12 +399,25 @@ class TestRequiemZankouAxis(unittest.TestCase):
     def test_awakened_zankou_repeats_standard_ultimate_before_axis(self):
         _requiem, zankou, context = make_combat_pair(combat_enabled=True)
         zankou.logger = mock.MagicMock()
-        zankou.find_ult_purple = mock.MagicMock(return_value=True)
+        events = []
+        zankou.task.next_frame.side_effect = lambda: events.append("frame")
+        zankou.find_ult_purple = mock.MagicMock(
+            side_effect=lambda: events.append("purple") or True
+        )
+        zankou.click_ultimate = mock.MagicMock(
+            side_effect=lambda: events.append("ultimate") or True
+        )
         zankou._wait_for_awakened_second_ultimate = mock.MagicMock(return_value=True)
 
-        entry = zankou.combat_plan(context).entry()
+        plan = zankou.combat_plan(context)
+        scheduled_ultimate = next(
+            action for action in plan.actions if action.name == "ZankouMainDps_ultimate"
+        )
+        first_result = scheduled_ultimate.run(context)
+        self.assertEqual(events, ["frame", "purple", "ultimate"])
+        entry = plan.entry()
         first_ultimate = next(entry)
-        second_ultimate = entry.send(True)
+        second_ultimate = entry.send(first_result)
         coaxis = entry.send(True)
 
         self.assertEqual(first_ultimate.name, "ZankouMainDps_ultimate")
@@ -406,25 +427,38 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertEqual(coaxis.name, "ZankouMainDps_coordinated_axis")
         zankou.find_ult_purple.assert_called_once_with()
         zankou._wait_for_awakened_second_ultimate.assert_called_once_with()
+        zankou.click_ultimate.assert_called_once_with()
 
     def test_awakened_zankou_continues_axis_when_second_ultimate_does_not_appear(self):
         _requiem, zankou, context = make_combat_pair(combat_enabled=True)
         zankou.logger = mock.MagicMock()
         zankou.find_ult_purple = mock.MagicMock(return_value=True)
+        zankou.click_ultimate = mock.MagicMock(return_value=True)
         zankou._wait_for_awakened_second_ultimate = mock.MagicMock(return_value=False)
 
-        entry = zankou.combat_plan(context).entry()
+        plan = zankou.combat_plan(context)
+        scheduled_ultimate = next(
+            action for action in plan.actions if action.name == "ZankouMainDps_ultimate"
+        )
+        first_result = scheduled_ultimate.run(context)
+        entry = plan.entry()
         self.assertEqual(next(entry).name, "ZankouMainDps_ultimate")
-        self.assertEqual(entry.send(True).name, "ZankouMainDps_coordinated_axis")
+        self.assertEqual(entry.send(first_result).name, "ZankouMainDps_coordinated_axis")
 
     def test_zankou_does_not_wait_for_second_ultimate_after_failed_first_stage(self):
         _requiem, zankou, context = make_combat_pair(combat_enabled=True)
         zankou.find_ult_purple = mock.MagicMock(return_value=True)
+        zankou.click_ultimate = mock.MagicMock(return_value=False)
         zankou._wait_for_awakened_second_ultimate = mock.MagicMock()
 
-        entry = zankou.combat_plan(context).entry()
+        plan = zankou.combat_plan(context)
+        scheduled_ultimate = next(
+            action for action in plan.actions if action.name == "ZankouMainDps_ultimate"
+        )
+        first_result = scheduled_ultimate.run(context)
+        entry = plan.entry()
         self.assertEqual(next(entry).name, "ZankouMainDps_ultimate")
-        self.assertEqual(entry.send(False).name, "ZankouMainDps_coordinated_axis")
+        self.assertEqual(entry.send(first_result).name, "ZankouMainDps_coordinated_axis")
         zankou._wait_for_awakened_second_ultimate.assert_not_called()
 
     def test_zankou_second_ultimate_poll_uses_bounded_point_one_second_cadence(self):
