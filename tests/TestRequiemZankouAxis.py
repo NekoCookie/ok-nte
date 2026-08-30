@@ -1141,6 +1141,69 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertEqual([round(at, 2) for at in recovery_taps], [0.4, 0.5])
         self.assertEqual(round(heavy_starts[1] - recovery_taps[1], 2), 0.1)
 
+    def test_zankou_post_dodge_gold_skill_succeeds_before_heavy_restart(self):
+        config_task = make_config_task(
+            **{
+                RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: True,
+                RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.45,
+            }
+        )
+        zankou = FakeCombatChar(
+            config_task,
+            dodge_times=(0.4,),
+            gold_skill_times=(0.6,),
+        )
+        requiem = FakeCombatChar(config_task)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+
+        self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
+
+        self.assertEqual(
+            [(event[0], round(event[1], 2)) for event in zankou.events if event[0] == "hold"],
+            [("hold", 0.4)],
+        )
+        self.assertEqual(
+            [event[2] for event in zankou.events if event[0] == "gold_skill"],
+            ["zankou_post_dodge_gold_skill"],
+        )
+        context.request_switch.assert_called_once_with(
+            requiem,
+            reason="zankou gold skill complete",
+        )
+
+    def test_zankou_failed_post_dodge_gold_skill_restarts_original_heavy(self):
+        config_task = make_config_task(
+            **{
+                RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: True,
+                RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.45,
+            }
+        )
+        zankou = FakeCombatChar(
+            config_task,
+            dodge_times=(0.4,),
+            gold_skill_times=(0.6,),
+        )
+        requiem = FakeCombatChar(config_task)
+        context = SimpleNamespace(request_switch=mock.MagicMock())
+
+        def reject_gold_skill(action_name=None, **_kwargs):
+            zankou.events.append(("gold_skill", zankou.clock, action_name))
+            zankou._gold_skill_ready = False
+            return False
+
+        zankou.send_skill_key = reject_gold_skill
+
+        self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
+
+        self.assertEqual(
+            [(event[0], round(event[1], 2)) for event in zankou.events if event[0] == "hold"],
+            [("hold", 0.4), ("hold", 1.8)],
+        )
+        context.request_switch.assert_called_once_with(
+            requiem,
+            reason="zankou coordinated axis complete",
+        )
+
     def test_zankou_releases_held_coaxis_attack_for_sound_dodge(self):
         zankou = ZankouMainDps.__new__(ZankouMainDps)
         zankou._coaxis_heavy_held = True
@@ -1150,6 +1213,22 @@ class TestRequiemZankouAxis(unittest.TestCase):
 
         zankou.task.mouse_up.assert_called_once_with()
         self.assertFalse(zankou._coaxis_heavy_held)
+
+    def test_zankou_main_dps_ultimate_unfreeze_never_fills_normal_attacks(self):
+        zankou = ZankouMainDps.__new__(ZankouMainDps)
+        zankou._has_coordinated_axis_partner = mock.MagicMock(return_value=True)
+        with mock.patch.object(Zankou, "_wait_ultimate_unfreeze", return_value=4.2) as wait:
+            self.assertEqual(zankou._wait_ultimate_unfreeze(10.0), 4.2)
+
+        wait.assert_called_once_with(start=10.0, click=False)
+
+    def test_zankou_main_dps_keeps_ru_ultimate_fill_without_axis_partner(self):
+        zankou = ZankouMainDps.__new__(ZankouMainDps)
+        zankou._has_coordinated_axis_partner = mock.MagicMock(return_value=False)
+        with mock.patch.object(Zankou, "_wait_ultimate_unfreeze", return_value=4.2) as wait:
+            self.assertEqual(zankou._wait_ultimate_unfreeze(10.0), 4.2)
+
+        wait.assert_called_once_with(start=10.0, click=True)
 
     def test_zankou_combat_axis_does_not_reuse_test_switch_delay(self):
         config_task = make_config_task()

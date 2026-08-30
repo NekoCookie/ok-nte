@@ -60,6 +60,13 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
         self.task.mouse_up()
         self._coaxis_heavy_held = False
 
+    def _wait_ultimate_unfreeze(self, start, click=True):
+        """Keep Q settlement silent so queued normals cannot contaminate the next heavy."""
+
+        if self._has_coordinated_axis_partner():
+            click = False
+        return super()._wait_ultimate_unfreeze(start=start, click=click)
+
     def _wait_for_awakened_second_ultimate(self) -> bool:
         deadline = self.now() + self.AWAKENED_SECOND_ULTIMATE_WAIT
         while True:

@@ -394,6 +394,44 @@ def _send_zankou_gold_skill_until_confirmed(
         char.sleep(min(GOLD_SKILL_CONFIRM_INTERVAL, remaining, retry_remaining))
 
 
+def _try_zankou_gold_skill_after_dodge(
+    char: "BaseChar",
+    context: "CombatContext",
+    partner: "BaseChar",
+    settings: CoordinatedAxisSettings,
+) -> bool:
+    """Consume an already-lit gold E after dodge recovery before restarting heavy."""
+
+    if not settings.zankou_gold_skill_interrupt:
+        return False
+    task = getattr(char, "task", None)
+    find_one = getattr(task, "find_one", None)
+    if not callable(find_one):
+        return False
+    next_frame = getattr(task, "next_frame", None)
+    if callable(next_frame):
+        next_frame()
+    if not find_one(Labels.zankou_skill_gold):
+        return False
+
+    logger = getattr(char, "logger", None)
+    log_info = getattr(logger, "info", None)
+    if callable(log_info):
+        log_info("zankou post-dodge gold skill detected; attempting before heavy restart")
+    if not _send_zankou_gold_skill_until_confirmed(
+        char,
+        find_one,
+        phase_deadline=char.now() + GOLD_SKILL_CONFIRM_TIMEOUT,
+        action_name="zankou_post_dodge_gold_skill",
+    ):
+        if callable(log_info):
+            log_info("zankou post-dodge gold skill not confirmed; restarting original axis")
+        return False
+
+    _finish_zankou_axis(char, context, partner, reason="zankou gold skill complete")
+    return True
+
+
 def _wait_for_zankou_gold_skill(char: "BaseChar", timeout: float) -> object | None:
     """Wait briefly for the gold E template after the opening switch settles."""
 
@@ -948,6 +986,8 @@ def perform_zankou_combat_axis(
                 dodge_at,
                 dodge_outcome,
             )
+            if _try_zankou_gold_skill_after_dodge(char, context, partner, settings):
+                return True
             continue
         normal_deadline = char.now() + settings.zankou_normal_attack_duration
         gold_skill_attempt = _GoldSkillAttempt()
@@ -991,6 +1031,8 @@ def perform_zankou_combat_axis(
             dodge_at,
             dodge_outcome,
         )
+        if _try_zankou_gold_skill_after_dodge(char, context, partner, settings):
+            return True
 
 
 class CoordinatedAxisIO(Protocol):
