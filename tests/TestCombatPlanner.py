@@ -299,6 +299,7 @@ class TestCombatPlanner(unittest.TestCase):
         calls=None,
         success=True,
         priority_ready=None,
+        can_execute=None,
     ):
         def execute(_):
             if calls is not None:
@@ -317,6 +318,7 @@ class TestCombatPlanner(unittest.TestCase):
             execute=execute,
             reason=f"{name} ready",
             priority_ready=priority_ready,
+            can_execute=can_execute,
         )
 
     def test_main_dps_field_preference_boosts_entry(self):
@@ -1164,6 +1166,142 @@ class TestCombatPlanner(unittest.TestCase):
         self.assertEqual(pre_entry.name, "fadia_ultimate")
         self.assertEqual(calls, ["fadia_ultimate", "fadia_skill"])
         self.assertEqual(result.name, "fadia_skill")
+
+    def test_entry_lead_action_preserves_skill_then_ultimate_order(self):
+        calls = []
+        setup_calls = []
+        skill = self._action(
+            "iroi_skill",
+            {ActionTag.SKILL_ACTION},
+            ActionSlot.SKILL,
+            calls,
+        )
+        ultimate = self._action(
+            "iroi_ultimate",
+            {ActionTag.ULTIMATE_ACTION},
+            ActionSlot.ULTIMATE,
+            calls,
+        )
+
+        def entry():
+            setup_calls.append("entry_started")
+            skill_result = yield skill
+            if skill_result:
+                yield ultimate
+
+        char = FakeChar(0, "iroi", plan_items=lambda _: CombatPlan([skill, ultimate], entry=entry))
+        planner = self._planner([char])
+
+        lead_result = planner.perform_entry_lead_action(char)
+        result = planner.perform_current_char(char)
+
+        self.assertEqual(lead_result.name, "iroi_skill")
+        self.assertEqual(result.name, "iroi_ultimate")
+        self.assertEqual(calls, ["iroi_skill", "iroi_ultimate"])
+        self.assertEqual(setup_calls, ["entry_started"])
+
+    def test_entry_lead_action_preserves_ultimate_then_skill_order(self):
+        calls = []
+        ultimate = self._action(
+            "support_ultimate",
+            {ActionTag.ULTIMATE_ACTION},
+            ActionSlot.ULTIMATE,
+            calls,
+        )
+        skill = self._action(
+            "support_skill",
+            {ActionTag.SKILL_ACTION},
+            ActionSlot.SKILL,
+            calls,
+        )
+        char = FakeChar(
+            0,
+            "support",
+            plan_items=lambda _: CombatPlan([ultimate, skill]),
+        )
+        planner = self._planner([char])
+
+        lead_result = planner.perform_entry_lead_action(char)
+        result = planner.perform_current_char(char)
+
+        self.assertEqual(lead_result.name, "support_ultimate")
+        self.assertEqual(result.name, "support_skill")
+        self.assertEqual(calls, ["support_ultimate", "support_skill"])
+
+    def test_entry_lead_action_keeps_explicit_expected_entry_authoritative(self):
+        calls = []
+        skill = self._action(
+            "skill_first",
+            {ActionTag.SKILL_ACTION},
+            ActionSlot.SKILL,
+            calls,
+        )
+        ultimate = self._action(
+            "forced_ultimate",
+            {ActionTag.ULTIMATE_ACTION},
+            ActionSlot.ULTIMATE,
+            calls,
+        )
+        char = FakeChar(0, "forced", plan_items=lambda _: CombatPlan([skill, ultimate]))
+        planner = self._planner([char])
+        planner.expect_entry_action(char, ExpectedEntry(slot=ActionSlot.ULTIMATE))
+
+        lead_result = planner.perform_entry_lead_action(char)
+        planner.perform_current_char(char)
+
+        self.assertEqual(lead_result.name, "forced_ultimate")
+        self.assertEqual(calls, ["forced_ultimate", "skill_first"])
+
+    def test_entry_lead_action_skips_unavailable_skill_before_ready_ultimate(self):
+        calls = []
+        skill = self._action(
+            "unavailable_skill",
+            {ActionTag.SKILL_ACTION},
+            ActionSlot.SKILL,
+            calls,
+            can_execute=lambda _: False,
+        )
+        ultimate = self._action(
+            "ready_ultimate",
+            {ActionTag.ULTIMATE_ACTION},
+            ActionSlot.ULTIMATE,
+            calls,
+        )
+        char = FakeChar(0, "fallback", plan_items=lambda _: CombatPlan([skill, ultimate]))
+        planner = self._planner([char])
+
+        lead_result = planner.perform_entry_lead_action(char)
+        planner.perform_current_char(char)
+
+        self.assertEqual(lead_result.name, "ready_ultimate")
+        self.assertEqual(calls, ["ready_ultimate"])
+
+    def test_entry_lead_action_stops_before_non_ability_followup(self):
+        calls = []
+        ultimate = self._action(
+            "unavailable_ultimate",
+            {ActionTag.ULTIMATE_ACTION},
+            ActionSlot.ULTIMATE,
+            calls,
+            can_execute=lambda _: False,
+        )
+        axis = self._action(
+            "coordinated_axis",
+            {ActionTag.LEGACY_COMBO},
+            ActionSlot.LEGACY_COMBO,
+            calls,
+        )
+        char = FakeChar(0, "zankou", plan_items=lambda _: CombatPlan([ultimate, axis]))
+        planner = self._planner([char])
+
+        planner.perform_entry_lead_action(char)
+
+        self.assertEqual(calls, [])
+
+        result = planner.perform_current_char(char)
+
+        self.assertEqual(result.name, "coordinated_axis")
+        self.assertEqual(calls, ["coordinated_axis"])
 
     def test_entry_flow_supports_python_boolean_logic(self):
         scenarios = [

@@ -246,37 +246,6 @@ class CombatExtMixin(_TaskProxy):
         key = getattr(config_task, "CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT", "")
         return bool(key and hasattr(config, "get") and config.get(key, False))
 
-    def lw_switch_expected_entry_for_decision(self, switch_to, decision):
-        """Select a supplemental planner entry action for an ordinary switch."""
-
-        early_entry_enabled = self.lw_early_entry_ability_input_enabled()
-        if not early_entry_enabled:
-            return None
-
-        from src.combat.planner import ActionSlot, ExpectedEntry
-
-        if getattr(decision, "expected_entry", None) is not None:
-            return None
-
-        ultimate_available = getattr(switch_to, "ultimate_available", None)
-        if callable(ultimate_available):
-            try:
-                if ultimate_available():
-                    return ExpectedEntry(slot=ActionSlot.ULTIMATE)
-            except (AttributeError, RuntimeError, TypeError):
-                pass
-
-        # Zankou's paired main-DPS plan has no ordinary E entry. Its yellow E is
-        # only detected and used from within the coordinated-axis heavy phase.
-        from src.lw.requiem_zankou_axis import ZANKOU_MAIN_DPS_IMPL_ID
-
-        if str(getattr(switch_to, "impl_id", "")) == ZANKOU_MAIN_DPS_IMPL_ID:
-            return None
-
-        action_slot = getattr(decision, "scoring_action_slot", None)
-        slot = ActionSlot.ULTIMATE if action_slot == ActionSlot.ULTIMATE else ActionSlot.SKILL
-        return ExpectedEntry(slot=slot)
-
     def lw_switch_target_entered_during_revive_prompt(self, current_char, switch_to, frame) -> bool:
         """Confirm the target entered before attributing a revive prompt to it."""
 

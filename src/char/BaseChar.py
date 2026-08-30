@@ -143,11 +143,11 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
                 intro_duration = self.intro_motion_freeze_duration()
                 entry_ability_delay = min(self.INTRO_ENTRY_ABILITY_DELAY, intro_duration)
                 self.wait_intro(time_out=entry_ability_delay)
-                perform_entry_expected = getattr(
-                    self.task.combat_planner, "perform_entry_expected_action", None
+                perform_entry_lead = getattr(
+                    self.task.combat_planner, "perform_entry_lead_action", None
                 )
-                if callable(perform_entry_expected):
-                    perform_entry_expected(self)
+                if callable(perform_entry_lead):
+                    perform_entry_lead(self)
                 remaining_intro = max(
                     0.0,
                     intro_duration - (time.time() - self.last_perform),

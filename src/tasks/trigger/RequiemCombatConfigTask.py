@@ -618,7 +618,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_GROUP_COAXIS: "▸ 分组折叠: 展开安魂曲主C与残虹主C的合轴触发键和时序",
                 self.CONF_COAXIS_COMBAT_ENABLE: "开=两个主C模板同队时自动进入实战合轴; 关=仅保留按键测试",
                 self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT: (
-                    "开=普通入场确认后立即执行, 环合入场1s后由planner执行角色原有Q/E; "
+                    "开=普通入场保持角色原顺序立即执行, 环合入场1s后由planner提前推进原入场流程; "
+                    "不会把E后Q角色强制改成Q后E; "
                     "关=保持RU的切人和环合普攻逻辑"
                 ),
                 self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT: (

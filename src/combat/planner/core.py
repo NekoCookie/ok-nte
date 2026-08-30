@@ -156,7 +156,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         self.task = task
         self.state = CombatState()
         self._log_gate = LogGate(logger)
-        self._pre_entry_results: dict[int, dict[str, ActionResult]] = {}
+        self._pre_entry_sessions: dict[int, _EntrySession] = {}  # [lw]
 
     def reset(self, chars: Iterable["BaseChar"]) -> None:
         """重置 planner 管理的队伍角色和运行状态。
@@ -166,7 +166,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         """
 
         self.state.reset(chars)
-        self._pre_entry_results.clear()
+        self._pre_entry_sessions.clear()  # [lw]
         self._apply_combat_policies()
 
     def _apply_combat_policies(self) -> None:
@@ -294,13 +294,33 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         and the selected action is not executed twice.
         """
 
-        context = self.context_for(current_char, {})
-        action = self._entry_expected_action(current_char, context)
+        session = self._entry_session_for(current_char)
+        action = self._entry_expected_action(current_char, session.context)
         if action is None:
             return None
-        result, executed = self._execute_entry_action(current_char, action, context)
+        result, executed = self._execute_entry_action(current_char, action, session.context)
         if executed:
-            self._pre_entry_results.setdefault(current_char.index, {})[action.identity_key()] = result
+            self._record_session_result(session, action, result, executed)
+            self._pre_entry_sessions[current_char.index] = session
+        return result
+
+    # [lw] Accelerate an intro with the character's real entry order.
+    def perform_entry_lead_action(self, current_char: "BaseChar") -> ActionResult | None:
+        """Advance one early entry ability without changing the declared entry order.
+
+        An explicit ``ExpectedEntry`` remains authoritative. Otherwise this starts the
+        character's real entry flow, skips failed ability attempts exactly as the normal
+        flow would, and stops after the first successful E/Q action. The live entry
+        session is retained so ``perform_current_char()`` resumes after that action
+        instead of recreating the generator or repeating its pre-yield side effects.
+        """
+
+        if current_char.index in self.state.pending_entry_expectations:
+            return self.perform_entry_expected_action(current_char)
+
+        session = self._entry_session_for(current_char)
+        result = self._perform_entry_lead_ability(session)
+        self._pre_entry_sessions[current_char.index] = session
         return result
 
     def perform_current_char(self, current_char: "BaseChar") -> ActionResult | None:
@@ -401,15 +421,64 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
                 request.reason = f"{current_char} planner request"
 
     def _entry_session_for(self, current_char: "BaseChar") -> _EntrySession:
-        pre_entry_results = self._pre_entry_results.pop(current_char.index, {})
-        last_result = next(reversed(pre_entry_results.values()), None)
+        pre_entry_session = self._pre_entry_sessions.pop(current_char.index, None)
+        if pre_entry_session is not None:
+            return pre_entry_session
         return _EntrySession(
             char=current_char,
             context=self.context_for(current_char, {}),
-            performed_results=pre_entry_results,
-            last_result=last_result,
-            successful_action=any(result.success for result in pre_entry_results.values()),
         )
+
+    # [lw] Retain the live generator so an early action never duplicates setup work.
+    def _perform_entry_lead_ability(self, session: _EntrySession) -> ActionResult | None:
+        ability_slots = {ActionSlot.SKILL, ActionSlot.ULTIMATE}
+
+        while session.steps < self.MAX_ACTIONS_PER_ENTRY:
+            if session.steps == 0 and self._should_return_to_requester_before_action(
+                session.char, session.context
+            ):
+                session.yielded_before_action = True
+                return None
+
+            action, scheduled = self._next_session_action(session)
+            if action is None:
+                return session.last_result
+            if action.slot not in ability_slots:
+                if not scheduled:
+                    session.pending_entry_action = action
+                return session.last_result
+
+            result, executed = self._execute_entry_action(
+                session.char,
+                action,
+                session.context,
+            )
+            session.steps += 1
+            self._record_session_result(session, action, result, executed)
+
+            if executed and self._skip_failed_optional_route_step(session.char, action, result):
+                continue
+
+            should_continue = self._should_continue_entry(session.char, result)
+            if not scheduled and session.entry_flow is not None:
+                session.pending_entry_action = self._advance_entry_flow(
+                    session.entry_flow,
+                    session.context,
+                    result,
+                )
+                if session.pending_entry_action is not None and self._ordinary_entry_blocked(
+                    session.char, session.context
+                ):
+                    session.pending_entry_action = None
+                    session.entry_flow = iter(())
+
+            if result.success or not should_continue:
+                if not should_continue:
+                    session.pending_entry_action = None
+                    session.entry_flow = iter(())
+                return result
+
+        return session.last_result
 
     def _next_session_action(
         self,

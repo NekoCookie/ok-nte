@@ -116,6 +116,10 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             "关=保持RU的切人和环合普攻逻辑",
             task.config_description[task.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT],
         )
+        self.assertIn(
+            "不会把E后Q角色强制改成Q后E",
+            task.config_description[task.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT],
+        )
         self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT], "关闭")
         self.assertEqual(
             task.config_type[task.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT]["options"],

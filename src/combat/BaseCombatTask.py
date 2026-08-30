@@ -690,9 +690,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             self._wait_switch_in_guard(current_char, switch_to, has_intro)
             current_char.wait_switch_cd()
 
-        expected_entry = decision.expected_entry or self.lw_switch_expected_entry_for_decision(  # [lw]
-            switch_to, decision
-        )
+        expected_entry = decision.expected_entry
         self.combat_planner.expect_entry_action(switch_to, expected_entry)
         self._switch_to_char(
             switch_to,

@@ -297,12 +297,14 @@ def combat_plan(self, context):
 - 抢回场后需要优先做某动作时，加 `expected_entry`。
 - 多个 FieldClaim 适合表达多个独立机制入口；planner 不累加 claim 分，只选择最高等级的匹配 claim。
 
-安魂曲配置的“入场提前执行技能大招”开启时, 拥有环合入场的角色会先执行 `1.0s` 的
-原环合等待, 再调用公开的 `CombatPlanner.perform_entry_expected_action(char)`。该调用只执行已经登记的一个
-`ExpectedEntry`, 不会运行普通 entry flow 或站场 fallback; 其 `ActionResult` 会带入
-随后的 `perform_current_char()`, 保证同一个 action 不会重复执行。关闭该配置时, 环合保留
-RU 原有的完整普攻窗口。提前的 Q/E 仍由 planner 调用角色的标准 action, 而不是由切人代码
-直接发键。
+安魂曲配置的“入场提前执行技能大招”开启时, 普通入场仍立即执行角色声明的原 entry flow;
+不会根据切人评分或 Q 就绪状态额外制造 `ExpectedEntry`。拥有环合入场的角色先执行 `1.0s`
+原环合等待, 再调用公开的 `CombatPlanner.perform_entry_lead_action(char)`。显式登记的
+`ExpectedEntry` 仍然优先; 否则该调用推进角色真实 entry flow, 跳过原流程本来就会跳过的失败
+Q/E, 并在第一个成功 Q/E 后暂停。planner 保存同一个 entry session, 随后的
+`perform_current_char()` 从暂停处继续, 不会重新运行 generator 的前置副作用。因此 `E -> Q`
+和 `Q -> E` 角色都保持各自声明顺序。关闭配置时, 环合保留 RU 原有的完整普攻窗口。所有提前
+Q/E 仍调用角色标准 action, 切人代码不直接发键。
 
 LW 角色可选实现 `lw_can_switch_in()`，在短暂的游戏机制窗口返回 `False`。planner 会把该角色
 从所有切人候选中排除，不发送角色数字键，也不会把暂时不可切入误判为死亡。该钩子只用于已确认

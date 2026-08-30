@@ -12,8 +12,6 @@ from src.combat.BaseCombatTask import BaseCombatTask
 from src.combat.planner import ActionSlot
 from src.char.BaseChar import BaseChar
 from src.lw.combat_templates import BuffSupport
-from src.lw.requiem_zankou_axis import ZANKOU_MAIN_DPS_IMPL_ID
-from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 
 
 class FakeClock:
@@ -124,104 +122,26 @@ class TestCombatStartDispatch(unittest.TestCase):
         BaseChar.perform(char)
 
         char.wait_intro.assert_called_once_with()
-        char.task.combat_planner.perform_entry_expected_action.assert_not_called()
+        char.task.combat_planner.perform_entry_lead_action.assert_not_called()
 
-    def test_intro_runs_planner_entry_action_when_early_entry_setting_is_on(self):
+    def test_intro_advances_planner_entry_flow_when_early_entry_setting_is_on(self):
         char = self._intro_char(early_entry_abilities=True)
         timeline = []
         char.wait_intro.side_effect = lambda *args, **kwargs: timeline.append(
             ("wait", kwargs.get("time_out"))
         )
-        char.task.combat_planner.perform_entry_expected_action.side_effect = (
+        char.task.combat_planner.perform_entry_lead_action.side_effect = (
             lambda _: timeline.append(("action", None))
         )
 
         with mock.patch("src.char.BaseChar.time.time", side_effect=[100.0, 101.0]):
             BaseChar.perform(char)
 
-        char.task.combat_planner.perform_entry_expected_action.assert_called_once_with(char)
+        char.task.combat_planner.perform_entry_lead_action.assert_called_once_with(char)
         self.assertEqual(
             timeline[:3],
             [("wait", 1.0), ("action", None), ("wait", 0.5)],
         )
-
-    def _entry_ability_task(self, enabled=True):
-        task = BaseCombatTask.__new__(BaseCombatTask)
-        config_task = SimpleNamespace(
-            config={RequiemCombatConfigTask.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT: enabled},
-            CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT=(
-                RequiemCombatConfigTask.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT
-            ),
-        )
-        task.get_task_by_class = mock.MagicMock(
-            side_effect=lambda task_class: config_task
-            if task_class is RequiemCombatConfigTask
-            else (_ for _ in ()).throw(LookupError("unexpected config task"))
-        )
-        return task
-
-    def test_switch_entry_uses_scoring_ultimate_or_skill_fallback(self):
-        task = self._entry_ability_task()
-        target = SimpleNamespace(index=1)
-        ultimate_decision = SimpleNamespace(
-            scoring_action_slot=ActionSlot.ULTIMATE,
-            expected_entry=None,
-        )
-        skill_decision = SimpleNamespace(scoring_action_slot=ActionSlot.SKILL, expected_entry=None)
-        entry_ultimate_decision = SimpleNamespace(
-            scoring_action_slot=None,
-            expected_entry=SimpleNamespace(slot=ActionSlot.ULTIMATE),
-        )
-
-        self.assertEqual(
-            task.lw_switch_expected_entry_for_decision(target, ultimate_decision).slot,
-            ActionSlot.ULTIMATE,
-        )
-        self.assertEqual(
-            task.lw_switch_expected_entry_for_decision(target, skill_decision).slot,
-            ActionSlot.SKILL,
-        )
-        self.assertIsNone(task.lw_switch_expected_entry_for_decision(target, entry_ultimate_decision))
-
-    def test_switch_entry_prioritizes_ready_ultimate_over_skill_score(self):
-        task = self._entry_ability_task()
-        target = SimpleNamespace(
-            index=2,
-            ultimate_available=mock.MagicMock(return_value=True),
-        )
-        decision = SimpleNamespace(scoring_action_slot=ActionSlot.SKILL, expected_entry=None)
-
-        self.assertEqual(
-            task.lw_switch_expected_entry_for_decision(target, decision).slot,
-            ActionSlot.ULTIMATE,
-        )
-        target.ultimate_available.assert_called_once_with()
-
-    def test_zankou_axis_entry_does_not_fallback_to_an_ordinary_skill(self):
-        task = self._entry_ability_task()
-        target = SimpleNamespace(
-            index=2,
-            impl_id=ZANKOU_MAIN_DPS_IMPL_ID,
-            ultimate_available=mock.MagicMock(return_value=False),
-        )
-        decision = SimpleNamespace(scoring_action_slot=None, expected_entry=None)
-
-        self.assertIsNone(task.lw_switch_expected_entry_for_decision(target, decision))
-        target.ultimate_available.assert_called_once_with()
-
-    def test_switch_entry_keeps_explicit_skill_entry_over_a_ready_ultimate(self):
-        task = self._entry_ability_task()
-        target = SimpleNamespace(
-            index=2,
-            ultimate_available=mock.MagicMock(return_value=True),
-        )
-        decision = SimpleNamespace(
-            scoring_action_slot=ActionSlot.ULTIMATE,
-            expected_entry=SimpleNamespace(slot=ActionSlot.SKILL),
-        )
-
-        self.assertIsNone(task.lw_switch_expected_entry_for_decision(target, decision))
-        target.ultimate_available.assert_not_called()
 
     def test_active_switch_target_is_not_marked_dead_by_another_char_revive_prompt(self):
         task = BaseCombatTask.__new__(BaseCombatTask)
@@ -253,30 +173,19 @@ class TestCombatStartDispatch(unittest.TestCase):
         current.mark_dead.assert_not_called()
         task.ensure_main.assert_not_called()
 
-    def test_switch_entry_is_disabled_by_default_setting(self):
-        task = self._entry_ability_task(enabled=False)
-        target = SimpleNamespace(index=1)
-        decision = SimpleNamespace(scoring_action_slot=ActionSlot.ULTIMATE, expected_entry=None)
-
-        self.assertIsNone(task.lw_switch_expected_entry_for_decision(target, decision))
-
-    def test_regular_switch_registers_the_supplemental_planner_entry_action(self):
+    def test_regular_switch_does_not_override_the_character_entry_order(self):
         task = BaseCombatTask.__new__(BaseCombatTask)
         current = mock.MagicMock()
         target = mock.MagicMock(index=1)
         task.combat_session = SimpleNamespace(switch_enabled=True)
         task.chars = [current, target]
         task._wait_switch_in_guard = mock.MagicMock()
-        task.lw_switch_expected_entry_for_decision = mock.MagicMock(
-            return_value=SimpleNamespace(slot=ActionSlot.ULTIMATE)
-        )
         task._switch_to_char = mock.MagicMock()
         decision = SimpleNamespace(
             target=target,
             has_intro=False,
             expected_entry=None,
-            reason="target ultimate ready",
-            scoring_action_slot=ActionSlot.ULTIMATE,
+            reason="target skill ready",
         )
         task.combat_planner = mock.MagicMock()
         task.combat_planner.decide_switch.return_value = decision
@@ -284,10 +193,7 @@ class TestCombatStartDispatch(unittest.TestCase):
 
         task.switch_next_char(current)
 
-        task.lw_switch_expected_entry_for_decision.assert_called_once_with(target, decision)
-        task.combat_planner.expect_entry_action.assert_called_once_with(
-            target, task.lw_switch_expected_entry_for_decision.return_value
-        )
+        task.combat_planner.expect_entry_action.assert_called_once_with(target, None)
         self.assertNotIn("send_switch_attack", task._switch_to_char.call_args.kwargs)
         self.assertTrue(task._switch_to_char.call_args.kwargs["retry_intro"])
 
@@ -299,7 +205,6 @@ class TestCombatStartDispatch(unittest.TestCase):
         task.combat_session = SimpleNamespace(switch_enabled=True)
         task.chars = [current, target]
         task._wait_switch_in_guard = mock.MagicMock()
-        task.lw_switch_expected_entry_for_decision = mock.MagicMock()
         task._switch_to_char = mock.MagicMock()
         decision = SimpleNamespace(
             target=target,
@@ -315,6 +220,7 @@ class TestCombatStartDispatch(unittest.TestCase):
         task.switch_next_char(current)
 
         task._wait_switch_in_guard.assert_not_called()
+        task.combat_planner.expect_entry_action.assert_called_once_with(target, expected_entry)
         task._switch_to_char.assert_called_once()
         self.assertIs(task._switch_to_char.call_args.args[0], target)
         self.assertFalse(task._switch_to_char.call_args.kwargs["retry_intro"])
