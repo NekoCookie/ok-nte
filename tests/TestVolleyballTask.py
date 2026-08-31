@@ -329,7 +329,7 @@ class TestVolleyballTask(unittest.TestCase):
         self.assertAlmostEqual(VolleyballTask.mark_match_state_unknown(task, 10.4), 0.4)
         task.log_warning.assert_not_called()
 
-    def test_service_is_handled_after_the_match_has_already_started(self):
+    def test_service_is_advanced_without_blocking_recognition(self):
         class ServiceTask:
             CONF_SERVE_DELAY = VolleyballTask.CONF_SERVE_DELAY
             DEFAULT_SERVE_DELAY = VolleyballTask.DEFAULT_SERVE_DELAY
@@ -344,6 +344,7 @@ class TestVolleyballTask(unittest.TestCase):
                 self._service_phase_warning_logged = False
                 self.is_service = Mock(return_value=True)
                 self.log_info = Mock()
+                self.log_warning = Mock()
                 self.send_key = Mock()
                 self.sleep = Mock()
 
@@ -356,9 +357,15 @@ class TestVolleyballTask(unittest.TestCase):
 
         with patch("src.tasks.VolleyballTask.time.monotonic", return_value=10.0):
             self.assertTrue(VolleyballTask.handle_service(task))
+        with patch("src.tasks.VolleyballTask.time.monotonic", return_value=12.7):
+            self.assertTrue(VolleyballTask.handle_service(task))
 
+        task.send_key.assert_called_once_with("j")
+        task.sleep.assert_not_called()
+
+        with patch("src.tasks.VolleyballTask.time.monotonic", return_value=12.8):
+            self.assertTrue(VolleyballTask.handle_service(task))
         task.send_key.assert_has_calls([call("j"), call("k")])
-        task.sleep.assert_called_once_with(2.8)
 
     def test_serve_delay_is_read_when_each_new_service_phase_starts(self):
         class ServiceTask:
@@ -384,12 +391,14 @@ class TestVolleyballTask(unittest.TestCase):
 
         with patch("src.tasks.VolleyballTask.time.monotonic", return_value=10.0):
             VolleyballTask.handle_service(task)
+        self.assertEqual(task._service_k_due_at, 12.5)
         task._service_phase_active = False
         task.config[VolleyballTask.CONF_SERVE_DELAY] = 3.1
         with patch("src.tasks.VolleyballTask.time.monotonic", return_value=20.0):
             VolleyballTask.handle_service(task)
 
-        self.assertEqual(task.sleep.call_args_list, [call(2.5), call(3.1)])
+        self.assertEqual(task._service_k_due_at, 23.1)
+        task.sleep.assert_not_called()
 
     def test_serve_delay_uses_a_safe_range_and_invalid_value_falls_back(self):
         class DelayTask:
@@ -449,6 +458,8 @@ class TestVolleyballTask(unittest.TestCase):
                 self._service_phase_active = True
                 self._service_phase_started_at = 9.0
                 self._service_phase_warning_logged = False
+                self._service_j_sent_at = 9.0
+                self._service_k_due_at = None
                 self.is_service = Mock(return_value=True)
                 self.log_info = Mock()
                 self.log_warning = Mock()
@@ -472,15 +483,42 @@ class TestVolleyballTask(unittest.TestCase):
                 self._service_phase_active = True
                 self._service_phase_started_at = 1.0
                 self._service_phase_warning_logged = False
+                self._service_j_sent_at = 1.0
+                self._service_k_due_at = 3.5
                 self.log_info = Mock()
 
             reset_service_phase = VolleyballTask.reset_service_phase
 
         task = ServiceTask()
 
-        self.assertFalse(VolleyballTask.handle_service_release(task))
+        with patch("src.tasks.VolleyballTask.time.monotonic", return_value=1.4):
+            self.assertFalse(VolleyballTask.handle_service_release(task))
         self.assertFalse(task._service_phase_active)
-        task.log_info.assert_called_once_with("service phase cleared")
+        task.log_info.assert_called_once_with(
+            "service phase cleared; pending service K cancelled after 0.400s"
+        )
+
+    def test_rally_transition_cancels_pending_service_k(self):
+        class ServiceTask:
+            def __init__(self):
+                self._service_phase_active = True
+                self._service_phase_started_at = 10.0
+                self._service_phase_warning_logged = False
+                self._service_j_sent_at = 10.0
+                self._service_k_due_at = 12.5
+                self.log_info = Mock()
+                self.send_key = Mock()
+
+            reset_service_phase = VolleyballTask.reset_service_phase
+
+        task = ServiceTask()
+
+        with patch("src.tasks.VolleyballTask.time.monotonic", return_value=10.4):
+            self.assertFalse(VolleyballTask.handle_service_release(task))
+
+        task.send_key.assert_not_called()
+        self.assertFalse(task._service_phase_active)
+        self.assertIsNone(task._service_k_due_at)
 
     def test_service_phase_only_warns_when_it_remains_visible(self):
         class ServiceTask:
@@ -490,6 +528,8 @@ class TestVolleyballTask(unittest.TestCase):
                 self._service_phase_active = True
                 self._service_phase_started_at = 0.0
                 self._service_phase_warning_logged = False
+                self._service_j_sent_at = 0.0
+                self._service_k_due_at = None
                 self.is_service = Mock(return_value=True)
                 self.log_info = Mock()
                 self.log_warning = Mock()
@@ -531,6 +571,7 @@ class TestVolleyballTask(unittest.TestCase):
                 self._play_count = VolleyballTask.POSITION_ADJUST_AFTER_HITS
                 self.sleep = Mock()
                 self.send_key = Mock()
+                self.log_info = Mock()
 
         task = PlayTask()
 
@@ -562,6 +603,7 @@ class TestVolleyballTask(unittest.TestCase):
                 }
                 self._play_count = VolleyballTask.POSITION_ADJUST_AFTER_HITS
                 self.log_warning = Mock()
+                self.log_info = Mock()
                 self.sleep = Mock()
                 self.send_key = Mock(return_value=True)
 

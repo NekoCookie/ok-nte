@@ -251,6 +251,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self._last_match_end_check_at = now
         return True
 
+    # [lw] Advance serve timing without blocking HUD recognition between J and K.
     def handle_service(self, is_service=None):
         now = time.monotonic()
         if is_service is None:
@@ -260,15 +261,33 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
 
         if self._service_phase_active:
             self.check_service_phase_timeout(now)
+            if self._service_k_due_at is not None and now >= self._service_k_due_at:
+                self._service_k_due_at = None
+                sent = self.send_key("k")
+                elapsed = now - self._service_j_sent_at
+                if sent:
+                    self.log_info(
+                        f"volleyball input: service K; {elapsed:.3f}s after service J"
+                    )
+                else:
+                    self.log_warning("volleyball input rejected: service K")
             return True
 
         self._service_phase_active = True
         self._service_phase_started_at = now
         self._service_phase_warning_logged = False
         self.log_info("new service phase")
-        self.send_key("j")
-        self.sleep(self.get_serve_delay())
-        self.send_key("k")
+        serve_delay = self.get_serve_delay()
+        sent = self.send_key("j")
+        self._service_j_sent_at = time.monotonic()
+        if sent:
+            self._service_k_due_at = self._service_j_sent_at + serve_delay
+            self.log_info(
+                f"volleyball input: service J; service K scheduled in {serve_delay:.3f}s"
+            )
+        else:
+            self._service_k_due_at = None
+            self.log_warning("volleyball input rejected: service J; service K not scheduled")
         return True
 
     def get_serve_delay(self):
@@ -297,7 +316,13 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         if not self._service_phase_active:
             return False
 
-        self.log_info("service phase cleared")
+        if self._service_k_due_at is not None:
+            elapsed = time.monotonic() - self._service_j_sent_at
+            self.log_info(
+                f"service phase cleared; pending service K cancelled after {elapsed:.3f}s"
+            )
+        else:
+            self.log_info("service phase cleared")
         self.reset_service_phase()
         return False
 
@@ -311,15 +336,27 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self._service_phase_active = False
         self._service_phase_started_at = 0.0
         self._service_phase_warning_logged = False
+        self._service_j_sent_at = 0.0
+        self._service_k_due_at = None
 
+    # [lw] Preserve RU timing while recording the actual cue and input timestamps.
     def handle_spike_cue(self):
         if self._spike_phase_active:
             return
         self._spike_phase_active = True
-        self.log_info("in spike cue")
-        self.wait_until(lambda: not self.is_spike_cue(), time_out=1)
+        started_at = time.monotonic()
+        self.log_info("spike cue detected")
+        cue_cleared = bool(self.wait_until(lambda: not self.is_spike_cue(), time_out=1))
+        cue_wait = time.monotonic() - started_at
+        cue_result = "cleared" if cue_cleared else "timed out"
+        self.log_info(f"spike cue {cue_result} after {cue_wait:.3f}s; K scheduled in 0.600s")
         self.sleep(0.6)
-        self.send_key("k")
+        sent = self.send_key("k")
+        total_elapsed = time.monotonic() - started_at
+        if sent:
+            self.log_info(f"volleyball input: spike K; {total_elapsed:.3f}s after cue detection")
+        else:
+            self.log_warning("volleyball input rejected: spike K")
 
     def reset_spike_phase(self):
         self._spike_phase_active = False
@@ -349,6 +386,8 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                     self._play_count = 0
                     return key, switch_key
                 if self.send_key(key, interval=self.get_play_interval()):
+                    # [lw] Identify ordinary rally inputs separately from spike inputs in logs.
+                    self.log_info(f"volleyball input: rally {key.upper()}")
                     if position_adjust_enabled:
                         self._play_count += 1
                     return ("j" if switch_key else "k"), not switch_key
