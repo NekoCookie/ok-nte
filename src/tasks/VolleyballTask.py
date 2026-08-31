@@ -18,7 +18,6 @@ class VolleyballMatchState(StrEnum):
     SERVICE = "service"
     RALLY = "rally"
     SPIKE_CUE = "spike_cue"
-    SPIKE_ACTION = "spike_action"
     UNKNOWN = "unknown"
 
 
@@ -61,11 +60,6 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         (0.978, 0.518, 0.986, 0.534),
         (0.978, 0.550, 0.986, 0.566),
     )
-    SPIKE_ACTION_ROIS = (
-        (0.978, 0.655, 0.986, 0.671),
-        (0.978, 0.687, 0.986, 0.703),
-        (0.975, 0.717, 0.993, 0.743),
-    )
     SERVICE_ACTION_WHITE_THRESHOLD = 0.04
     DEFAULT_SERVE_DELAY = 2.5
     MIN_SERVE_DELAY = 0.5
@@ -78,7 +72,6 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     DEFAULT_POSITION_ADJUST = True
     SERVICE_PHASE_WARNING_SECONDS = 10.0
     MATCH_RECOGNITION_INTERVAL = 0.05
-    MATCH_SIGNAL_GRACE_SECONDS = 0.8
     MATCH_END_CHECK_INTERVAL_SECONDS = 0.5
     UNKNOWN_STATE_WARNING_SECONDS = 10.0
     POSITION_ADJUST_AFTER_HITS = 4
@@ -87,7 +80,6 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         VolleyballMatchState.SERVICE: "发球",
         VolleyballMatchState.RALLY: "接球/进攻",
         VolleyballMatchState.SPIKE_CUE: "扣球",
-        VolleyballMatchState.SPIKE_ACTION: "扣球",
         VolleyballMatchState.UNKNOWN: "等待识别",
     }
 
@@ -188,14 +180,8 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                     continue
 
                 skip_task.check_skip()
-                service_releasing = self.handle_service(is_service=False)
-                unknown_duration = self.mark_match_state_unknown(now)
-                if (
-                    not service_releasing
-                    and self._last_recognized_match_state == VolleyballMatchState.RALLY
-                    and unknown_duration < self.MATCH_SIGNAL_GRACE_SECONDS
-                ):
-                    key, switch_key = self.play_once(key, switch_key)
+                self.handle_service(is_service=False)
+                self.mark_match_state_unknown(now)
                 self.sleep(self.MATCH_RECOGNITION_INTERVAL)
                 continue
 
@@ -203,10 +189,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                 self.begin_match()
                 match_started = True
             self.mark_match_state(match_state)
-            if match_state not in {
-                VolleyballMatchState.SPIKE_CUE,
-                VolleyballMatchState.SPIKE_ACTION,
-            }:
+            if match_state != VolleyballMatchState.SPIKE_CUE:
                 self.reset_spike_phase()
 
             if match_state == VolleyballMatchState.SERVICE:
@@ -217,8 +200,6 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                     continue
                 if match_state == VolleyballMatchState.SPIKE_CUE:
                     self.handle_spike_cue()
-                elif match_state == VolleyballMatchState.SPIKE_ACTION:
-                    self.handle_spike_action()
                 else:
                     key, switch_key = self.play_once(key, switch_key)
 
@@ -236,12 +217,9 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         if self.is_service():
             return VolleyballMatchState.SERVICE
         rally_active = self.is_rally()
-        spike_action_active = self.is_spike_action()
-        # [lw] The blue cue appears before the short-lived spike action glyphs.
-        if self.is_spike_cue() and (rally_active or spike_action_active):
+        # [lw] Keep the RU blue-cue path, but never trigger it on an unknown transition frame.
+        if rally_active and self.is_spike_cue():
             return VolleyballMatchState.SPIKE_CUE
-        if spike_action_active:
-            return VolleyballMatchState.SPIKE_ACTION
         if rally_active:
             return VolleyballMatchState.RALLY
         return None
@@ -250,7 +228,6 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         if self._match_state == match_state:
             return
         self._match_state = match_state
-        self._last_recognized_match_state = match_state
         self._unknown_state_started_at = None
         self.info_set(self.INFO_LEVEL_STATUS, self.MATCH_STATE_LABELS[match_state])
         self.log_info(f"volleyball state: {match_state.value}")
@@ -341,18 +318,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self._spike_phase_active = True
         self.log_info("in spike cue")
         self.wait_until(lambda: not self.is_spike_cue(), time_out=1)
-        self.sleep(0.7)
-        if not (self.is_rally() or self.is_spike_action()):
-            self.log_warning("spike cue cleared without active volleyball controls; cancelling K")
-            self.reset_spike_phase()
-            return
-        self.send_key("k")
-
-    def handle_spike_action(self):
-        if self._spike_phase_active:
-            return
-        self._spike_phase_active = True
-        self.log_info("in spike action fallback")
+        self.sleep(0.6)
         self.send_key("k")
 
     def reset_spike_phase(self):
@@ -362,7 +328,6 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self.reset_service_phase()
         self.reset_spike_phase()
         self._match_state = VolleyballMatchState.WAITING
-        self._last_recognized_match_state = VolleyballMatchState.WAITING
         self._unknown_state_started_at = None
         self._unknown_state_warning_logged = False
         self._last_match_end_check_at = 0.0
@@ -491,9 +456,6 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     def is_spike_cue(self):
         box = self.box_of_screen(0.8562, 0.8500, 0.9137, 0.9243, hcenter=True)
         return self.calculate_color_percentage(spike_bule_color, box) > 0.06
-
-    def is_spike_action(self):
-        return self.are_actions_highlighted(self.SPIKE_ACTION_ROIS)
 
 
 spike_bule_color = {
