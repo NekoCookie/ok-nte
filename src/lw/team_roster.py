@@ -5,6 +5,15 @@ from typing import Literal
 
 
 @dataclass(frozen=True)
+class TeamIdentitySnapshot:
+    """A stable full-roster observation ready for direct planner replacement."""
+
+    current_index: int
+    char_ids: tuple[str, ...]
+    confidences: tuple[float, ...]
+
+
+@dataclass(frozen=True)
 class TeamRosterChange:
     """经过持续观测确认的队伍变化。"""
 
@@ -40,6 +49,10 @@ class TeamRosterMonitor:
 
     def clear_size(self):
         self._size_candidate = None
+
+    @property
+    def has_signature_candidate(self) -> bool:
+        return self._signature_candidate is not None
 
     def observe_size(
         self,
@@ -83,6 +96,7 @@ class TeamRosterMonitor:
         expected_count: int,
         now: float,
         confirm_interval: float,
+        detail: object | None = None,
     ) -> tuple[str, TeamRosterChange | None]:
         if signature is None:
             self._signature_candidate = None
@@ -103,6 +117,6 @@ class TeamRosterMonitor:
                 kind="signature",
                 expected_count=expected_count,
                 observed_count=expected_count,
-                detail=signature,
+                detail=signature if detail is None else detail,
             ),
         )

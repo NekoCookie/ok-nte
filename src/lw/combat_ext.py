@@ -12,7 +12,12 @@ from ok import Logger, safe_get
 from src import text_white_color
 from src.char.BaseChar import BaseChar, Element
 from src.char.custom.CustomCharManager import CustomCharManager
-from src.lw.team_roster import TeamReloadRequested, TeamRosterMonitor
+from src.lw.team_roster import (
+    TeamIdentitySnapshot,
+    TeamReloadRequested,
+    TeamRosterChange,
+    TeamRosterMonitor,
+)
 from src.sound_trigger.SoundCombatContext import SoundCombatContext
 from src.utils import game_filters as gf
 
@@ -58,6 +63,7 @@ class CombatExtMixin(_TaskProxy):
     TEAM_CHANGE_CHECK_INTERVAL = 0.3
     TEAM_CHANGE_CONFIRM_INTERVAL = 0.8
     TEAM_SIGNATURE_CHECK_INTERVAL = 1.0
+    TEAM_SIGNATURE_CANDIDATE_CHECK_INTERVAL = 0.5
     TEAM_SIGNATURE_CONFIRM_INTERVAL = 0.5
     TEAM_SIGNATURE_MATCH_THRESHOLD = 0.6
     # 队伍变更检测 opt-in: TeamReloadRequested 只应发给能消费它的循环(lw_combat_run)。
@@ -796,7 +802,9 @@ class CombatExtMixin(_TaskProxy):
         current_index, count = snapshot
         if count == self.team_size:
             self._roster_monitor().clear_size()
-            return self.check_team_signature_changed_during_combat(now)
+            # Same-size identity scans run between perform() calls in the consuming
+            # loop. Avoid inserting a full-database scan into an active combo/Q poll.
+            return False
 
         reliable_expansion = count <= self.team_size or self.is_reliable_team_expansion(count)
         status, change = self._roster_monitor().observe_size(
@@ -829,48 +837,58 @@ class CombatExtMixin(_TaskProxy):
 
     def check_team_signature_changed_during_combat(self, now=None):
         now = now or time.time()
-        if now - self._last_team_signature_check < self.TEAM_SIGNATURE_CHECK_INTERVAL:
+        monitor = self._roster_monitor()
+        check_interval = (
+            self.TEAM_SIGNATURE_CANDIDATE_CHECK_INTERVAL
+            if monitor.has_signature_candidate
+            else self.TEAM_SIGNATURE_CHECK_INTERVAL
+        )
+        if now - self._last_team_signature_check < check_interval:
             return False
         self._last_team_signature_check = now
 
         manager = CustomCharManager()
-        characters_by_name = {
-            char_info.get("char_name"): char_info
-            for char_info in manager.get_all_characters().values()
-            if isinstance(char_info, dict) and char_info.get("char_name")
-        }
-        mismatches = []
-        verified = 0
+        fixed_slots = self._get_fixed_slots()
+        observed_ids = []
+        confidences = []
         frame = self.frame
 
-        for char in self.chars:
-            if char is None or not char.char_name or char.char_name == "unknown":
+        for index in range(self.team_size):
+            fixed_slot = safe_get(fixed_slots, index)
+            fixed_char_id = (
+                str(fixed_slot.get("char_id", "") or "").strip()
+                if isinstance(fixed_slot, dict)
+                else ""
+            )
+            if fixed_char_id:
+                observed_ids.append(fixed_char_id)
+                confidences.append(1.0)
                 continue
 
-            # [lw] Use the manager's public character snapshot after the schema-v7 refactor.
-            char_info = characters_by_name.get(char.char_name, {})
-            char_id = char_info.get("char_id")
-            if not char_info.get("feature_ids"):
-                continue
-
-            mat = self.get_char_box(char.index).scale(1.1, 1.1).crop_frame(frame)
+            mat = self.get_char_box(index).scale(1.1, 1.1).crop_frame(frame)
             if mat is None or mat.size == 0:
-                continue
+                monitor.observe_signature(
+                    signature=None,
+                    expected_count=self.team_size,
+                    now=now,
+                    confirm_interval=self.TEAM_SIGNATURE_CONFIRM_INTERVAL,
+                )
+                return False
 
-            verified += 1
-            # 上游schema v5后match_feature的target_char/返回值均为char_id(原为char_name);
-            # 传名字会过滤掉全部候选→置信度恒0.00→误判队伍变更(实测每秒误报清combo状态)
+            # [lw] Compare every saved portrait instead of asking whether the old
+            # slot can match itself. Same-size Abyss halves otherwise remain invisible.
             is_match, match_id, confidence = manager.match_feature(
                 self,
                 mat,
                 threshold=self.TEAM_SIGNATURE_MATCH_THRESHOLD,
-                target_char=char_id,
             )
-            if not is_match or match_id != char_id:
-                mismatches.append((char.index, char.char_name, confidence))
+            observed_ids.append(match_id if is_match and match_id else "unknown")
+            confidences.append(confidence)
 
-        if not verified or not mismatches:
-            self._roster_monitor().observe_signature(
+        observed_ids = tuple(observed_ids)
+        current_ids = tuple(char.char_id for char in self.chars)
+        if observed_ids == current_ids:
+            monitor.observe_signature(
                 signature=None,
                 expected_count=self.team_size,
                 now=now,
@@ -878,25 +896,77 @@ class CombatExtMixin(_TaskProxy):
             )
             return False
 
-        signature = tuple((index, name) for index, name, _ in mismatches)
-        status, change = self._roster_monitor().observe_signature(
-            signature=signature,
+        # A long ultimate can hide every portrait for longer than the debounce
+        # window. Require at least one positively identified new character before
+        # treating unknown slots as part of a replacement roster.
+        if not any(
+            observed_id != "unknown" and observed_id != current_id
+            for observed_id, current_id in zip(observed_ids, current_ids)
+        ):
+            monitor.observe_signature(
+                signature=None,
+                expected_count=self.team_size,
+                now=now,
+                confirm_interval=self.TEAM_SIGNATURE_CONFIRM_INTERVAL,
+            )
+            return False
+
+        current_index = self.get_current_char_index(char_count=self.team_size)
+        if current_index < 0:
+            monitor.observe_signature(
+                signature=None,
+                expected_count=self.team_size,
+                now=now,
+                confirm_interval=self.TEAM_SIGNATURE_CONFIRM_INTERVAL,
+            )
+            return False
+        snapshot = TeamIdentitySnapshot(
+            current_index=current_index,
+            char_ids=observed_ids,
+            confidences=tuple(confidences),
+        )
+        status, change = monitor.observe_signature(
+            signature=observed_ids,
             expected_count=self.team_size,
             now=now,
             confirm_interval=self.TEAM_SIGNATURE_CONFIRM_INTERVAL,
+            detail=snapshot,
         )
         if status == "candidate":
-            mismatch_text = ", ".join(
-                f"{index + 1}:{name}({confidence:.2f})"
-                for index, name, confidence in mismatches
+            observed_text = ", ".join(
+                f"{index + 1}:{char_id}({confidences[index]:.2f})"
+                for index, char_id in enumerate(observed_ids)
             )
-            self.log_info(f"team signature change candidate during action {mismatch_text}")
+            self.log_info(f"team signature change candidate during action {observed_text}")
             return False
 
         if change is not None:
-            self.log_info(f"team signature changed during action {signature}")
+            observed_chars = tuple(
+                self._do_load_char(
+                    index,
+                    fixed_slots,
+                    allow_old_char_fast_path=False,
+                )
+                if self._fixed_slot_has_char(fixed_slots, index)
+                else self._build_observed_char(index, char_id, confidences[index])
+                for index, char_id in enumerate(observed_ids)
+            )
+            change = TeamRosterChange(
+                kind=change.kind,
+                expected_count=change.expected_count,
+                observed_count=change.observed_count,
+                detail=(snapshot, observed_chars),
+            )
+            self.log_info(f"team signature changed during action {observed_ids}")
             raise TeamReloadRequested(change)
         return False
+
+    def _build_observed_char(self, index: int, char_id: str, confidence: float) -> "BaseChar":
+        """Build one full-scan observation without consulting the previous roster."""
+
+        from src.char.core.CharFactory import get_char_by_id
+
+        return get_char_by_id(self, index, char_id, confidence=confidence)
 
     # ---------- trigger 战斗循环的队伍重载(AutoCombatTask.run 使用) ----------
 
@@ -936,7 +1006,7 @@ class CombatExtMixin(_TaskProxy):
                             "auto_combat_task_team_changed "
                             f"{int(time.time() - self.combat_session.combat_start)} {e}"
                         )
-                        if not self._reload_combat_team():
+                        if not self._reload_combat_team(e.change):
                             time.sleep(self.TEAM_RELOAD_WAIT_INTERVAL)
                         continue
         except NotInCombatException as e:
@@ -948,8 +1018,13 @@ class CombatExtMixin(_TaskProxy):
             if ret:
                 self.combat_end()
 
-    def _reload_combat_team(self) -> bool:
-        if self.load_chars():
+    def _reload_combat_team(self, change: TeamRosterChange | None = None) -> bool:
+        if change is not None and self._commit_signature_roster_change(change):
+            self._in_combat = True
+            self.switch_to_combat_start_char(lw_opening_checked=True)
+            return True
+
+        if self.load_chars(force_full_scan=True):
             self._in_combat = True
             # [lw] Team reload resumes the existing combat session. One-shot opening
             # actions, such as Zankou yellow E, must not run a second time.
@@ -963,9 +1038,41 @@ class CombatExtMixin(_TaskProxy):
         self.log_info("team reload pending, skip combat action this tick")
         return False
 
+    def _commit_signature_roster_change(self, change: TeamRosterChange) -> bool:
+        if change.kind != "signature" or not isinstance(change.detail, tuple):
+            return False
+        if len(change.detail) != 2:
+            return False
+
+        snapshot, observed_chars = change.detail
+        if not isinstance(snapshot, TeamIdentitySnapshot) or not isinstance(
+            observed_chars, tuple
+        ):
+            return False
+        if not observed_chars or len(observed_chars) != len(snapshot.char_ids):
+            return False
+        if tuple(char.char_id for char in observed_chars) != snapshot.char_ids:
+            return False
+
+        indices_to_detect = [
+            char.index for char in observed_chars if char.element is Element.DEFAULT
+        ]
+        if indices_to_detect:
+            detected_elements = self.load_chars_element(indices_to_detect)
+            for index in indices_to_detect:
+                observed_chars[index].element = detected_elements.get(index, Element.DEFAULT)
+
+        self.log_info("commit confirmed team signature without another recognition pass")
+        return self._commit_loaded_chars(list(observed_chars), snapshot.current_index)
+
     def _reload_if_team_size_changed(self) -> bool:
         now = time.time()
-        if now - self._last_team_recheck < self.TEAM_RECHECK_INTERVAL:
+        recheck_interval = (
+            self.TEAM_SIGNATURE_CANDIDATE_CHECK_INTERVAL
+            if self._roster_monitor().has_signature_candidate
+            else self.TEAM_RECHECK_INTERVAL
+        )
+        if now - self._last_team_recheck < recheck_interval:
             return True
         self._last_team_recheck = now
 
@@ -977,6 +1084,11 @@ class CombatExtMixin(_TaskProxy):
             self._roster_monitor().clear_size()
             return True
         current_index, count = snapshot
+        if count == self.team_size:
+            self._roster_monitor().clear_size()
+            self.check_team_signature_changed_during_combat(now)
+            return True
+
         reliable_expansion = count <= self.team_size or self.is_reliable_team_expansion(count)
         status, change = self._roster_monitor().observe_size(
             expected_count=self.team_size,
@@ -1123,7 +1235,7 @@ class CombatExtMixin(_TaskProxy):
             )
         return expanded_count
 
-    def lw_load_chars(self, preserve_on_weak=True) -> bool:
+    def lw_load_chars(self, preserve_on_weak=True, force_full_scan=False) -> bool:
         """load_chars 的唯一实现：快照重试 + unknown 防抖重试/保留旧队伍。"""
         ret = False
         now = time.perf_counter()
@@ -1144,7 +1256,11 @@ class CombatExtMixin(_TaskProxy):
                 new_chars = []
                 indices_to_detect = []
                 for i in range(count):
-                    char = self._do_load_char(i, fixed_slots)
+                    char = self._do_load_char(
+                        i,
+                        fixed_slots,
+                        allow_old_char_fast_path=not force_full_scan,
+                    )
                     new_chars.append(char)
                     if char.element is Element.DEFAULT:
                         indices_to_detect.append(i)

@@ -56,7 +56,7 @@ class TestUseUltimateConfig(unittest.TestCase):
 
         t.run()
 
-        t._reload_combat_team.assert_called_once_with()
+        t._reload_combat_team.assert_called_once_with(change)
         t.combat_end.assert_called_once_with()
 
     def test_roster_reload_monitor_starts_after_one_shot_combat_opening(self):
@@ -85,6 +85,7 @@ class TestUseUltimateConfig(unittest.TestCase):
         self.assertTrue(t._reload_combat_team())
 
         self.assertTrue(t._in_combat)
+        t.load_chars.assert_called_once_with(force_full_scan=True)
         t.switch_to_combat_start_char.assert_called_once_with(lw_opening_checked=True)
 
     def test_action_error_still_runs_combat_cleanup(self):

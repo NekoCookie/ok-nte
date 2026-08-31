@@ -953,7 +953,13 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             if isinstance(char, char_cls):
                 return char
 
-    def _do_load_char(self, index: int, fixed_slots) -> "BaseChar":
+    def _do_load_char(
+        self,
+        index: int,
+        fixed_slots,
+        *,
+        allow_old_char_fast_path: bool = True,  # [lw] Roster reload policy.
+    ) -> "BaseChar":
         fixed_slot = safe_get(fixed_slots, index)
         fixed_char_id = ""
         fixed_impl_id = ""
@@ -977,11 +983,19 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
 
         box_scaled = self.get_char_box(index).scale(1.1, 1.1)
 
-        return get_char_by_pos(self, box_scaled, index, safe_get(self.chars, index))
+        old_char = safe_get(self.chars, index) if allow_old_char_fast_path else None
+        return get_char_by_pos(self, box_scaled, index, old_char)
 
-    def load_chars(self) -> bool:
+    def load_chars(self, force_full_scan: bool | None = None) -> bool:
         """加载队伍，统一使用 LW 快照重试与弱识别恢复实现。"""
-        return self.lw_load_chars()  # [lw] 单一路径接入 src/lw/combat_ext.py
+        # [lw] A new combat starts with _in_combat=False but retains self.chars for
+        # cooldown/state cleanup. Do not let that previous roster bias fresh recognition.
+        if force_full_scan is None:
+            force_full_scan = not self._in_combat
+        return self.lw_load_chars(
+            preserve_on_weak=True,
+            force_full_scan=force_full_scan,
+        )
 
     def is_cycle_full(self) -> bool:
         img = self.box_of_screen_scaled(
