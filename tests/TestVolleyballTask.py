@@ -36,9 +36,11 @@ class TestVolleyballTask(unittest.TestCase):
                 self.is_match_won = Mock(return_value=won)
                 self.info_set = Mock()
                 self.handle_match_result = Mock()
+                self.log_warning = Mock()
                 self.sleep = Mock()
 
             has_three_stars = VolleyballTask.has_three_stars
+            get_match_outcome = VolleyballTask.get_match_outcome
 
         task = MatchEndTask()
         return task
@@ -65,7 +67,10 @@ class TestVolleyballTask(unittest.TestCase):
         self.assertTrue(VolleyballTask.handle_match_end(task))
 
         task.handle_match_result.assert_called_once_with(next_button, won=True, next_level=True)
-        task.get_match_end_button.assert_called_once_with(next_level=True)
+        self.assertEqual(
+            task.get_match_end_button.call_args_list,
+            [call(next_level=False), call(next_level=True)],
+        )
 
     def test_auto_mode_restarts_when_not_three_stars(self):
         restart_button = object()
@@ -94,13 +99,17 @@ class TestVolleyballTask(unittest.TestCase):
         task.handle_match_result.assert_called_once_with(restart_button, won=False, next_level=False)
         task.get_match_end_button.assert_called_once_with(next_level=False)
 
-    def test_result_requires_a_win_or_loss_screen(self):
+    def test_experience_mode_restarts_when_result_title_is_unreadable(self):
         task = self.make_task(won=False)
 
-        self.assertFalse(VolleyballTask.handle_match_end(task))
+        self.assertTrue(VolleyballTask.handle_match_end(task))
 
-        task.handle_match_result.assert_not_called()
-        task.get_match_end_button.assert_not_called()
+        task.handle_match_result.assert_called_once_with(
+            "restart_button",
+            won=None,
+            next_level=False,
+        )
+        task.get_match_end_button.assert_called_once_with(next_level=False)
 
     def test_result_text_without_match_end_actions_is_not_a_match_end(self):
         task = self.make_task(restart_button=None)
@@ -120,7 +129,10 @@ class TestVolleyballTask(unittest.TestCase):
         self.assertFalse(VolleyballTask.handle_match_end(task))
 
         task.handle_match_result.assert_not_called()
-        task.get_match_end_button.assert_called_once_with(next_level=True)
+        self.assertEqual(
+            task.get_match_end_button.call_args_list,
+            [call(next_level=False), call(next_level=True)],
+        )
 
     def test_match_loss_restarts_without_marking_final_level(self):
         restart_button = object()
@@ -215,6 +227,29 @@ class TestVolleyballTask(unittest.TestCase):
         self.assertEqual(task.match_count, 1)
         self.assertEqual(task.win_count, 1)
         self.assertEqual(task.loss_count, 0)
+
+    def test_unknown_result_still_counts_the_match_without_guessing_win_or_loss(self):
+        class MatchCounter:
+            INFO_MATCH_COUNT = VolleyballTask.INFO_MATCH_COUNT
+            INFO_WIN_COUNT = VolleyballTask.INFO_WIN_COUNT
+            INFO_LOSS_COUNT = VolleyballTask.INFO_LOSS_COUNT
+
+            def __init__(self):
+                self.match_count = 0
+                self.win_count = 0
+                self.loss_count = 0
+                self._match_result_recorded = False
+                self.operate_click = Mock()
+                self.info_set = Mock()
+
+        task = MatchCounter()
+
+        VolleyballTask.click_match_end_button(task, object(), won=None)
+
+        self.assertEqual(task.match_count, 1)
+        self.assertEqual(task.win_count, 0)
+        self.assertEqual(task.loss_count, 0)
+        task.info_set.assert_called_once_with(VolleyballTask.INFO_MATCH_COUNT, 1)
 
     def test_loss_status_is_not_final_level(self):
         class ResultHandler:

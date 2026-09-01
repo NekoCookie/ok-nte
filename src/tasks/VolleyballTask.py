@@ -396,27 +396,24 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         return key, switch_key
 
     def handle_match_end(self):
-        lost = self.is_match_lost()
-        won = not lost and self.is_match_won()
-        if not lost and not won:
-            return False
-
         match self.config.get(self.CONF_MODE):
             case self.MODE_EXP:
                 if not (restart_box := self.get_match_end_button(next_level=False)):
                     return False
+                won = self.get_match_outcome()
                 self.handle_match_result(restart_box, won=won, next_level=False)
                 return True
             case self.MODE_AUTO:
-                if won:
+                if not (restart_box := self.get_match_end_button(next_level=False)):
+                    return False
+                won = self.get_match_outcome()
+                if won is not False:
                     self.sleep(1)
                     if self.has_three_stars():
                         if next_box := self.get_match_end_button(next_level=True):
                             self.handle_match_result(next_box, won=True, next_level=True)
                             return True
                         return False
-                if not (restart_box := self.get_match_end_button(next_level=False)):
-                    return False
                 self.handle_match_result(restart_box, won=won, next_level=False)
                 return True
             case self.MODE_SUP:
@@ -425,10 +422,12 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
 
     def handle_match_result(self, box, won, next_level):
         self.reset_match_state()
-        if won:
-            status = "进入下一关" if next_level else "重开当前关"
-        else:
+        if next_level:
+            status = "进入下一关"
+        elif won is False:
             status = "本局失败"
+        else:
+            status = "重开当前关"
         self.info_set(self.INFO_LEVEL_STATUS, status)
         self.click_match_end_button(box, won)
 
@@ -439,10 +438,10 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self._match_result_recorded = True
         self.match_count += 1
         self.info_set(self.INFO_MATCH_COUNT, self.match_count)
-        if won:
+        if won is True:
             self.win_count += 1
             self.info_set(self.INFO_WIN_COUNT, self.win_count)
-        else:
+        elif won is False:
             self.loss_count += 1
             self.info_set(self.INFO_LOSS_COUNT, self.loss_count)
 
@@ -469,6 +468,15 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
 
     def is_match_won(self):
         return self.has_match_result(self.WIN_TEXT_RE)
+
+    # [lw] Result actions advance the main flow; title OCR only classifies optional statistics.
+    def get_match_outcome(self):
+        if self.is_match_lost():
+            return False
+        if self.is_match_won():
+            return True
+        self.log_warning("volleyball result title was not recognized; continuing without win/loss stats")
+        return None
 
     def has_match_result(self, result_text_re):
         box = self.box_of_screen(*self.RESULT_TEXT_ROI, name="volleyball_result_text")
