@@ -287,7 +287,7 @@ class TestVolleyballTask(unittest.TestCase):
         class MatchStarter:
             def __init__(self):
                 self._match_result_recorded = True
-                self._play_count = 4
+                self._position_adjust_key = "s"
                 self.log_info = Mock()
                 self.reset_service_phase = Mock()
                 self.reset_spike_phase = Mock()
@@ -296,7 +296,7 @@ class TestVolleyballTask(unittest.TestCase):
 
         self.assertTrue(VolleyballTask.begin_match(task))
         self.assertFalse(task._match_result_recorded)
-        self.assertEqual(task._play_count, 0)
+        self.assertEqual(task._position_adjust_key, "a")
         task.reset_service_phase.assert_called_once_with()
         task.reset_spike_phase.assert_called_once_with()
 
@@ -485,6 +485,39 @@ class TestVolleyballTask(unittest.TestCase):
                 VolleyballTask.PLAY_INTERVAL_RANGE_ERROR,
             )
 
+    def test_position_adjust_interval_uses_a_safe_range_and_invalid_value_falls_back(self):
+        class IntervalTask:
+            CONF_POSITION_ADJUST_INTERVAL = VolleyballTask.CONF_POSITION_ADJUST_INTERVAL
+            DEFAULT_POSITION_ADJUST_INTERVAL = VolleyballTask.DEFAULT_POSITION_ADJUST_INTERVAL
+            MIN_POSITION_ADJUST_INTERVAL = VolleyballTask.MIN_POSITION_ADJUST_INTERVAL
+            MAX_POSITION_ADJUST_INTERVAL = VolleyballTask.MAX_POSITION_ADJUST_INTERVAL
+
+            def __init__(self, interval):
+                self.config = {self.CONF_POSITION_ADJUST_INTERVAL: interval}
+                self.log_warning = Mock()
+
+        for configured_interval, expected_interval in [(0.05, 0.1), (3, 2.0), ("bad", 0.5)]:
+            task = IntervalTask(configured_interval)
+            self.assertEqual(
+                VolleyballTask.get_position_adjust_interval(task),
+                expected_interval,
+            )
+
+    def test_position_adjust_interval_config_rejects_values_outside_the_safe_range(self):
+        task = object.__new__(VolleyballTask)
+
+        self.assertIsNone(
+            task.validate_config(VolleyballTask.CONF_POSITION_ADJUST_INTERVAL, 0.5)
+        )
+        for invalid_interval in (0.05, 3, "bad"):
+            self.assertEqual(
+                task.validate_config(
+                    VolleyballTask.CONF_POSITION_ADJUST_INTERVAL,
+                    invalid_interval,
+                ),
+                VolleyballTask.POSITION_ADJUST_INTERVAL_RANGE_ERROR,
+            )
+
     def test_active_service_phase_blocks_duplicate_inputs_after_four_seconds(self):
         class ServiceTask:
             SERVICE_PHASE_WARNING_SECONDS = VolleyballTask.SERVICE_PHASE_WARNING_SECONDS
@@ -588,33 +621,57 @@ class TestVolleyballTask(unittest.TestCase):
             "serve UI has not cleared; continuing recognition without duplicate input"
         )
 
-    def test_play_once_adjusts_position_after_four_hits(self):
+    def test_play_once_runs_rally_and_position_inputs_on_independent_intervals(self):
         class PlayTask:
             CONF_MODE = VolleyballTask.CONF_MODE
+            CONF_PLAY_INTERVAL = VolleyballTask.CONF_PLAY_INTERVAL
             CONF_POSITION_ADJUST = VolleyballTask.CONF_POSITION_ADJUST
+            CONF_POSITION_ADJUST_INTERVAL = VolleyballTask.CONF_POSITION_ADJUST_INTERVAL
             MODE_EXP = VolleyballTask.MODE_EXP
             MODE_AUTO = VolleyballTask.MODE_AUTO
             MODE_SUP = VolleyballTask.MODE_SUP
+            DEFAULT_PLAY_INTERVAL = VolleyballTask.DEFAULT_PLAY_INTERVAL
+            MIN_PLAY_INTERVAL = VolleyballTask.MIN_PLAY_INTERVAL
+            MAX_PLAY_INTERVAL = VolleyballTask.MAX_PLAY_INTERVAL
             DEFAULT_POSITION_ADJUST = VolleyballTask.DEFAULT_POSITION_ADJUST
-            POSITION_ADJUST_AFTER_HITS = VolleyballTask.POSITION_ADJUST_AFTER_HITS
+            DEFAULT_POSITION_ADJUST_INTERVAL = VolleyballTask.DEFAULT_POSITION_ADJUST_INTERVAL
+            MIN_POSITION_ADJUST_INTERVAL = VolleyballTask.MIN_POSITION_ADJUST_INTERVAL
+            MAX_POSITION_ADJUST_INTERVAL = VolleyballTask.MAX_POSITION_ADJUST_INTERVAL
 
             def __init__(self):
                 self.config = {
                     VolleyballTask.CONF_MODE: VolleyballTask.MODE_AUTO,
+                    VolleyballTask.CONF_PLAY_INTERVAL: 0.3,
                     VolleyballTask.CONF_POSITION_ADJUST: True,
+                    VolleyballTask.CONF_POSITION_ADJUST_INTERVAL: 0.2,
                 }
-                self._play_count = VolleyballTask.POSITION_ADJUST_AFTER_HITS
+                self._position_adjust_key = "a"
                 self.sleep = Mock()
-                self.send_key = Mock()
+                self.send_key = Mock(return_value=True)
                 self.log_info = Mock()
+
+            get_play_interval = VolleyballTask.get_play_interval
+            get_position_adjust_interval = VolleyballTask.get_position_adjust_interval
 
         task = PlayTask()
 
         key, switch_key = VolleyballTask.play_once(task, "j", False)
 
-        self.assertEqual((key, switch_key), ("j", False))
-        self.assertEqual(task._play_count, 0)
-        task.send_key.assert_has_calls([call("a", down_time=0.1), call("s", down_time=0.1)])
+        self.assertEqual((key, switch_key), ("k", True))
+        self.assertEqual(task._position_adjust_key, "s")
+        task.sleep.assert_not_called()
+        self.assertEqual(
+            task.send_key.call_args_list,
+            [
+                call("j", interval=0.3, action_name="volleyball_rally"),
+                call(
+                    "a",
+                    down_time=0.1,
+                    interval=0.2,
+                    action_name="volleyball_position_adjust",
+                ),
+            ],
+        )
 
     def test_play_once_skips_position_adjustment_when_disabled(self):
         class PlayTask:
@@ -628,7 +685,6 @@ class TestVolleyballTask(unittest.TestCase):
             MIN_PLAY_INTERVAL = VolleyballTask.MIN_PLAY_INTERVAL
             MAX_PLAY_INTERVAL = VolleyballTask.MAX_PLAY_INTERVAL
             DEFAULT_POSITION_ADJUST = VolleyballTask.DEFAULT_POSITION_ADJUST
-            POSITION_ADJUST_AFTER_HITS = VolleyballTask.POSITION_ADJUST_AFTER_HITS
 
             def __init__(self):
                 self.config = {
@@ -636,7 +692,7 @@ class TestVolleyballTask(unittest.TestCase):
                     VolleyballTask.CONF_PLAY_INTERVAL: 0.3,
                     VolleyballTask.CONF_POSITION_ADJUST: False,
                 }
-                self._play_count = VolleyballTask.POSITION_ADJUST_AFTER_HITS
+                self._position_adjust_key = "s"
                 self.log_warning = Mock()
                 self.log_info = Mock()
                 self.sleep = Mock()
@@ -649,9 +705,13 @@ class TestVolleyballTask(unittest.TestCase):
         key, switch_key = VolleyballTask.play_once(task, "j", False)
 
         self.assertEqual((key, switch_key), ("k", True))
-        self.assertEqual(task._play_count, 0)
+        self.assertEqual(task._position_adjust_key, "a")
         task.sleep.assert_not_called()
-        task.send_key.assert_called_once_with("j", interval=0.3)
+        task.send_key.assert_called_once_with(
+            "j",
+            interval=0.3,
+            action_name="volleyball_rally",
+        )
 
     def test_service_requires_both_serve_action_keys_to_be_highlighted(self):
         task = Mock()
