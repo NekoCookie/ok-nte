@@ -4,6 +4,7 @@ from enum import StrEnum
 
 from ok import TaskDisabledException
 
+from src.lw.volleyball_ext import VolleyballSpikeExtMixin  # [lw]
 from src.tasks.BaseNTETask import BaseNTETask
 from src.tasks.NTEOneTimeTask import NTEOneTimeTask
 from src.tasks.trigger.SkipDialogTask import SkipDialogTask
@@ -17,11 +18,13 @@ class VolleyballMatchState(StrEnum):
     WAITING = "waiting"
     SERVICE = "service"
     RALLY = "rally"
+    SPIKE_CANDIDATE = "spike_candidate"
     SPIKE_CUE = "spike_cue"
+    SPIKE_RECOVERY = "spike_recovery"
     UNKNOWN = "unknown"
 
 
-class VolleyballTask(NTEOneTimeTask, BaseNTETask):
+class VolleyballTask(VolleyballSpikeExtMixin, NTEOneTimeTask, BaseNTETask):  # [lw]
     CONF_MODE = "模式"
     CONF_SERVE_DELAY = "发球等待时间"
     CONF_PLAY_INTERVAL = "普通回合按键间隔"
@@ -90,7 +93,9 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         VolleyballMatchState.WAITING: "等待比赛",
         VolleyballMatchState.SERVICE: "发球",
         VolleyballMatchState.RALLY: "接球/进攻",
+        VolleyballMatchState.SPIKE_CANDIDATE: "扣球准备",
         VolleyballMatchState.SPIKE_CUE: "扣球",
+        VolleyballMatchState.SPIKE_RECOVERY: "扣球恢复",
         VolleyballMatchState.UNKNOWN: "等待识别",
     }
 
@@ -219,8 +224,6 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                 self.begin_match()
                 match_started = True
             self.mark_match_state(match_state)
-            if match_state != VolleyballMatchState.SPIKE_CUE:
-                self.reset_spike_phase()
 
             if match_state == VolleyballMatchState.SERVICE:
                 self.handle_service(is_service=True)
@@ -230,6 +233,11 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                     continue
                 if match_state == VolleyballMatchState.SPIKE_CUE:
                     self.handle_spike_cue()
+                elif match_state in {
+                    VolleyballMatchState.SPIKE_CANDIDATE,
+                    VolleyballMatchState.SPIKE_RECOVERY,
+                }:
+                    pass
                 else:
                     key, switch_key = self.play_once(key, switch_key)
 
@@ -245,11 +253,16 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
 
     def get_match_state(self):
         if self.is_service():
+            self.reset_spike_phase()
             return VolleyballMatchState.SERVICE
         rally_active = self.is_rally()
-        # [lw] Keep the RU blue-cue path, but never trigger it on an unknown transition frame.
-        if rally_active and self.is_spike_cue():
+        spike_phase = self.lw_observe_spike_phase(rally_active)
+        if spike_phase == self.LW_SPIKE_CANDIDATE:
+            return VolleyballMatchState.SPIKE_CANDIDATE
+        if spike_phase == self.LW_SPIKE_CONFIRMED:
             return VolleyballMatchState.SPIKE_CUE
+        if spike_phase == self.LW_SPIKE_RECOVERY:
+            return VolleyballMatchState.SPIKE_RECOVERY
         if rally_active:
             return VolleyballMatchState.RALLY
         return None
@@ -417,27 +430,11 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self._service_k_due_at = None
         self._service_rally_frame_count = 0
 
-    # [lw] Preserve RU timing while recording the actual cue and input timestamps.
     def handle_spike_cue(self):
-        if self._spike_phase_active:
-            return
-        self._spike_phase_active = True
-        started_at = time.monotonic()
-        self.log_info("spike cue detected")
-        cue_cleared = bool(self.wait_until(lambda: not self.is_spike_cue(), time_out=1))
-        cue_wait = time.monotonic() - started_at
-        cue_result = "cleared" if cue_cleared else "timed out"
-        self.log_info(f"spike cue {cue_result} after {cue_wait:.3f}s; K scheduled in 0.600s")
-        self.sleep(0.6)
-        sent = self.send_key("k")
-        total_elapsed = time.monotonic() - started_at
-        if sent:
-            self.log_info(f"volleyball input: spike K; {total_elapsed:.3f}s after cue detection")
-        else:
-            self.log_warning("volleyball input rejected: spike K")
+        return self.lw_handle_spike_cue()
 
     def reset_spike_phase(self):
-        self._spike_phase_active = False
+        self.lw_reset_spike_state()
 
     def reset_match_state(self):
         self.reset_service_phase()
@@ -596,12 +593,4 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         )
 
     def is_spike_cue(self):
-        box = self.box_of_screen(0.8562, 0.8500, 0.9137, 0.9243, hcenter=True)
-        return self.calculate_color_percentage(spike_bule_color, box) > 0.06
-
-
-spike_bule_color = {
-    "r": (71, 100),
-    "g": (155, 175),
-    "b": (167, 187),
-}
+        return self.lw_is_spike_cue()

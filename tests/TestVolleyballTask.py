@@ -1,6 +1,14 @@
 import unittest
 from unittest.mock import Mock, call, patch
 
+import cv2
+import numpy as np
+
+from src.lw.volleyball_ext import (
+    VolleyballSpikeCueMetrics,
+    VolleyballSpikeExtMixin,
+    analyze_volleyball_spike_cue,
+)
 from src.tasks.VolleyballTask import VolleyballMatchState, VolleyballTask
 
 
@@ -300,48 +308,249 @@ class TestVolleyballTask(unittest.TestCase):
         task.reset_service_phase.assert_called_once_with()
         task.reset_spike_phase.assert_called_once_with()
 
-    def test_ru_blue_spike_cue_takes_priority_during_rally(self):
+    def test_two_consecutive_blue_frames_are_required_before_spike_lock(self):
         task = Mock()
         task.is_service.return_value = False
-        task.is_spike_cue.return_value = True
         task.is_rally.return_value = True
+        task.LW_SPIKE_CANDIDATE = VolleyballSpikeExtMixin.LW_SPIKE_CANDIDATE
+        task.LW_SPIKE_CONFIRMED = VolleyballSpikeExtMixin.LW_SPIKE_CONFIRMED
+        task.LW_SPIKE_RECOVERY = VolleyballSpikeExtMixin.LW_SPIKE_RECOVERY
+        task.lw_observe_spike_phase.side_effect = [
+            VolleyballSpikeExtMixin.LW_SPIKE_CANDIDATE,
+            VolleyballSpikeExtMixin.LW_SPIKE_CONFIRMED,
+        ]
 
+        self.assertEqual(
+            VolleyballTask.get_match_state(task),
+            VolleyballMatchState.SPIKE_CANDIDATE,
+        )
         self.assertEqual(VolleyballTask.get_match_state(task), VolleyballMatchState.SPIKE_CUE)
+
+    def test_spike_observer_confirms_only_after_two_real_positive_observations(self):
+        class SpikeTask:
+            LW_SPIKE_CANDIDATE = VolleyballSpikeExtMixin.LW_SPIKE_CANDIDATE
+            LW_SPIKE_CONFIRMED = VolleyballSpikeExtMixin.LW_SPIKE_CONFIRMED
+            SPIKE_CUE_CONFIRM_FRAMES = VolleyballSpikeExtMixin.SPIKE_CUE_CONFIRM_FRAMES
+
+            def __init__(self):
+                self._lw_spike_recovery_active = False
+                self._spike_phase_active = False
+                self._lw_spike_candidate_frames = 0
+                self._lw_spike_cue_metrics = VolleyballSpikeCueMetrics(
+                    True,
+                    0.11,
+                    0.20,
+                    0.05,
+                    0.38,
+                    0.26,
+                    0.50,
+                    0.75,
+                    0.55,
+                    8,
+                )
+                self.lw_is_spike_cue = Mock(return_value=True)
+                self.log_info = Mock()
+
+            lw_observe_spike_phase = VolleyballSpikeExtMixin.lw_observe_spike_phase
+
+        task = SpikeTask()
+
+        self.assertEqual(
+            task.lw_observe_spike_phase(True, 10.0),
+            task.LW_SPIKE_CANDIDATE,
+        )
+        self.assertEqual(
+            task.lw_observe_spike_phase(True, 10.02),
+            task.LW_SPIKE_CONFIRMED,
+        )
+        self.assertEqual(task.lw_is_spike_cue.call_count, 2)
 
     def test_unknown_transition_does_not_run_the_ru_blue_spike_detector(self):
         task = Mock()
         task.is_service.return_value = False
-        task.is_spike_cue.return_value = True
         task.is_rally.return_value = False
+        task.lw_observe_spike_phase.return_value = None
 
         self.assertIsNone(VolleyballTask.get_match_state(task))
-        task.is_spike_cue.assert_not_called()
+        task.lw_observe_spike_phase.assert_called_once_with(False)
 
     def test_rally_remains_rally_when_the_ru_blue_cue_is_absent(self):
         task = Mock()
         task.is_service.return_value = False
-        task.is_spike_cue.return_value = False
         task.is_rally.return_value = True
+        task.lw_observe_spike_phase.return_value = None
 
         self.assertEqual(VolleyballTask.get_match_state(task), VolleyballMatchState.RALLY)
 
-    def test_spike_cue_uses_the_ru_timing_before_sending_only_k(self):
+    def test_spike_cue_schedules_only_k_from_the_first_stable_clear_frame(self):
         class SpikeTask:
+            SPIKE_DELAY_AFTER_CLEAR_SECONDS = (
+                VolleyballSpikeExtMixin.SPIKE_DELAY_AFTER_CLEAR_SECONDS
+            )
+
             def __init__(self):
                 self._spike_phase_active = False
+                self._lw_spike_candidate_frames = 2
+                self._lw_spike_recovery_active = False
+                self._lw_spike_recovery_rally_frames = 0
+                self._lw_spike_k_sent_at = 0.0
                 self.log_info = Mock()
-                self.wait_until = Mock()
+                self.log_warning = Mock()
+                self.lw_wait_for_stable_spike_clear = Mock(return_value=(True, 10.2))
                 self.sleep = Mock()
-                self.send_key = Mock()
-                self.is_spike_cue = Mock(return_value=False)
+                self.send_key = Mock(return_value=True)
+
+            lw_handle_spike_cue = VolleyballSpikeExtMixin.lw_handle_spike_cue
 
         task = SpikeTask()
 
-        VolleyballTask.handle_spike_cue(task)
+        with patch(
+            "src.lw.volleyball_ext.time.monotonic",
+            side_effect=[10.0, 10.28, 10.28, 10.8],
+        ):
+            VolleyballTask.handle_spike_cue(task)
 
-        task.wait_until.assert_called_once()
-        task.sleep.assert_called_once_with(0.6)
+        self.assertAlmostEqual(task.sleep.call_args.args[0], 0.52)
         task.send_key.assert_called_once_with("k")
+        self.assertTrue(task._lw_spike_recovery_active)
+
+    def test_spike_clear_requires_stable_absence_and_uses_the_first_clear_time(self):
+        class SpikeTask:
+            SPIKE_CLEAR_CONFIRM_SECONDS = (
+                VolleyballSpikeExtMixin.SPIKE_CLEAR_CONFIRM_SECONDS
+            )
+            SPIKE_CLEAR_TIMEOUT_SECONDS = (
+                VolleyballSpikeExtMixin.SPIKE_CLEAR_TIMEOUT_SECONDS
+            )
+
+            def __init__(self):
+                self.lw_is_spike_cue = Mock(
+                    side_effect=[True, False, True, False, False]
+                )
+
+            def wait_until(self, condition, time_out):
+                self.time_out = time_out
+                for _ in range(5):
+                    if condition():
+                        return True
+                return None
+
+            lw_wait_for_stable_spike_clear = (
+                VolleyballSpikeExtMixin.lw_wait_for_stable_spike_clear
+            )
+
+        task = SpikeTask()
+
+        with patch(
+            "src.lw.volleyball_ext.time.monotonic",
+            side_effect=[10.0, 10.02, 10.101],
+        ):
+            confirmed, first_clear_at = task.lw_wait_for_stable_spike_clear()
+
+        self.assertTrue(confirmed)
+        self.assertEqual(first_clear_at, 10.02)
+        self.assertEqual(task.time_out, 1.0)
+
+    def test_spike_recovery_blocks_rally_until_post_k_lock_and_two_clean_frames(self):
+        class SpikeTask:
+            SPIKE_POST_K_LOCK_SECONDS = VolleyballSpikeExtMixin.SPIKE_POST_K_LOCK_SECONDS
+            SPIKE_RECOVERY_RALLY_FRAMES = (
+                VolleyballSpikeExtMixin.SPIKE_RECOVERY_RALLY_FRAMES
+            )
+            SPIKE_RECOVERY_TIMEOUT_SECONDS = (
+                VolleyballSpikeExtMixin.SPIKE_RECOVERY_TIMEOUT_SECONDS
+            )
+            LW_SPIKE_RECOVERY = VolleyballSpikeExtMixin.LW_SPIKE_RECOVERY
+
+            def __init__(self):
+                self._spike_phase_active = True
+                self._lw_spike_candidate_frames = 0
+                self._lw_spike_recovery_active = True
+                self._lw_spike_recovery_rally_frames = 0
+                self._lw_spike_k_sent_at = 10.0
+                self.lw_is_spike_jump_action_active = Mock(return_value=False)
+                self.log_info = Mock()
+                self.log_warning = Mock()
+
+            lw_observe_spike_recovery = VolleyballSpikeExtMixin.lw_observe_spike_recovery
+            lw_reset_spike_state = VolleyballSpikeExtMixin.lw_reset_spike_state
+
+        task = SpikeTask()
+
+        self.assertEqual(task.lw_observe_spike_recovery(True, 10.1), task.LW_SPIKE_RECOVERY)
+        self.assertEqual(task.lw_observe_spike_recovery(True, 10.4), task.LW_SPIKE_RECOVERY)
+        self.assertIsNone(task.lw_observe_spike_recovery(True, 10.42))
+        self.assertFalse(task._lw_spike_recovery_active)
+
+    def test_spike_recovery_does_not_release_while_jump_action_is_still_highlighted(self):
+        class SpikeTask:
+            SPIKE_POST_K_LOCK_SECONDS = VolleyballSpikeExtMixin.SPIKE_POST_K_LOCK_SECONDS
+            SPIKE_RECOVERY_RALLY_FRAMES = (
+                VolleyballSpikeExtMixin.SPIKE_RECOVERY_RALLY_FRAMES
+            )
+            SPIKE_RECOVERY_TIMEOUT_SECONDS = (
+                VolleyballSpikeExtMixin.SPIKE_RECOVERY_TIMEOUT_SECONDS
+            )
+            LW_SPIKE_RECOVERY = VolleyballSpikeExtMixin.LW_SPIKE_RECOVERY
+
+            def __init__(self):
+                self._spike_phase_active = True
+                self._lw_spike_candidate_frames = 0
+                self._lw_spike_recovery_active = True
+                self._lw_spike_recovery_rally_frames = 1
+                self._lw_spike_k_sent_at = 10.0
+                self.lw_is_spike_jump_action_active = Mock(return_value=True)
+                self.log_info = Mock()
+                self.log_warning = Mock()
+
+            lw_observe_spike_recovery = VolleyballSpikeExtMixin.lw_observe_spike_recovery
+            lw_reset_spike_state = VolleyballSpikeExtMixin.lw_reset_spike_state
+
+        task = SpikeTask()
+
+        self.assertEqual(
+            task.lw_observe_spike_recovery(True, 10.5),
+            task.LW_SPIKE_RECOVERY,
+        )
+        self.assertEqual(task._lw_spike_recovery_rally_frames, 0)
+        self.assertTrue(task._lw_spike_recovery_active)
+
+    def test_spike_color_geometry_accepts_cue_and_rejects_thin_court_line(self):
+        cue = np.zeros((106, 148, 3), dtype=np.uint8)
+        cv2.ellipse(cue, (78, 62), (43, 36), 0, 0, 360, (177, 165, 85), -1)
+        line = np.zeros_like(cue)
+        cv2.line(line, (0, 100), (147, 30), (177, 165, 85), 9)
+
+        cue_metrics = analyze_volleyball_spike_cue(cue)
+        line_metrics = analyze_volleyball_spike_cue(line)
+
+        self.assertTrue(cue_metrics.active)
+        self.assertFalse(line_metrics.active)
+
+    def test_spike_candidate_pauses_regular_rally_input_before_confirmation(self):
+        class StopLoop(Exception):
+            pass
+
+        class RecognitionTask:
+            MATCH_RECOGNITION_INTERVAL = VolleyballTask.MATCH_RECOGNITION_INTERVAL
+
+            def __init__(self):
+                self.get_task_by_class = Mock(return_value=Mock())
+                self.get_match_state = Mock(return_value=VolleyballMatchState.SPIKE_CANDIDATE)
+                self.begin_match = Mock()
+                self.mark_match_state = Mock()
+                self.handle_service_rally = Mock(return_value=False)
+                self.handle_spike_cue = Mock()
+                self.play_once = Mock()
+                self.sleep = Mock(side_effect=StopLoop)
+
+        task = RecognitionTask()
+
+        with self.assertRaises(StopLoop):
+            VolleyballTask.auto_play(task)
+
+        task.handle_spike_cue.assert_not_called()
+        task.play_once.assert_not_called()
 
     def test_unknown_state_records_duration_without_preserving_rally_input(self):
         class StateTask:
