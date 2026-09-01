@@ -193,3 +193,14 @@ class CharRegistry:
 
 
 char_registry = CharRegistry()
+
+# [lw] Registration belongs to the registry bootstrap, not CharFactory import order.
+# CustomCharManager validates persisted implementation IDs without importing the
+# factory; registering here prevents that standalone validation from clearing LW IDs.
+def _register_lw_implementations() -> None:
+    from src.lw.chars import register_lw_char_implementations
+
+    register_lw_char_implementations(char_registry)
+
+
+_register_lw_implementations()

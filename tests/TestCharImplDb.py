@@ -1,6 +1,8 @@
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -126,6 +128,70 @@ class TestCharImplDb(unittest.TestCase):
             get_char_implementation_class("builtin:zankou_main_dps"),
             ZankouMainDps,
         )
+
+    def test_manager_only_process_bootstraps_lw_registry_before_validation(self):
+        isolated_dir = Path(self.temp_dir) / "manager_only"
+        isolated_dir.mkdir()
+        isolated_db = isolated_dir / "db.json"
+        isolated_db.write_text(
+            json.dumps(
+                {
+                    "schema_version": DB_SCHEMA_VERSION,
+                    "combos": {},
+                    "characters": {
+                        "char_zankou": {
+                            "name": "残虹",
+                            "impl_id": "builtin:zankou_main_dps",
+                            "feature_ids": [],
+                        },
+                        "char_sakiri": {
+                            "name": "早雾",
+                            "impl_id": "builtin:template_sakiri_buff_support",
+                            "feature_ids": [],
+                        },
+                    },
+                    "features": {},
+                    "fixed_team": {"enabled": False, "slots": []},
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        code = "\n".join(
+            (
+                "import importlib",
+                "import json",
+                "import sys",
+                "from pathlib import Path",
+                "module = importlib.import_module('src.char.custom.CustomCharManager')",
+                "root = Path(sys.argv[1])",
+                "module.CUSTOM_CHARS_DIR = str(root)",
+                "module.FEATURES_DIR = str(root / 'features')",
+                "module.EXTERNAL_CHARS_DIR = str(root / 'external_chars')",
+                "module.DB_PATH = str(root / 'db.json')",
+                "manager = module.CustomCharManager()",
+                "assert manager.get_character_impl_id_by_id('char_zankou') == "
+                "'builtin:zankou_main_dps'",
+                "assert manager.get_character_impl_id_by_id('char_sakiri') == "
+                "'builtin:template_sakiri_buff_support'",
+                "persisted = json.loads((root / 'db.json').read_text(encoding='utf-8'))",
+                "assert persisted['characters']['char_zankou']['impl_id'] == "
+                "'builtin:zankou_main_dps'",
+                "assert persisted['characters']['char_sakiri']['impl_id'] == "
+                "'builtin:template_sakiri_buff_support'",
+            )
+        )
+
+        result = subprocess.run(
+            [sys.executable, "-c", code, str(isolated_dir)],
+            cwd=Path(__file__).resolve().parent.parent,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
     def test_external_registry_generates_id_from_class_name(self):
         external_dir = Path(self.temp_dir) / "external_chars"

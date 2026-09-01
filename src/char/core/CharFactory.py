@@ -3,9 +3,6 @@ from typing import TYPE_CHECKING
 
 from src.char.BaseChar import BaseChar
 from src.char.core.CharRegistry import char_registry
-from src.lw.chars import register_lw_char_implementations  # [lw]
-
-register_lw_char_implementations(char_registry)  # [lw]
 
 if TYPE_CHECKING:
     import numpy as np
