@@ -698,11 +698,15 @@ class TestVolleyballTask(unittest.TestCase):
         class PlayTask:
             CONF_MODE = VolleyballTask.CONF_MODE
             CONF_PLAY_INTERVAL = VolleyballTask.CONF_PLAY_INTERVAL
+            CONF_RALLY_KEY_MODE = VolleyballTask.CONF_RALLY_KEY_MODE
             CONF_POSITION_ADJUST = VolleyballTask.CONF_POSITION_ADJUST
             CONF_POSITION_ADJUST_INTERVAL = VolleyballTask.CONF_POSITION_ADJUST_INTERVAL
             MODE_EXP = VolleyballTask.MODE_EXP
             MODE_AUTO = VolleyballTask.MODE_AUTO
             MODE_SUP = VolleyballTask.MODE_SUP
+            RALLY_KEY_MODE_ALTERNATE = VolleyballTask.RALLY_KEY_MODE_ALTERNATE
+            RALLY_KEY_MODE_J = VolleyballTask.RALLY_KEY_MODE_J
+            RALLY_KEY_MODE_K = VolleyballTask.RALLY_KEY_MODE_K
             DEFAULT_PLAY_INTERVAL = VolleyballTask.DEFAULT_PLAY_INTERVAL
             MIN_PLAY_INTERVAL = VolleyballTask.MIN_PLAY_INTERVAL
             MAX_PLAY_INTERVAL = VolleyballTask.MAX_PLAY_INTERVAL
@@ -726,6 +730,7 @@ class TestVolleyballTask(unittest.TestCase):
 
             get_play_interval = VolleyballTask.get_play_interval
             get_position_adjust_interval = VolleyballTask.get_position_adjust_interval
+            get_rally_key = VolleyballTask.get_rally_key
 
         task = PlayTask()
 
@@ -751,10 +756,14 @@ class TestVolleyballTask(unittest.TestCase):
         class PlayTask:
             CONF_MODE = VolleyballTask.CONF_MODE
             CONF_PLAY_INTERVAL = VolleyballTask.CONF_PLAY_INTERVAL
+            CONF_RALLY_KEY_MODE = VolleyballTask.CONF_RALLY_KEY_MODE
             CONF_POSITION_ADJUST = VolleyballTask.CONF_POSITION_ADJUST
             MODE_EXP = VolleyballTask.MODE_EXP
             MODE_AUTO = VolleyballTask.MODE_AUTO
             MODE_SUP = VolleyballTask.MODE_SUP
+            RALLY_KEY_MODE_ALTERNATE = VolleyballTask.RALLY_KEY_MODE_ALTERNATE
+            RALLY_KEY_MODE_J = VolleyballTask.RALLY_KEY_MODE_J
+            RALLY_KEY_MODE_K = VolleyballTask.RALLY_KEY_MODE_K
             DEFAULT_PLAY_INTERVAL = VolleyballTask.DEFAULT_PLAY_INTERVAL
             MIN_PLAY_INTERVAL = VolleyballTask.MIN_PLAY_INTERVAL
             MAX_PLAY_INTERVAL = VolleyballTask.MAX_PLAY_INTERVAL
@@ -773,6 +782,7 @@ class TestVolleyballTask(unittest.TestCase):
                 self.send_key = Mock(return_value=True)
 
             get_play_interval = VolleyballTask.get_play_interval
+            get_rally_key = VolleyballTask.get_rally_key
 
         task = PlayTask()
 
@@ -786,6 +796,63 @@ class TestVolleyballTask(unittest.TestCase):
             interval=0.3,
             action_name="volleyball_rally",
         )
+
+    def test_rally_key_mode_replaces_every_alternating_slot_without_reducing_frequency(self):
+        class PlayTask:
+            CONF_MODE = VolleyballTask.CONF_MODE
+            CONF_PLAY_INTERVAL = VolleyballTask.CONF_PLAY_INTERVAL
+            CONF_RALLY_KEY_MODE = VolleyballTask.CONF_RALLY_KEY_MODE
+            CONF_POSITION_ADJUST = VolleyballTask.CONF_POSITION_ADJUST
+            MODE_EXP = VolleyballTask.MODE_EXP
+            MODE_AUTO = VolleyballTask.MODE_AUTO
+            MODE_SUP = VolleyballTask.MODE_SUP
+            RALLY_KEY_MODE_ALTERNATE = VolleyballTask.RALLY_KEY_MODE_ALTERNATE
+            RALLY_KEY_MODE_J = VolleyballTask.RALLY_KEY_MODE_J
+            RALLY_KEY_MODE_K = VolleyballTask.RALLY_KEY_MODE_K
+            DEFAULT_PLAY_INTERVAL = VolleyballTask.DEFAULT_PLAY_INTERVAL
+            MIN_PLAY_INTERVAL = VolleyballTask.MIN_PLAY_INTERVAL
+            MAX_PLAY_INTERVAL = VolleyballTask.MAX_PLAY_INTERVAL
+            DEFAULT_POSITION_ADJUST = VolleyballTask.DEFAULT_POSITION_ADJUST
+
+            def __init__(self, rally_key_mode):
+                self.config = {
+                    self.CONF_MODE: self.MODE_AUTO,
+                    self.CONF_PLAY_INTERVAL: 0.3,
+                    self.CONF_RALLY_KEY_MODE: rally_key_mode,
+                    self.CONF_POSITION_ADJUST: False,
+                }
+                self._position_adjust_key = "a"
+                self.send_key = Mock(return_value=True)
+                self.log_info = Mock()
+
+            get_play_interval = VolleyballTask.get_play_interval
+            get_rally_key = VolleyballTask.get_rally_key
+
+        cases = (
+            (VolleyballTask.RALLY_KEY_MODE_ALTERNATE, ["j", "k"]),
+            (VolleyballTask.RALLY_KEY_MODE_J, ["j", "j"]),
+            (VolleyballTask.RALLY_KEY_MODE_K, ["k", "k"]),
+        )
+        for rally_key_mode, expected_keys in cases:
+            with self.subTest(rally_key_mode=rally_key_mode):
+                task = PlayTask(rally_key_mode)
+                key, switch_key = "j", False
+
+                key, switch_key = VolleyballTask.play_once(task, key, switch_key)
+                key, switch_key = VolleyballTask.play_once(task, key, switch_key)
+
+                self.assertEqual((key, switch_key), ("j", False))
+                self.assertEqual(
+                    task.send_key.call_args_list,
+                    [
+                        call(
+                            expected_key,
+                            interval=0.3,
+                            action_name="volleyball_rally",
+                        )
+                        for expected_key in expected_keys
+                    ],
+                )
 
     def test_service_requires_both_serve_action_keys_to_be_highlighted(self):
         task = Mock()

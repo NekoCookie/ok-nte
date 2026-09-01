@@ -25,12 +25,17 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     CONF_MODE = "模式"
     CONF_SERVE_DELAY = "发球等待时间"
     CONF_PLAY_INTERVAL = "普通回合按键间隔"
+    CONF_RALLY_KEY_MODE = "接球按键"
     CONF_POSITION_ADJUST = "每4次按键调整位置"
     CONF_POSITION_ADJUST_INTERVAL = "位置调整按键间隔"
     MODE_EXP = "刷经验"
     MODE_AUTO = "自动闯关"
     MODE_SUP = "辅助扣发球"
     MODES = [MODE_EXP, MODE_AUTO]
+    RALLY_KEY_MODE_ALTERNATE = "J/K交替"
+    RALLY_KEY_MODE_J = "仅J"
+    RALLY_KEY_MODE_K = "仅K"
+    RALLY_KEY_MODES = [RALLY_KEY_MODE_ALTERNATE, RALLY_KEY_MODE_J, RALLY_KEY_MODE_K]
     INFO_MATCH_COUNT = "已打比赛"
     INFO_WIN_COUNT = "赢球次数"
     INFO_LOSS_COUNT = "输球次数"
@@ -97,6 +102,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                 self.CONF_MODE: self.MODE_EXP,
                 self.CONF_SERVE_DELAY: self.DEFAULT_SERVE_DELAY,
                 self.CONF_PLAY_INTERVAL: self.DEFAULT_PLAY_INTERVAL,
+                self.CONF_RALLY_KEY_MODE: self.RALLY_KEY_MODE_ALTERNATE,
                 self.CONF_POSITION_ADJUST: self.DEFAULT_POSITION_ADJUST,
                 self.CONF_POSITION_ADJUST_INTERVAL: self.DEFAULT_POSITION_ADJUST_INTERVAL,
             }
@@ -105,6 +111,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
             {
                 self.CONF_SERVE_DELAY: "抛球后等待多久再按发球键, 可设置0.5到5.0秒, 默认2.5秒. 运行中修改会在下一次发球时生效",
                 self.CONF_PLAY_INTERVAL: "普通回合 J/K 的最短按键间隔, 可设置0.1到2.0秒, 默认0.5秒. 运行中修改会在下一次按键时生效",
+                self.CONF_RALLY_KEY_MODE: "普通接球/进攻阶段可选择 J/K 交替、全部使用 J 或全部使用 K. 单键模式保持原按键频率, 不影响发球和蓝色扣球",
                 self.CONF_POSITION_ADJUST: "开启后在普通回合持续交替发送 A/S, 与 J/K 使用独立间隔, 不再暂停接球",
                 self.CONF_POSITION_ADJUST_INTERVAL: "普通回合中相邻 A/S 的最短按键间隔, 可设置0.05到2.0秒, 默认0.5秒",
             }
@@ -114,7 +121,11 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                 self.CONF_MODE: {
                     "type": "drop_down",
                     "options": self.MODES,
-                }
+                },
+                self.CONF_RALLY_KEY_MODE: {
+                    "type": "drop_down",
+                    "options": self.RALLY_KEY_MODES,
+                },
             }
         )
         self.instructions = INST if self.is_chinese() else EN_INST
@@ -443,13 +454,14 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                     self.CONF_POSITION_ADJUST,
                     self.DEFAULT_POSITION_ADJUST,
                 )
+                rally_key = self.get_rally_key(key)
                 if self.send_key(
-                    key,
+                    rally_key,
                     interval=self.get_play_interval(),
                     action_name="volleyball_rally",
                 ):
                     # [lw] Identify ordinary rally inputs separately from spike inputs in logs.
-                    self.log_info(f"volleyball input: rally {key.upper()}")
+                    self.log_info(f"volleyball input: rally {rally_key.upper()}")
                     key, switch_key = ("j" if switch_key else "k"), not switch_key
                 if position_adjust_enabled:
                     position_key = self._position_adjust_key
@@ -468,6 +480,15 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
             case self.MODE_SUP:
                 pass
         return key, switch_key
+
+    def get_rally_key(self, alternating_key):
+        match self.config.get(self.CONF_RALLY_KEY_MODE, self.RALLY_KEY_MODE_ALTERNATE):
+            case self.RALLY_KEY_MODE_J:
+                return "j"
+            case self.RALLY_KEY_MODE_K:
+                return "k"
+            case _:
+                return alternating_key
 
     def handle_match_end(self):
         match self.config.get(self.CONF_MODE):

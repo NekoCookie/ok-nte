@@ -33,6 +33,7 @@ experience farming must restart the current level and must not advance.
 | B-08 | Three-star auto mode selects next level | A three-star win in `自动闯关` | Detect all three gold star slots and click OCR-recognized `下一关`; never fall back to restart | Record one win and report `进入下一关` | `test_three_gold_stars_are_required_to_advance`, `test_auto_mode_never_restarts_a_three_star_win_when_next_is_not_found` | Complete the supplied three-star result scenario | automated and supplied-image verified; live click pending |
 | B-09 | Serve timing is adjustable without restarting | User updates `发球等待时间` while the task is running | Each new service phase reads the current value; an already-started `J -> wait -> K` action stays unchanged | Clamp input to `0.5-5.0` seconds, invalid input falls back to `2.5` seconds | `test_serve_delay_is_read_when_each_new_service_phase_starts`, `test_serve_delay_uses_a_safe_range_and_invalid_value_falls_back` | Change the value between two serves | automated verified; manual pending |
 | B-10 | Result actions cannot be blocked by title OCR | `重新开始` is visible while the glowing `WIN`/`LOSE` title is unreadable | Click the required action and continue the main flow | Count the match once; update win/loss counters only when the title is recognized | `test_experience_mode_restarts_when_result_title_is_unreadable`, `test_unknown_result_still_counts_the_match_without_guessing_win_or_loss` | Finish a loss whose `LOSE` title is not recognized | automated and supplied-image verified; live click pending |
+| B-11 | Rally input can use alternating or one fixed key | An ordinary rally input is due while `接球按键` is `J/K交替`, `仅J`, or `仅K` | Map every input slot to the selected mode without dropping the replaced `J` or `K` slot | Preserve the configured rally frequency; service and blue-cue spike inputs remain unchanged | `test_rally_key_mode_replaces_every_alternating_slot_without_reducing_frequency` | Compare all three modes during opponent serves | automated verified; manual pending |
 
 ## RU-to-LW contract migration matrix
 
@@ -55,6 +56,7 @@ experience farming must restart the current level and must not advance.
 | I-06 | `src/tasks/VolleyballTask.py` | RU result actions and local counters | Make the action button the main-flow gate and title OCR optional statistics | One result handler; no fallback input path or duplicate template implementation | current result-flow fix | verified |
 | I-07 | `src/tasks/VolleyballTask.py` | RU alternating rally and position inputs | Give `J/K` and `A/S` independent configurable intervals, permit a `0.05s` A/S interval, shorten A/S presses to `0.02s`, and poll match state every `0.02s` | One rally loop schedules both input streams; the blocking correction path is removed | current position-input timing fix | verified |
 | I-08 | `src/tasks/VolleyballTask.py` | Local non-blocking serve timing | Preserve the first `J` deadline across unknown HUD frames and require two consecutive rally observations before releasing the serve phase | One service transaction owns the deadline; no duplicate debounce or alternate serve path remains | current service-transition fix | verified |
+| I-09 | `src/tasks/VolleyballTask.py` | RU alternating rally inputs | Add one rally-key mapping before the existing rate-limited send so fixed-key modes replace every alternating slot | One `play_once()` path handles all three modes; no skipped-slot or duplicate scheduler path exists | current rally-key configuration | verified |
 
 ## Verification evidence
 
@@ -71,6 +73,7 @@ experience farming must restart the current level and must not advance.
 | V-09 | B-03 | `python -m unittest tests.TestVolleyballTask` | 40 tests passed | pass | verified |
 | V-10 | B-03 | `python -m unittest tests.TestVolleyballTask`; `python -m unittest discover -s tests -p '*.py'` | 40 focused tests and 800 full-suite tests passed | pass | verified |
 | V-11 | B-05 | `python -m unittest tests.TestVolleyballTask`; `python -m unittest discover -s tests -p '*.py'` | 41 focused tests and 801 full-suite tests passed | pass | verified |
+| V-12 | B-11 | `python -m unittest tests.TestVolleyballTask`; `python -m unittest discover -s tests -p '*.py'` | 42 focused tests and 802 full-suite tests passed | pass | verified |
 
 ## Post-migration incident evidence
 
