@@ -496,7 +496,7 @@ class TestVolleyballTask(unittest.TestCase):
                 self.config = {self.CONF_POSITION_ADJUST_INTERVAL: interval}
                 self.log_warning = Mock()
 
-        for configured_interval, expected_interval in [(0.05, 0.1), (3, 2.0), ("bad", 0.5)]:
+        for configured_interval, expected_interval in [(0.05, 0.05), (3, 2.0), ("bad", 0.5)]:
             task = IntervalTask(configured_interval)
             self.assertEqual(
                 VolleyballTask.get_position_adjust_interval(task),
@@ -507,9 +507,9 @@ class TestVolleyballTask(unittest.TestCase):
         task = object.__new__(VolleyballTask)
 
         self.assertIsNone(
-            task.validate_config(VolleyballTask.CONF_POSITION_ADJUST_INTERVAL, 0.5)
+            task.validate_config(VolleyballTask.CONF_POSITION_ADJUST_INTERVAL, 0.05)
         )
-        for invalid_interval in (0.05, 3, "bad"):
+        for invalid_interval in (0.04, 3, "bad"):
             self.assertEqual(
                 task.validate_config(
                     VolleyballTask.CONF_POSITION_ADJUST_INTERVAL,
@@ -637,6 +637,7 @@ class TestVolleyballTask(unittest.TestCase):
             DEFAULT_POSITION_ADJUST_INTERVAL = VolleyballTask.DEFAULT_POSITION_ADJUST_INTERVAL
             MIN_POSITION_ADJUST_INTERVAL = VolleyballTask.MIN_POSITION_ADJUST_INTERVAL
             MAX_POSITION_ADJUST_INTERVAL = VolleyballTask.MAX_POSITION_ADJUST_INTERVAL
+            POSITION_ADJUST_DOWN_TIME = VolleyballTask.POSITION_ADJUST_DOWN_TIME
 
             def __init__(self):
                 self.config = {
@@ -666,7 +667,7 @@ class TestVolleyballTask(unittest.TestCase):
                 call("j", interval=0.3, action_name="volleyball_rally"),
                 call(
                     "a",
-                    down_time=0.1,
+                    down_time=0.02,
                     interval=0.2,
                     action_name="volleyball_position_adjust",
                 ),

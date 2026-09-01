@@ -72,11 +72,12 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     PLAY_INTERVAL_RANGE_ERROR = "普通回合按键间隔必须在0.1到2.0秒之间"
     DEFAULT_POSITION_ADJUST = True
     DEFAULT_POSITION_ADJUST_INTERVAL = 0.5
-    MIN_POSITION_ADJUST_INTERVAL = 0.1
+    MIN_POSITION_ADJUST_INTERVAL = 0.05
     MAX_POSITION_ADJUST_INTERVAL = 2.0
-    POSITION_ADJUST_INTERVAL_RANGE_ERROR = "位置调整按键间隔必须在0.1到2.0秒之间"
+    POSITION_ADJUST_INTERVAL_RANGE_ERROR = "位置调整按键间隔必须在0.05到2.0秒之间"
+    POSITION_ADJUST_DOWN_TIME = 0.02
     SERVICE_PHASE_WARNING_SECONDS = 10.0
-    MATCH_RECOGNITION_INTERVAL = 0.05
+    MATCH_RECOGNITION_INTERVAL = 0.02
     MATCH_END_CHECK_INTERVAL_SECONDS = 0.5
     UNKNOWN_STATE_WARNING_SECONDS = 10.0
     MATCH_STATE_LABELS = {
@@ -104,7 +105,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                 self.CONF_SERVE_DELAY: "抛球后等待多久再按发球键, 可设置0.5到5.0秒, 默认2.5秒. 运行中修改会在下一次发球时生效",
                 self.CONF_PLAY_INTERVAL: "普通回合 J/K 的最短按键间隔, 可设置0.1到2.0秒, 默认0.5秒. 运行中修改会在下一次按键时生效",
                 self.CONF_POSITION_ADJUST: "开启后在普通回合持续交替发送 A/S, 与 J/K 使用独立间隔, 不再暂停接球",
-                self.CONF_POSITION_ADJUST_INTERVAL: "普通回合中相邻 A/S 的最短按键间隔, 可设置0.1到2.0秒, 默认0.5秒",
+                self.CONF_POSITION_ADJUST_INTERVAL: "普通回合中相邻 A/S 的最短按键间隔, 可设置0.05到2.0秒, 默认0.5秒",
             }
         )
         self.config_type.update(
@@ -423,7 +424,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
                     position_key = self._position_adjust_key
                     if self.send_key(
                         position_key,
-                        down_time=0.1,
+                        down_time=self.POSITION_ADJUST_DOWN_TIME,
                         interval=self.get_position_adjust_interval(),
                         action_name="volleyball_position_adjust",
                     ):
