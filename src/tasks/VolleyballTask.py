@@ -76,6 +76,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
     MAX_POSITION_ADJUST_INTERVAL = 2.0
     POSITION_ADJUST_INTERVAL_RANGE_ERROR = "位置调整按键间隔必须在0.05到2.0秒之间"
     POSITION_ADJUST_DOWN_TIME = 0.02
+    SERVICE_RALLY_CONFIRM_FRAMES = 2
     SERVICE_PHASE_WARNING_SECONDS = 10.0
     MATCH_RECOGNITION_INTERVAL = 0.02
     MATCH_END_CHECK_INTERVAL_SECONDS = 0.5
@@ -213,7 +214,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
             if match_state == VolleyballMatchState.SERVICE:
                 self.handle_service(is_service=True)
             else:
-                if self.handle_service(is_service=False):
+                if self.handle_service_rally():
                     self.sleep(self.MATCH_RECOGNITION_INTERVAL)
                     continue
                 if match_state == VolleyballMatchState.SPIKE_CUE:
@@ -275,21 +276,12 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         if is_service is None:
             is_service = self.is_service()
         if not is_service:
-            return self.handle_service_release()
+            return self.handle_service_unknown(now)
 
+        self._service_rally_frame_count = 0
         if self._service_phase_active:
             self.check_service_phase_timeout(now)
-            if self._service_k_due_at is not None and now >= self._service_k_due_at:
-                self._service_k_due_at = None
-                sent = self.send_key("k")
-                elapsed = now - self._service_j_sent_at
-                if sent:
-                    self.log_info(
-                        f"volleyball input: service K; {elapsed:.3f}s after service J"
-                    )
-                else:
-                    self.log_warning("volleyball input rejected: service K")
-            return True
+            return self.advance_service_phase(now)
 
         self._service_phase_active = True
         self._service_phase_started_at = now
@@ -306,6 +298,43 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         else:
             self._service_k_due_at = None
             self.log_warning("volleyball input rejected: service J; service K not scheduled")
+        return True
+
+    def handle_service_unknown(self, now):
+        if not self._service_phase_active:
+            return False
+        # [lw] An unrecognized frame is a HUD gap, not proof that the serve phase ended.
+        self._service_rally_frame_count = 0
+        return self.advance_service_phase(now)
+
+    def handle_service_rally(self):
+        if not self._service_phase_active:
+            return False
+
+        now = time.monotonic()
+        self._service_rally_frame_count += 1
+        if self._service_rally_frame_count < self.SERVICE_RALLY_CONFIRM_FRAMES:
+            self.log_info(
+                "service-to-rally transition pending; "
+                f"{self._service_rally_frame_count}/{self.SERVICE_RALLY_CONFIRM_FRAMES} frames"
+            )
+            return self.advance_service_phase(now)
+
+        self.log_info(
+            "service-to-rally transition confirmed; "
+            f"{self._service_rally_frame_count} consecutive frames"
+        )
+        return self.handle_service_release(now)
+
+    def advance_service_phase(self, now):
+        if self._service_k_due_at is not None and now >= self._service_k_due_at:
+            self._service_k_due_at = None
+            sent = self.send_key("k")
+            elapsed = now - self._service_j_sent_at
+            if sent:
+                self.log_info(f"volleyball input: service K; {elapsed:.3f}s after service J")
+            else:
+                self.log_warning("volleyball input rejected: service K")
         return True
 
     def get_serve_delay(self):
@@ -348,12 +377,13 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
             min(interval, self.MAX_POSITION_ADJUST_INTERVAL),
         )
 
-    def handle_service_release(self):
+    def handle_service_release(self, now=None):
         if not self._service_phase_active:
             return False
 
         if self._service_k_due_at is not None:
-            elapsed = time.monotonic() - self._service_j_sent_at
+            now = time.monotonic() if now is None else now
+            elapsed = now - self._service_j_sent_at
             self.log_info(
                 f"service phase cleared; pending service K cancelled after {elapsed:.3f}s"
             )
@@ -374,6 +404,7 @@ class VolleyballTask(NTEOneTimeTask, BaseNTETask):
         self._service_phase_warning_logged = False
         self._service_j_sent_at = 0.0
         self._service_k_due_at = None
+        self._service_rally_frame_count = 0
 
     # [lw] Preserve RU timing while recording the actual cue and input timestamps.
     def handle_spike_cue(self):
