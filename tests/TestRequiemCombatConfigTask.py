@@ -128,6 +128,11 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertFalse(task.default_config[task.CONF_DISABLE_SKILLS])
         self.assertIn("不放E/Q", task.config_description[task.CONF_DISABLE_SKILLS])
         self.assertIn("G和合轴不受影响", task.config_description[task.CONF_DISABLE_SKILLS])
+        self.assertFalse(task.default_config[task.CONF_MANUAL_KEY_TRIGGERS])
+        self.assertIn(
+            task.CONF_MANUAL_KEY_TRIGGERS,
+            task.config_type[task.CONF_GROUP_TEST]["sub_configs"][True],
+        )
         self.assertEqual(task.default_config[task.CONF_COAXIS_TRIGGER_KEY], "8")
         self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_SWITCH_KEY], "1")
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_SWITCH_KEY], "2")
@@ -170,6 +175,49 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
                 task.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
             ],
         )
+
+    def test_disabled_manual_key_switch_does_not_poll_any_manual_trigger(self):
+        task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
+        task.config = {task.CONF_MANUAL_KEY_TRIGGERS: False}
+        task._manual_key_triggers_armed = True
+        task._poll_coaxis_trigger = mock.MagicMock()
+        task._poll_dodge_test_trigger = mock.MagicMock()
+        task._poll_free_skill_combo_test_trigger = mock.MagicMock()
+        task._poll_first_attack_test_trigger = mock.MagicMock()
+        task._poll_macro_trigger = mock.MagicMock()
+
+        self.assertFalse(task._poll_manual_key_triggers())
+
+        for poller in (
+            task._poll_coaxis_trigger,
+            task._poll_dodge_test_trigger,
+            task._poll_free_skill_combo_test_trigger,
+            task._poll_first_attack_test_trigger,
+            task._poll_macro_trigger,
+        ):
+            poller.assert_not_called()
+        self.assertFalse(task._manual_key_triggers_armed)
+
+    def test_enabled_manual_key_switch_polls_all_manual_trigger_handlers(self):
+        task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
+        task.config = {task.CONF_MANUAL_KEY_TRIGGERS: True}
+        task._manual_key_triggers_armed = True
+        task._poll_coaxis_trigger = mock.MagicMock(return_value=False)
+        task._poll_dodge_test_trigger = mock.MagicMock(return_value=False)
+        task._poll_free_skill_combo_test_trigger = mock.MagicMock(return_value=False)
+        task._poll_first_attack_test_trigger = mock.MagicMock(return_value=False)
+        task._poll_macro_trigger = mock.MagicMock(return_value=False)
+
+        self.assertFalse(task._poll_manual_key_triggers())
+
+        for poller in (
+            task._poll_coaxis_trigger,
+            task._poll_dodge_test_trigger,
+            task._poll_free_skill_combo_test_trigger,
+            task._poll_first_attack_test_trigger,
+            task._poll_macro_trigger,
+        ):
+            poller.assert_called_once_with()
 
     def test_coaxis_trigger_starts_standalone_test_only_on_press_edge(self):
         task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)

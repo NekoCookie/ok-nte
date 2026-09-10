@@ -55,7 +55,7 @@ class _CoaxisIO:
         self._task = task
 
     def enabled(self):
-        return self._task.enabled
+        return self._task.enabled and self._task._manual_key_triggers_enabled()
 
     def trigger_pressed(self, key):
         return self._task._is_key_pressed(key)
@@ -232,6 +232,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_GROUP_DODGE = "▸ 闪避反击设置(展开)"     # 分组折叠开关: 展开=闪避方式(下拉)+选闪双4a时的时序
     CONF_GROUP_TUNING = "▸ 实战调优参数(展开)"    # 分组折叠开关
     CONF_GROUP_TEST = "▸ 测试开关与测试键(展开)"   # 分组折叠开关
+    CONF_MANUAL_KEY_TRIGGERS = "启用手动触发按键"
     # [lw] 虚拟手柄共存实验: 不读取/隐藏实体手柄, 虚拟手柄摇杆始终中立, 只周期按 A。
     CONF_GROUP_GAMEPAD = "▸ 虚拟手柄共存测试(展开)"
     CONF_GAMEPAD_TEST = "启用虚拟手柄A键脉冲"
@@ -377,6 +378,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_G_SKILL_DELAY: 300,
                 # 测试开关与测试键(折叠, 默认收起)
                 self.CONF_GROUP_TEST: False,
+                self.CONF_MANUAL_KEY_TRIGGERS: False,
                 self.CONF_DODGE_TEST: False,
                 self.CONF_DISABLE_SKILLS: False,
                 self.CONF_FIRST_ATTACK_TEST_KEY: "6",
@@ -515,7 +517,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_GROUP_TEST: {
                     "sub_configs": {
                         True: [
-                            self.CONF_DODGE_TEST, self.CONF_DISABLE_SKILLS,
+                            self.CONF_MANUAL_KEY_TRIGGERS, self.CONF_DODGE_TEST,
+                            self.CONF_DISABLE_SKILLS,
                             self.CONF_FIRST_ATTACK_TEST_KEY, self.CONF_DODGE_TEST_KEY,
                         ],
                     },
@@ -666,7 +669,13 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "超时判为普通闪避, 等待期间不攻击; 合轴时恢复纯普攻, 非合轴时接combo"
                 ),
                 self.CONF_GROUP_TUNING: "▸ 分组折叠: 展开实战调优参数(反击平A/后摇/主动闪避/轮数/技能前平A/脱战复查/让路)",
-                self.CONF_GROUP_TEST: "▸ 分组折叠: 展开测试开关与测试键(闪避反击测试/禁用技能大招/首平A/模拟闪避)",
+                self.CONF_GROUP_TEST: (
+                    "▸ 分组折叠: 展开手动按键总开关, 闪避反击测试/禁用技能大招/首平A/模拟闪避"
+                ),
+                self.CONF_MANUAL_KEY_TRIGGERS: (
+                    "开=允许鼠标侧键4A, 合轴及所有手动测试按键; "
+                    "关=统一忽略这些手动按键"
+                ),
                 self.CONF_GROUP_GAMEPAD: "▸ 分组折叠: 展开实体手柄与虚拟手柄共存测试",
                 self.CONF_GAMEPAD_TEST: "开=虚拟Xbox手柄每隔数秒按一次A；不接管、不隐藏实体手柄",
                 self.CONF_GAMEPAD_INTERVAL: "虚拟手柄两次A键测试脉冲之间的秒数",
@@ -685,6 +694,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         self._tk_was_down = False   # toggle 里检测"再按一下"边沿用的键前态
         self._last_seen_dodge = None  # 闪避反击测试: 上次已处理的声音闪避时刻
         self._in_dodge_test = False   # 正在跑闪避反击测试序列(此时 combo 跑满, 不看触发键)
+        self._manual_key_triggers_armed = False
         self._fk_was_down = False     # 闪避后首平A测试键的前态(边沿检测)
         self._dtk_was_down = False    # 闪避反击模拟测试键(7)的前态(边沿检测)
         self._fbk_was_down = False    # 免费技能后接combo测试键的前态(边沿检测)
@@ -720,54 +730,16 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             self._close_gamepad_test()
             self._gamepad_error_reported = False
             self._submitted = False
-            self._key_was_down = False
+            self._manual_key_triggers_armed = False
+            self._reset_manual_key_trigger_state()
             self._macro_running = False
             self._last_seen_dodge = None
-            self._coaxis_key_was_down = False
             self._coaxis_running = False
             return False
 
         self._poll_gamepad_test()
-        self._poll_coaxis_trigger()
-
-        # 闪避反击模拟测试键(7, 边沿触发): 假装出现声音, 走一整轮完整流程(含初始闪避)。
-        dtk = self.config.get(self.CONF_DODGE_TEST_KEY)
-        if dtk:
-            ddown = self._is_key_pressed(dtk)
-            dedge = ddown and not self._dtk_was_down
-            self._dtk_was_down = ddown
-            if dedge and not self._macro_running:
-                self._run_dodge_counter_test(initial_dodge=True)
-                return True
-        else:
-            self._dtk_was_down = False
-
-        # 免费技能后接combo测试键(边沿触发): 发技能键放(免费)技能 → delay → 闪避打断a5 → wait → combo。
-        fbk = self.config.get(self.CONF_FREE_BREAK_TEST_KEY)
-        if self._same_key(fbk, self.config.get(self.CONF_COAXIS_TRIGGER_KEY)):
-            fbk = None
-        if fbk:
-            fbdown = self._is_key_pressed(fbk)
-            fbedge = fbdown and not self._fbk_was_down
-            self._fbk_was_down = fbdown
-            if fbedge and not self._macro_running:
-                self._run_free_skill_combo_test()
-                return True
-        else:
-            self._fbk_was_down = False
-
-        # 闪避后首平A测试键(边沿触发): 任何时候都响应(不受闪避反击测试开关影响)。
-        # 按一下→闪避→等 combo前后摇等待→打一个平A。
-        fk = self.config.get(self.CONF_FIRST_ATTACK_TEST_KEY)
-        if fk:
-            fdown = self._is_key_pressed(fk)
-            fedge = fdown and not self._fk_was_down
-            self._fk_was_down = fdown
-            if fedge and not self._macro_running:
-                self._run_first_attack_test()
-                return True
-        else:
-            self._fk_was_down = False
+        if self._poll_manual_key_triggers():
+            return True
 
         # 闪避反击测试模式: 专门等声音闪避, 触发后执行[强制平A→主动闪避→后摇等待→N轮combo]。忽略触发键宏。
         if self.config.get(self.CONF_DODGE_TEST):
@@ -775,7 +747,105 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             return True
         self._last_seen_dodge = None  # 非测试模式复位, 下次开启重新同步基线
 
-        # 后台发消息模式(方案一/四)允许游戏不在前台时执行; 其余(硬件/原始录制)仍要求前台。
+        return True
+
+    def _manual_key_triggers_enabled(self):
+        return bool(self.config.get(self.CONF_MANUAL_KEY_TRIGGERS, False))
+
+    def _poll_manual_key_triggers(self):
+        """Run every manual test-key listener from one guarded entry point."""
+
+        if not self._manual_key_triggers_enabled():
+            self._manual_key_triggers_armed = False
+            self._reset_manual_key_trigger_state()
+            return False
+        if not self._manual_key_triggers_armed:
+            self._arm_manual_key_triggers()
+            return False
+        # Add every new hand-operated test key listener here so the master switch guards it.
+        for poller in (
+            self._poll_coaxis_trigger,
+            self._poll_dodge_test_trigger,
+            self._poll_free_skill_combo_test_trigger,
+            self._poll_first_attack_test_trigger,
+            self._poll_macro_trigger,
+        ):
+            if poller():
+                return True
+        return False
+
+    def _reset_manual_key_trigger_state(self):
+        self._key_was_down = False
+        self._tk_was_down = False
+        self._toggle_stop = False
+        self._fk_was_down = False
+        self._dtk_was_down = False
+        self._fbk_was_down = False
+        self._coaxis_key_was_down = False
+
+    def _arm_manual_key_triggers(self):
+        self._key_was_down = self._is_key_pressed(self.config.get(self.CONF_TRIGGER_KEY))
+        self._tk_was_down = self._key_was_down
+        self._fk_was_down = self._is_key_pressed(self.config.get(self.CONF_FIRST_ATTACK_TEST_KEY))
+        self._dtk_was_down = self._is_key_pressed(self.config.get(self.CONF_DODGE_TEST_KEY))
+        self._fbk_was_down = self._is_key_pressed(self.config.get(self.CONF_FREE_BREAK_TEST_KEY))
+        self._coaxis_key_was_down = self._is_key_pressed(
+            self.config.get(self.CONF_COAXIS_TRIGGER_KEY)
+        )
+        self._manual_key_triggers_armed = True
+
+    def _poll_dodge_test_trigger(self):
+        """Run the simulated sound-dodge test only on its configured press edge."""
+
+        key = self.config.get(self.CONF_DODGE_TEST_KEY)
+        if not key:
+            self._dtk_was_down = False
+            return False
+        key_down = self._is_key_pressed(key)
+        edge = key_down and not self._dtk_was_down
+        self._dtk_was_down = key_down
+        if edge and not self._macro_running:
+            self._run_dodge_counter_test(initial_dodge=True)
+            return True
+        return False
+
+    def _poll_free_skill_combo_test_trigger(self):
+        """Run the free-skill combo test only on its configured press edge."""
+
+        key = self.config.get(self.CONF_FREE_BREAK_TEST_KEY)
+        if self._same_key(key, self.config.get(self.CONF_COAXIS_TRIGGER_KEY)):
+            key = None
+        if not key:
+            self._fbk_was_down = False
+            return False
+        key_down = self._is_key_pressed(key)
+        edge = key_down and not self._fbk_was_down
+        self._fbk_was_down = key_down
+        if edge and not self._macro_running:
+            self._run_free_skill_combo_test()
+            return True
+        return False
+
+    def _poll_first_attack_test_trigger(self):
+        """Run the first-attack timing test only on its configured press edge."""
+
+        key = self.config.get(self.CONF_FIRST_ATTACK_TEST_KEY)
+        if not key:
+            self._fk_was_down = False
+            return False
+        key_down = self._is_key_pressed(key)
+        edge = key_down and not self._fk_was_down
+        self._fk_was_down = key_down
+        if edge and not self._macro_running:
+            self._run_first_attack_test()
+            return True
+        return False
+
+    def _poll_macro_trigger(self):
+        """Run the 4A macro from the shared manual-key listener."""
+
+        if self.config.get(self.CONF_DODGE_TEST):
+            return False
         bg_mode = (
             self.config.get(self.CONF_MACRO_MODE) in (
                 self.MODE_SCHEME_A, self.MODE_SCHEME_LS)
@@ -783,25 +853,23 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         )
         if not bg_mode and not self.is_foreground():
             self._key_was_down = False
-            return True
+            return False
 
         key_down = self._is_key_pressed(self.config.get(self.CONF_TRIGGER_KEY))
         toggle = self.config.get(self.CONF_TRIGGER_MODE) == self.TRIGGER_TOGGLE
         if toggle:
-            # 按一下开关循环: 检测按下边沿(松→按)。宏没在跑时的一次边沿=开始循环;
-            # 循环里的"再按一下"由 _run_macro 内部(_check_toggle_stop)负责停, 不在这里。
             edge = key_down and not self._key_was_down
             self._key_was_down = key_down
             if edge and not self._macro_running:
                 self._run_macro()
-            return True
+                return True
+            return self._macro_running
 
-        # 长按循环: 松手即停
         if not key_down:
             self._key_was_down = False
-            return True
+            return False
         if self._key_was_down or self._macro_running:
-            return True
+            return self._macro_running
         self._key_was_down = True
         self._run_macro()
         return True
@@ -1151,7 +1219,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         if self._in_dodge_test:
             return True
         if self._toggle_mode:
-            return not self._check_toggle_stop()
+            return self._manual_key_triggers_enabled() and not self._check_toggle_stop()
         return self._trigger_held()
 
     def _poll_dodge_counter_test(self):
@@ -1336,12 +1404,15 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     def _run_scheme_loop_toggle(self, run_once, name):
         """按一下开关循环: 先等启动这次按住松开(否则会被当成停止), 然后一直循环跑,
         直到"再按一下"(_check_toggle_stop, 方案内每下 + 每轮间都查)或任务停用。"""
-        while self._is_key_pressed(self.config.get(self.CONF_TRIGGER_KEY)):
+        while (
+            self._manual_key_triggers_enabled()
+            and self._is_key_pressed(self.config.get(self.CONF_TRIGGER_KEY))
+        ):
             time.sleep(0.02)
         self._tk_was_down = False
         self._toggle_stop = False
         rounds = 0
-        while self.enabled and not self._toggle_stop:
+        while self.enabled and self._manual_key_triggers_enabled() and not self._toggle_stop:
             run_once()
             rounds += 1
             if self._check_toggle_stop():
@@ -1374,7 +1445,11 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     # ---------- 方案一/二(硬件输入, 长按循环, 松手即停) ----------
     def _trigger_held(self):
         """触发键是否仍被按住(且任务仍启用)。松手/停用即返回 False → 中止当前宏。"""
-        return self.enabled and self._is_key_pressed(self.config.get(self.CONF_TRIGGER_KEY))
+        return (
+            self.enabled
+            and self._manual_key_triggers_enabled()
+            and self._is_key_pressed(self.config.get(self.CONF_TRIGGER_KEY))
+        )
 
     def _prepare_input(self):
         """按配置决定方案一/二走硬件还是后台发消息。后台预取一次点击坐标(屏幕中心)的 lParam。"""
