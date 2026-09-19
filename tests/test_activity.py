@@ -8,12 +8,45 @@ import cv2
 import numpy as np
 
 from src.lw.activity import (
-    ENABLE, FOOT_X, FOOT_Y, GROUP, HOTKEY, MOVE_SECONDS, PRIORITY,
+    DODGE_EQUIVALENT, ENABLE, FOOT_X, FOOT_Y, GROUP, HOTKEY, MOVE_SECONDS, PRIORITY,
     ActivityController, configure_activity, danger_mask, escape_keys, select_card,
 )
 
 
 class TestActivity(unittest.TestCase):
+    def test_boss_ring_is_distinct_from_small_rings_and_rectangle(self):
+        from src.lw.activity import boss_warning_mask
+
+        for radius in (60, 85, 170):
+            frame = np.zeros((540, 960, 3), np.uint8)
+            cv2.circle(frame, (480, 265), radius, (70, 70, 240), 5)
+            mask = boss_warning_mask(frame)
+            self.assertEqual(bool(mask[265, 480]), radius == 170)
+        frame = np.zeros((540, 960, 3), np.uint8)
+        cv2.rectangle(frame, (280, 110), (680, 420), (0, 0, 255), 4)
+        self.assertFalse(boss_warning_mask(frame).any())
+
+    def test_dodge_adds_calibrated_displacement_once(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.config[DODGE_EQUIVALENT] = 2.0
+        now = [0.0]
+        with (patch("src.lw.activity.time.monotonic", side_effect=lambda: now[0]),
+              patch("src.lw.activity.time.sleep", side_effect=lambda delay: now.__setitem__(0, now[0] + delay))):
+            controller.pulse(("d",), sprint=True)
+        self.assertEqual(controller.dodge_count, 1)
+        self.assertAlmostEqual(controller.drift[0], controller.direction_seconds["d"] + 2)
+
+    def test_enlarged_effect_ocr_recovers_missing_health_character(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.config[PRIORITY] = "定时回复生命"
+        task.ocr.return_value = [SimpleNamespace(name="定时回复生命")]
+        with patch.object(controller, "text", return_value="选取卡牌 定时回复命"):
+            controller.tick()
+            controller.tick()
+        task.executor.interaction.click.assert_called_once_with(x=528, y=432)
+
     def test_persistent_danger_does_not_stop_activity_after_four_seconds(self):
         controller, task = self.make_controller()
         controller.running = True
@@ -226,7 +259,8 @@ class TestActivity(unittest.TestCase):
         self.assertEqual(task.default_config[HOTKEY], "5")
         self.assertEqual(task.default_config[PRIORITY], "")
         self.assertEqual(task.config_type[GROUP]["sub_configs"][True],
-                         [ENABLE, HOTKEY, MOVE_SECONDS, PRIORITY, FOOT_X, FOOT_Y])
+                         [ENABLE, HOTKEY, MOVE_SECONDS, DODGE_EQUIVALENT,
+                          PRIORITY, FOOT_X, FOOT_Y])
 
     def test_card_order_and_no_random_fallback(self):
         self.assertEqual(select_card(["卡牌甲", "卡牌 乙", "卡牌丙"], "卡牌乙,卡牌甲"), 1)

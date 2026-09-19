@@ -146,5 +146,12 @@ manual stop, disabled task/config and exceptional input cleanup are unchanged.
 Regression exercises 5/30/300 seconds of continuing danger and manual stop (48 focused
 tests pass); syntax/diff checks pass. Full suite not rerun; real-window escape remains open.
 
+Large-warning/odometry correction: sprint requires separately validated large ellipse, not
+distance inside merged hazards. Small-circle/rectangle source samples reject sprint; supplied
+large circle accepts. Every emitted dodge adds a configurable estimated walking-time distance
+and a count, with one-second sprint debounce. Default 1s equivalent is explicitly uncalibrated.
+Health effect rows receive 3x OCR fallback, verified on supplied missing-character sample.
+51 focused regressions pass; no screenshots committed. Live displacement and centering open.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.

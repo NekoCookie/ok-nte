@@ -15,6 +15,15 @@ PRIORITY = "选卡优先级"
 FOOT_X = "活动脚底横坐标比例"
 FOOT_Y = "活动脚底纵坐标比例"
 MOVE_SECONDS = "活动单次移动时长(s)"
+DODGE_EQUIVALENT = "活动闪避折算步行秒数"
+
+
+def dodge_equivalent(config):
+    try:
+        value = float(config.get(DODGE_EQUIVALENT, 1.0))
+    except (ValueError, TypeError):
+        return 1.0
+    return min(5.0, max(0.0, value)) if math.isfinite(value) else 1.0
 
 
 def movement_seconds(config):
@@ -36,10 +45,11 @@ def activity_key_pressed(task, key):
 def configure_activity(task):
     task.default_config.update({
         GROUP: False, ENABLE: False, HOTKEY: "5", PRIORITY: "",
-        FOOT_X: 0.5, FOOT_Y: 0.565, MOVE_SECONDS: 0.2,
+        FOOT_X: 0.5, FOOT_Y: 0.565, MOVE_SECONDS: 0.2, DODGE_EQUIVALENT: 1.0,
     })
     task.config_type[GROUP] = {
-        "sub_configs": {True: [ENABLE, HOTKEY, MOVE_SECONDS, PRIORITY, FOOT_X, FOOT_Y]},
+        "sub_configs": {True: [ENABLE, HOTKEY, MOVE_SECONDS, DODGE_EQUIVALENT,
+                               PRIORITY, FOOT_X, FOOT_Y]},
     }
     task.config_description.update({
         GROUP: "展开活动独立配置, 不影响其他配置大项",
@@ -49,6 +59,7 @@ def configure_activity(task):
         FOOT_X: "角色脚底横坐标/画面宽度, 默认0.5; 不是地图中心; 镜头变化需校准",
         FOOT_Y: "角色脚底纵坐标/画面高度, 默认0.565; 不是地图中心或人物身体中心",
         MOVE_SECONDS: "每次移动按住多久, 默认0.2秒; 范围0.05~1.0秒; 越长位移越大但重新识别越慢; 可随时按热键停止",
+        DODGE_EQUIVALENT: "每次右键闪避额外计入的步行秒数, 0~5; 默认1.0是待校准估计, 非真实坐标",
     })
 
 
@@ -78,6 +89,38 @@ def card_snapshot(frame):
 
 def card_difference(first, second):
     return float(np.mean(np.abs(first - second)))
+
+
+def boss_warning_mask(frame):
+    """Require a large, supported ellipse outline, not merged danger area/depth."""
+    image = cv2.resize(frame[:, :, :3], (960, 540))
+    h, s, v = cv2.split(cv2.cvtColor(image, cv2.COLOR_BGR2HSV))
+    red = (((h < 10) | (h > 174)) & (s > 65) & (v > 100)).astype(np.uint8) * 255
+    red[:95] = 0
+    red[435:] = 0
+    contours, _ = cv2.findContours(red, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+    result = np.zeros_like(red)
+    supported = cv2.dilate(red, np.ones((7, 7), np.uint8))
+    for contour in contours:
+        if len(contour) < 250:
+            continue
+        ellipse = cv2.fitEllipse(contour)
+        small, large = sorted(ellipse[1])
+        if not (260 <= small <= large <= 650 and small / large >= .60):
+            continue
+        edge = np.zeros_like(red)
+        cv2.ellipse(edge, ellipse, 255, 2)
+        pixels = edge > 0
+        if np.count_nonzero(pixels) and np.mean(supported[pixels] > 0) >= .60:
+            cv2.ellipse(result, ellipse, 255, -1)
+    return result
+
+
+def enlarged_effect_crop(frame, left):
+    height, width = frame.shape[:2]
+    crop = frame[int(.59 * height):int(.69 * height),
+                 int((left + .02) * width):int((left + .175) * width)]
+    return cv2.resize(crop, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
 
 
 def danger_mask(frame):
@@ -175,6 +218,8 @@ class ActivityController:
         self.direction_seconds = dict.fromkeys(("w", "a", "s", "d"), 0.0)
         self.drift = [0.0, 0.0]
         self.next_motion_summary = 0.0
+        self.dodge_count = 0
+        self.next_dodge = 0.0
 
     def report(self, message, notify=False):
         """Expose state without logging OCR contents or flooding the log."""
@@ -248,6 +293,8 @@ class ActivityController:
                 self.running = True
                 self.direction_seconds = dict.fromkeys(("w", "a", "s", "d"), 0.0)
                 self.drift = [0.0, 0.0]
+                self.dodge_count = 0
+                self.next_dodge = 0.0
                 self.next_tick = 0.0
                 self.report("已启动, 等待识别活动画面", notify=True)
             return True
@@ -316,6 +363,12 @@ class ActivityController:
                     return
             texts = [self.text(frame, (left, 0.25, left + 0.19, 0.74))
                      for left in (0.18, 0.41, 0.635)]
+            # Inspect the small effect rows independently; confidence can be high
+            # even when full-card OCR drops a character.
+            if "定时" in str(task.config.get(PRIORITY, "")):
+                for i, left in enumerate((.18, .41, .635)):
+                    boxes = task.ocr(frame=enlarged_effect_crop(frame, left), threshold=.8)
+                    texts[i] += " " + " ".join(box.name for box in boxes)
             # Rarity text is small and colored; inspect its own OCR region.
             for index, left in enumerate((0.18, 0.41, 0.635)):
                 if ("传说" in str(task.config.get(PRIORITY, ""))
@@ -369,7 +422,8 @@ class ActivityController:
         if not (100 <= foot[0] < 800 and 110 <= foot[1] < 420):
             self.stop("脚底坐标不在识别范围内, 请重新校准")
             return
-        mask = danger_mask(frame)
+        boss_mask = boss_warning_mask(frame)
+        mask = cv2.bitwise_or(danger_mask(frame), boss_mask)
         keys = escape_keys(mask, foot, self.previous, self.drift)
         if time.monotonic() - captured_at > 0.5:
             self.previous = ()
@@ -386,8 +440,8 @@ class ActivityController:
         self.safe_frames = 0
         self.previous = keys
         self.report(f"躲避红区: {'+'.join(keys).upper()}")
-        clearance = cv2.distanceTransform(mask, cv2.DIST_L2, 5)[foot[1], foot[0]]
-        self.pulse(keys, sprint=clearance >= 45)
+        self.pulse(keys, sprint=bool(boss_mask[foot[1], foot[0]])
+                   and time.monotonic() >= self.next_dodge)
 
     def pulse(self, keys, sprint=False):
         import win32api
@@ -422,6 +476,12 @@ class ActivityController:
                     interaction.post(win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, right_pos)
                 else:
                     win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
+                self.dodge_count += 1
+                self.next_dodge = time.monotonic() + 1.0
+                amount = dodge_equivalent(self.task.config) / math.sqrt(max(1, len(started)))
+                for key in started:
+                    self.drift[0] += amount * ((key == "d") - (key == "a"))
+                    self.drift[1] += amount * ((key == "s") - (key == "w"))
             deadline = time.monotonic() + movement_seconds(self.task.config)
             while time.monotonic() < deadline and self.running and self.available():
                 time.sleep(0.01)
@@ -464,5 +524,7 @@ class ActivityController:
                 summary = ", ".join(f"{key.upper()}={value:.2f}s"
                                     for key, value in self.direction_seconds.items())
                 self.task.info_set("活动累计移动", summary)
+                summary += (f", 闪避={self.dodge_count}次, "
+                            f"估计偏移=({self.drift[0]:.2f},{self.drift[1]:.2f})步行秒")
                 self.task.log_info(f"活动累计移动: {summary}")
                 self.next_motion_summary = ended + 5
