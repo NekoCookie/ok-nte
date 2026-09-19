@@ -140,5 +140,11 @@ input, with a 60ms direction lead and normal 30ms tail around right-button messa
 stop paths still release inputs. `tests.test_activity` covers the transaction and input overlap
 (47 focused tests total). Real-window consecutive-card and directional-dodge acceptance pending.
 
+Persistent-danger correction: removed the four-second automatic shutdown and its timer.
+Fresh confirmed danger continues to request escape irrespective of total elapsed time;
+manual stop, disabled task/config and exceptional input cleanup are unchanged.
+Regression exercises 5/30/300 seconds of continuing danger and manual stop (48 focused
+tests pass); syntax/diff checks pass. Full suite not rerun; real-window escape remains open.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.

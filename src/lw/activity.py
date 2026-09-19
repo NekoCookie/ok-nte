@@ -168,7 +168,6 @@ class ActivityController:
         self.clicked_cards = None
         self.pending_cards = None
         self.previous = ()
-        self.escape_started = None
         self.status = ""
         self.last_status_log = 0.0
         self.last_scene_seen = float("-inf")
@@ -192,7 +191,6 @@ class ActivityController:
         was_running = self.running
         self.running = False
         self.previous = ()
-        self.escape_started = None
         self.card_candidate = None
         self.clicked_cards = None
         self.pending_cards = None
@@ -296,7 +294,6 @@ class ActivityController:
         if "选取卡牌" in re.sub(r"\s+", "", title):
             self.last_scene_seen = float("-inf")
             self.previous = ()
-            self.escape_started = None
             self.card_missing = 0
             snapshot = card_snapshot(frame)
             if self.card_latched:
@@ -382,19 +379,12 @@ class ActivityController:
             self.safe_frames += 1
             if self.safe_frames >= 2:
                 self.previous = ()
-                self.escape_started = None
             self.report("脚下危险但未找到安全出口" if mask[foot[1], foot[0]]
                         else "确认脱离中" if self.safe_frames < 2
                         else "监测中, 脚下未发现红区")
             return
         self.safe_frames = 0
         self.previous = keys
-        now = time.monotonic()
-        if self.escape_started is None:
-            self.escape_started = now
-        if now - self.escape_started > 4:
-            self.stop("持续未脱离危险区, 已停止, 请检查位置或障碍")
-            return
         self.report(f"躲避红区: {'+'.join(keys).upper()}")
         clearance = cv2.distanceTransform(mask, cv2.DIST_L2, 5)[foot[1], foot[0]]
         self.pulse(keys, sprint=clearance >= 45)

@@ -14,6 +14,23 @@ from src.lw.activity import (
 
 
 class TestActivity(unittest.TestCase):
+    def test_persistent_danger_does_not_stop_activity_after_four_seconds(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        mask = np.zeros((540, 960), np.uint8)
+        cv2.circle(mask, (480, 305), 70, 255, -1)
+        with (patch.object(controller, "text", side_effect=["", "轨外回响"] * 4),
+              patch("src.lw.activity.danger_mask", return_value=mask),
+              patch("src.lw.activity.time.monotonic", return_value=100) as clock,
+              patch.object(controller, "pulse") as pulse):
+            for now in (100, 105, 130, 400):
+                clock.return_value = now
+                controller.tick()
+                self.assertTrue(controller.running)
+            self.assertEqual(pulse.call_count, 4)
+        controller.stop()
+        self.assertFalse(controller.running)
+
     def test_slash_priorities_preserve_user_order(self):
         texts = ["生命值", "传说能力", "移速"]
         self.assertEqual(select_card(texts, "传说能力/生命值/移速"), 1)
