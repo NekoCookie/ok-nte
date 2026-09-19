@@ -1,6 +1,7 @@
 """[lw] Screen-only Runaway Echoes warning detection and deterministic card selection."""
 
 import math
+import random
 import re
 import time
 
@@ -202,6 +203,7 @@ class ActivityController:
         self.next_text_scan = 0.0
         self.next_text_click = 0.0
         self.text_waiting = False
+        self.unmatched_cards_since = None
 
     def report(self, message, notify=False):
         """Expose state without logging OCR contents or flooding the log."""
@@ -223,6 +225,7 @@ class ActivityController:
         self.next_text_scan = 0.0
         self.next_text_click = 0.0
         self.text_waiting = False
+        self.unmatched_cards_since = None
         if was_running:
             self.report(reason, notify=True)
 
@@ -308,14 +311,17 @@ class ActivityController:
     def click_configured_text(self, frame):
         """One OCR rule on any page; click actual detected text, not fixed card slots."""
         priority = str(self.task.config.get(PRIORITY, ""))
-        if not priority.strip():
-            self.text_waiting = False
-            return False
         now = time.monotonic()
         if now < self.next_text_scan:
             return False
         self.next_text_scan = now + 0.4
         boxes = self.task.ocr(frame=frame, threshold=.8)
+        card_page = any(
+            "选取卡牌" in re.sub(r"\s+", "", box.name)
+            and box.y < frame.shape[0] * .25 for box in boxes
+        )
+        if not card_page:
+            self.unmatched_cards_since = None
         scale = 1
         index = select_card([box.name for box in boxes], priority)
         if index is None and "定时" in priority:
@@ -326,7 +332,22 @@ class ActivityController:
             scale = 2
         self.text_waiting = index is not None
         if index is None:
+            if card_page:
+                if self.unmatched_cards_since is None:
+                    self.unmatched_cards_since = now
+                if (now - self.unmatched_cards_since >= 10 and now >= self.next_text_click
+                        and self.running and self.available() and time.monotonic() - now < 2):
+                    x = random.choice((.275, .505, .73)) * frame.shape[1]
+                    result = self.task.executor.interaction.click(
+                        x=round(x), y=round(frame.shape[0] * .40), move_back=True,
+                    )
+                    self.next_text_click = time.monotonic() + 2
+                    if result is not False:
+                        self.unmatched_cards_since = None
+                        self.report("选卡10秒未匹配, 已随机选择一张")
+                        return True
             return False
+        self.unmatched_cards_since = None
         if now < self.next_text_click:
             return False
         box = boxes[index]
@@ -338,7 +359,7 @@ class ActivityController:
                 or time.monotonic() - now > 2
                 or not (0 <= x < frame.shape[1] and 0 <= y < frame.shape[0])):
             return False
-        result = self.task.executor.interaction.click(x=round(x), y=round(y))
+        result = self.task.executor.interaction.click(x=round(x), y=round(y), move_back=True)
         self.next_text_click = time.monotonic() + (2 if result is not False else .5)
         self.report(f"已点击配置词: {matched}" if result is not False
                     else f"配置词点击被拦截: {matched}")
@@ -349,6 +370,7 @@ class ActivityController:
         captured_at = time.monotonic()
         frame = task.executor.method.get_frame()
         if frame is None:
+            self.unmatched_cards_since = None
             self.last_scene_seen = float("-inf")
             self.report("截图暂不可用, 等待恢复")
             self.next_tick = time.monotonic() + 0.5
@@ -378,6 +400,7 @@ class ActivityController:
             return
         foot = (round(float(task.config.get(FOOT_X, 0.5)) * 960),
                 round(float(task.config.get(FOOT_Y, 0.565)) * 540))
+        self.unmatched_cards_since = None
         if not (100 <= foot[0] < 800 and 110 <= foot[1] < 420):
             self.stop("脚底坐标不在识别范围内, 请重新校准")
             return

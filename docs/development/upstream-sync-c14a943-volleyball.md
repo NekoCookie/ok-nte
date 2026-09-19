@@ -169,5 +169,10 @@ OCR area expanded upward to include it; endless label plus timer is fallback. Co
 battle never clicks configured text, even when safe. Supplied endless screenshot recognizes
 the shared label. 53 focused tests, syntax/diff pass; full suite/live input pending.
 
+Requested selection fallback: only a recognized card-selection title permits random slot
+selection after 10 seconds without a configured match; other pages never random-click.
+Both text and fallback clicks use framework move_back=True. 55 focused tests pass;
+live cursor restoration/full suite pending.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.

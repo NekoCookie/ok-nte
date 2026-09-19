@@ -14,6 +14,36 @@ from src.lw.activity import (
 
 
 class TestActivity(unittest.TestCase):
+    def test_unmatched_cards_random_after_ten_seconds_and_restore_mouse(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.ocr.return_value = [SimpleNamespace(name="选取卡牌", y=80)]
+        frame = np.zeros((540, 960, 3), np.uint8)
+        with (patch("src.lw.activity.time.monotonic", return_value=100) as clock,
+              patch("src.lw.activity.random.choice", return_value=.505)):
+            controller.click_configured_text(frame)
+            clock.return_value = 109
+            controller.click_configured_text(frame)
+            task.executor.interaction.click.assert_not_called()
+            clock.return_value = 110
+            self.assertTrue(controller.click_configured_text(frame))
+        task.executor.interaction.click.assert_called_once_with(x=485, y=216, move_back=True)
+
+    def test_unknown_menu_never_random_clicks_and_resets_card_wait(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        frame = np.zeros((540, 960, 3), np.uint8)
+        with patch("src.lw.activity.time.monotonic", return_value=100) as clock:
+            task.ocr.return_value = [SimpleNamespace(name="选取卡牌", y=80)]
+            controller.click_configured_text(frame)
+            clock.return_value = 105
+            task.ocr.return_value = []
+            controller.click_configured_text(frame)
+            clock.return_value = 120
+            controller.click_configured_text(frame)
+        task.executor.interaction.click.assert_not_called()
+        self.assertIsNone(controller.unmatched_cards_since)
+
     def test_damage_numbers_label_alone_identifies_both_battle_modes(self):
         for label in ("伤害跳字: 开", "伤害跳字: 关"):
             controller, task = self.make_controller()
@@ -88,7 +118,7 @@ class TestActivity(unittest.TestCase):
         task.ocr.return_value = [SimpleNamespace(name="开始挑战", x=100, y=200,
                                                 width=120, height=40)]
         controller.tick()
-        task.executor.interaction.click.assert_called_once_with(x=160, y=220)
+        task.executor.interaction.click.assert_called_once_with(x=160, y=220, move_back=True)
         task.executor.interaction.send_key_down.assert_not_called()
 
     def test_text_priority_and_bounded_repeat_without_scene_change(self):
@@ -105,7 +135,8 @@ class TestActivity(unittest.TestCase):
             clock.return_value = 103
             controller.tick()
         self.assertEqual(task.executor.interaction.click.call_count, 2)
-        self.assertEqual(task.executor.interaction.click.call_args.kwargs, {"x": 110, "y": 30})
+        self.assertEqual(task.executor.interaction.click.call_args.kwargs,
+                         {"x": 110, "y": 30, "move_back": True})
     def test_boss_ring_is_distinct_from_small_rings_and_rectangle(self):
         from src.lw.activity import boss_warning_mask
 
