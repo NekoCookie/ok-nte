@@ -118,6 +118,62 @@ class TestActivity(unittest.TestCase):
             controller.pulse(("w", "a"))
         self.assertEqual(task.executor.interaction.send_key_up.call_count, 2)
 
+    def test_busy_trigger_does_not_disarm_and_resumes_when_idle(self):
+        controller, task = self.make_controller()
+        controller.poll()
+        task.executor.current_task = object()
+        task._is_key_pressed.return_value = True
+        controller.poll()
+        self.assertTrue(controller.running)
+        task._is_key_pressed.return_value = False
+        controller.poll()
+        self.assertTrue(controller.running)
+        task.executor.method.get_frame.assert_not_called()
+        task.executor.current_task = None
+        with patch.object(controller, "tick") as tick:
+            controller.poll()
+            tick.assert_called_once_with()
+        self.assertTrue(controller.running)
+
+    def test_hotkey_stops_even_while_other_task_occupies_executor(self):
+        controller, task = self.make_controller()
+        controller.poll()
+        controller.running = True
+        task.executor.current_task = object()
+        task._is_key_pressed.return_value = True
+        controller.poll()
+        self.assertFalse(controller.running)
+        self.assertTrue(task.log_info.call_args.kwargs["notify"])
+
+    def test_start_and_stop_emit_notifications_and_persistent_status(self):
+        controller, task = self.make_controller()
+        controller.poll()
+        task.log_info.reset_mock()
+        task._is_key_pressed.return_value = True
+        controller.poll()
+        self.assertTrue(controller.running)
+        self.assertTrue(task.log_info.call_args.kwargs["notify"])
+        self.assertTrue(controller.status)
+        task.info_set.assert_called()
+        controller.stop()
+        self.assertFalse(controller.running)
+        self.assertTrue(task.log_info.call_args.kwargs["notify"])
+
+    def test_wait_status_is_not_logged_on_every_poll(self):
+        controller, task = self.make_controller()
+        with patch("src.lw.activity.time.monotonic", return_value=100):
+            for _ in range(20):
+                controller.report("waiting")
+        self.assertEqual(task.log_info.call_count, 1)
+
+    def test_unknown_scene_updates_diagnostic_status_without_moving(self):
+        controller, task = self.make_controller()
+        with patch.object(controller, "text", return_value=""):
+            controller.tick()
+        self.assertTrue(controller.status)
+        task.info_set.assert_called()
+        task.executor.interaction.send_key_down.assert_not_called()
+
     def test_background_pulse_interrupts_when_activity_is_disabled(self):
         controller, task = self.make_controller()
         task.executor.interaction.send_key_down.side_effect = (

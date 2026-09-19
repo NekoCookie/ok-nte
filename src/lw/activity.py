@@ -128,39 +128,67 @@ class ActivityController:
         self.card_candidate = None
         self.previous = ()
         self.escape_started = None
+        self.status = ""
+        self.last_status_log = 0.0
 
-    def stop(self):
+    def report(self, message, notify=False):
+        """Expose state without logging OCR contents or flooding the log."""
+        changed = message != self.status
+        self.status = message
+        self.task.info_set("活动状态", message)
+        now = time.monotonic()
+        if notify or (changed and now - self.last_status_log >= 2):
+            self.task.log_info(f"活动辅助: {message}", notify=notify)
+            self.last_status_log = now
+
+    def stop(self, reason="已停止"):
+        was_running = self.running
         self.running = False
         self.previous = ()
         self.escape_started = None
         self.card_candidate = None
         self.card_latched = False
         self.card_missing = 0
+        if was_running:
+            self.report(reason, notify=True)
+
+    def blocked_reason(self):
+        task = self.task
+        if task.executor.paused:
+            return "程序已暂停"
+        if task.executor.exit_event.is_set():
+            return "程序正在退出"
+        background = task.config.get(task.CONF_INPUT_MODE) == task.INPUT_BG
+        if not background and not task.is_foreground():
+            return "前台输入模式需要游戏位于前台"
+        if task.executor.current_task not in (None, task):
+            return "等待其他任务释放输入"
+        return ""
 
     def available(self):
         task = self.task
-        background = task.config.get(task.CONF_INPUT_MODE) == task.INPUT_BG
         return (task.enabled and task.config.get(ENABLE, False)
-                and not task.executor.paused and not task.executor.exit_event.is_set()
-                and (background or task.is_foreground())
-                and task.executor.current_task in (None, task))
+                and not self.blocked_reason())
 
     def poll(self):
         task = self.task
-        if not self.available():
-            self.stop()
+        if not task.enabled or not task.config.get(ENABLE, False):
+            self.stop("活动开关或任务已关闭")
             self.armed_key = None
             return False
         key = str(task.config.get(HOTKEY, "5")).strip().lower()
         # Never use a movement key as a toggle, including shifted aliases.
         vk = task._get_vk_code(key)
         if vk is None or vk in [task._get_vk_code(k) for k in ("w", "a", "s", "d")]:
-            self.stop()
+            self.stop("启动键无效或与移动键冲突")
+            if self.status != "启动键无效或与移动键冲突":
+                self.report("启动键无效或与移动键冲突", notify=True)
             return False
         down = task._is_key_pressed(key)
         if key != self.armed_key:
             self.stop()
             self.armed_key, self.was_down = key, down
+            self.report(f"热键监听已就绪: {key}, 松开后按一次启动", notify=True)
             return down
         edge = down and not self.was_down
         self.was_down = down
@@ -169,18 +197,24 @@ class ActivityController:
                 self.stop()
             else:
                 self.running = True
-            task.log_info("活动辅助: 启动" if self.running else "活动辅助: 停止")
+                self.next_tick = 0.0
+                self.report("已启动, 等待识别活动画面", notify=True)
             return True
         if not self.running:
             return down
+        reason = self.blocked_reason()
+        if reason:
+            # A trigger task may occupy current_task for only one scheduler iteration.
+            # Keep the toggle latched, but never send competing input.
+            self.report(reason)
+            return True
         if time.monotonic() < self.next_tick:
             return True
         self.next_tick = time.monotonic() + 0.08
         try:
             self.tick()
         except Exception as error:
-            self.stop()
-            task.log_info(f"活动辅助异常, 已停止: {type(error).__name__}")
+            self.stop(f"异常停止: {type(error).__name__}")
         return True
 
     def text(self, frame, rect):
@@ -192,12 +226,11 @@ class ActivityController:
         captured_at = time.monotonic()
         frame = task.executor.method.get_frame()
         if frame is None:
-            self.stop()
+            self.stop("截图不可用, 已停止")
             return
         height, width = frame.shape[:2]
         if abs(width / height - 16 / 9) > 0.04:
-            self.stop()
-            task.log_info("活动辅助: 仅支持16:9画面")
+            self.stop("仅支持16:9画面, 已停止")
             return
         # OCR happens while every movement key is already released.
         title = self.text(frame, (0.40, 0.12, 0.60, 0.19))
@@ -206,6 +239,7 @@ class ActivityController:
             self.escape_started = None
             self.card_missing = 0
             if self.card_latched:
+                self.report("已选卡, 等待返回活动")
                 return
             texts = [self.text(frame, (left, 0.25, left + 0.19, 0.74))
                      for left in (0.18, 0.41, 0.635)]
@@ -217,6 +251,11 @@ class ActivityController:
                     x=round(width * (0.275, 0.505, 0.73)[index]), y=round(height * 0.40),
                 )
                 self.card_latched = True
+                self.report(f"已点击第{index + 1}张卡牌")
+            elif index is None:
+                self.report("选卡优先级为空或无匹配, 等待手选")
+            else:
+                self.report("选卡识别中, 等待第二次确认")
             self.card_candidate = candidate
             self.next_tick = time.monotonic() + 0.4
             return
@@ -225,6 +264,7 @@ class ActivityController:
         hud = self.text(frame, (0.84, 0.24, 0.995, 0.34))
         if "轨外回响" not in re.sub(r"\s+", "", hud):
             self.previous = ()
+            self.report("未识别到轨外回响界面, 暂不移动")
             return
         self.card_missing += 1
         if self.card_missing >= 2:
@@ -232,24 +272,27 @@ class ActivityController:
         foot = (round(float(task.config.get(FOOT_X, 0.5)) * 960),
                 round(float(task.config.get(FOOT_Y, 0.565)) * 540))
         if not (100 <= foot[0] < 800 and 110 <= foot[1] < 420):
-            self.stop()
-            task.log_info("活动辅助: 脚底坐标不在识别范围内, 请重新校准")
+            self.stop("脚底坐标不在识别范围内, 请重新校准")
             return
-        keys = escape_keys(danger_mask(frame), foot, self.previous)
+        mask = danger_mask(frame)
+        keys = escape_keys(mask, foot, self.previous)
         if time.monotonic() - captured_at > 0.5:
             self.previous = ()
+            self.report("识别耗时超过500ms, 已丢弃旧画面移动指令")
             return
         self.previous = keys
         if not keys:
             self.escape_started = None
+            self.report("脚下危险但未找到安全出口" if mask[foot[1], foot[0]]
+                        else "监测中, 脚下未发现红区")
             return
         now = time.monotonic()
         if self.escape_started is None:
             self.escape_started = now
         if now - self.escape_started > 4:
-            self.stop()
-            task.log_info("活动辅助: 持续未脱离危险区, 已停止, 请检查位置或障碍")
+            self.stop("持续未脱离危险区, 已停止, 请检查位置或障碍")
             return
+        self.report(f"躲避红区: {'+'.join(keys).upper()}")
         self.pulse(keys)
 
     def pulse(self, keys):

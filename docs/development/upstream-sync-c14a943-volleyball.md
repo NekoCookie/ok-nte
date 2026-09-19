@@ -106,5 +106,11 @@ No screenshots or local configuration are included. Details and research limitat
 `docs/development/activity-assistant.md`. This addition does not claim real-window
 acceptance or change this ledger's open status.
 
+Activity corrective record: transient executor task occupancy now suppresses input without
+clearing the user's running toggle or key edge. Waiting still accepts the stop key and resumes
+when the executor is idle. Start/stop notify and persistent activity status expose blocking
+conditions without OCR contents. `tests.test_activity` covers busy/start/resume/stop and
+notification delivery. Real-window scheduler and notification acceptance remains open.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.
