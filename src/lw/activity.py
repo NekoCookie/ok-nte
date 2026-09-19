@@ -16,6 +16,14 @@ FOOT_X = "活动脚底横坐标比例"
 FOOT_Y = "活动脚底纵坐标比例"
 
 
+def activity_key_pressed(task, key):
+    if key == "-":
+        import win32api
+
+        return any(win32api.GetAsyncKeyState(vk) & 0x8000 for vk in (0xBD, 0x6D))
+    return task._is_key_pressed(key)
+
+
 def configure_activity(task):
     task.default_config.update({
         GROUP: False, ENABLE: False, HOTKEY: "5", PRIORITY: "",
@@ -130,12 +138,15 @@ class ActivityController:
         self.escape_started = None
         self.status = ""
         self.last_status_log = 0.0
+        self.last_scene_seen = float("-inf")
+        self.safe_frames = 0
 
     def report(self, message, notify=False):
         """Expose state without logging OCR contents or flooding the log."""
         changed = message != self.status
         self.status = message
-        self.task.info_set("活动状态", message)
+        if changed:
+            self.task.info_set("活动状态", message)
         now = time.monotonic()
         if notify or (changed and now - self.last_status_log >= 2):
             self.task.log_info(f"活动辅助: {message}", notify=notify)
@@ -149,6 +160,8 @@ class ActivityController:
         self.card_candidate = None
         self.card_latched = False
         self.card_missing = 0
+        self.last_scene_seen = float("-inf")
+        self.safe_frames = 0
         if was_running:
             self.report(reason, notify=True)
 
@@ -184,7 +197,7 @@ class ActivityController:
             if self.status != "启动键无效或与移动键冲突":
                 self.report("启动键无效或与移动键冲突", notify=True)
             return False
-        down = task._is_key_pressed(key)
+        down = activity_key_pressed(task, key)
         if key != self.armed_key:
             self.stop()
             self.armed_key, self.was_down = key, down
@@ -202,6 +215,12 @@ class ActivityController:
             return True
         if not self.running:
             return down
+        return True
+
+    def process(self):
+        """Run only from the framework executor; poll remains input-free and responsive."""
+        if not self.running:
+            return
         reason = self.blocked_reason()
         if reason:
             # A trigger task may occupy current_task for only one scheduler iteration.
@@ -210,15 +229,15 @@ class ActivityController:
             return True
         if time.monotonic() < self.next_tick:
             return True
-        self.next_tick = time.monotonic() + 0.08
+        self.next_tick = time.monotonic() + 0.03
         try:
             self.tick()
         except Exception as error:
             self.stop(f"异常停止: {type(error).__name__}")
         return True
 
-    def text(self, frame, rect):
-        boxes = self.task.ocr(*rect, frame=frame, threshold=0.8)
+    def text(self, frame, rect, threshold=0.8):
+        boxes = self.task.ocr(*rect, frame=frame, threshold=threshold)
         return " ".join(box.name for box in boxes)
 
     def tick(self):
@@ -235,6 +254,7 @@ class ActivityController:
         # OCR happens while every movement key is already released.
         title = self.text(frame, (0.40, 0.12, 0.60, 0.19))
         if "选取卡牌" in re.sub(r"\s+", "", title):
+            self.last_scene_seen = float("-inf")
             self.previous = ()
             self.escape_started = None
             self.card_missing = 0
@@ -245,7 +265,8 @@ class ActivityController:
                      for left in (0.18, 0.41, 0.635)]
             index = select_card(texts, str(task.config.get(PRIORITY, "")))
             candidate = (index, tuple(re.sub(r"\s+", "", text) for text in texts))
-            if (index is not None and candidate == self.card_candidate and self.available()
+            if (index is not None and candidate == self.card_candidate
+                    and self.running and self.available()
                     and time.monotonic() - captured_at < 2):
                 task.executor.interaction.click(
                     x=round(width * (0.275, 0.505, 0.73)[index]), y=round(height * 0.40),
@@ -261,8 +282,11 @@ class ActivityController:
             return
         self.card_candidate = None
         # Require activity-specific HUD on this frame, not a cached scene assumption.
-        hud = self.text(frame, (0.84, 0.24, 0.995, 0.34))
-        if "轨外回响" not in re.sub(r"\s+", "", hud):
+        hud = self.text(frame, (0.84, 0.24, 0.995, 0.34), threshold=0.6)
+        hud = re.sub(r"\s+", "", hud).upper()
+        if "轨外回响" in hud or ("轨外" in hud and "BOSS" in hud):
+            self.last_scene_seen = time.monotonic()
+        if time.monotonic() - self.last_scene_seen > 0.6:
             self.previous = ()
             self.report("未识别到轨外回响界面, 暂不移动")
             return
@@ -280,12 +304,17 @@ class ActivityController:
             self.previous = ()
             self.report("识别耗时超过500ms, 已丢弃旧画面移动指令")
             return
-        self.previous = keys
         if not keys:
-            self.escape_started = None
+            self.safe_frames += 1
+            if self.safe_frames >= 2:
+                self.previous = ()
+                self.escape_started = None
             self.report("脚下危险但未找到安全出口" if mask[foot[1], foot[0]]
+                        else "确认脱离中" if self.safe_frames < 2
                         else "监测中, 脚下未发现红区")
             return
+        self.safe_frames = 0
+        self.previous = keys
         now = time.monotonic()
         if self.escape_started is None:
             self.escape_started = now
@@ -303,24 +332,16 @@ class ActivityController:
         background = self.task.config.get(self.task.CONF_INPUT_MODE) == self.task.INPUT_BG
         held = []
         try:
-            if self.task._is_key_pressed(self.armed_key) and not self.was_down:
-                self.was_down = True
-                self.stop()
-                return
             for key in keys:
-                if not self.available():
+                if not self.running or not self.available():
                     return
                 held.append(key)
                 if background:
                     interaction.send_key_down(key)
                 else:
                     win32api.keybd_event(self.task._get_vk_code(key), 0, 0, 0)
-            deadline = time.monotonic() + 0.08
-            while time.monotonic() < deadline and self.available():
-                if self.task._is_key_pressed(self.armed_key) and not self.was_down:
-                    self.was_down = True
-                    self.stop()
-                    break
+            deadline = time.monotonic() + 0.20
+            while time.monotonic() < deadline and self.running and self.available():
                 time.sleep(0.01)
         finally:
             for key in reversed(held):

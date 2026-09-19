@@ -190,6 +190,19 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         task._poll_manual_key_triggers.assert_not_called()
         task._poll_gamepad_test.assert_not_called()
 
+    def test_active_activity_runs_on_executor_and_keeps_trigger_priority(self):
+        task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
+        task._submitted = False
+        task._activity = mock.MagicMock()
+        task._activity.running = True
+        task.submit_periodic_task = mock.MagicMock()
+        self.assertTrue(task.run())
+        self.assertTrue(task.run())
+        self.assertEqual(task._activity.process.call_count, 2)
+        task.submit_periodic_task.assert_called_once_with(task.CHECK_INTERVAL, task._loop)
+        task._activity.running = False
+        self.assertIsNone(task.run())
+
     def test_disabled_manual_key_switch_does_not_poll_any_manual_trigger(self):
         task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
         task.config = {task.CONF_MANUAL_KEY_TRIGGERS: False}

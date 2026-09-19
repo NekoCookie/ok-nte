@@ -723,10 +723,13 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         super().load_config()
 
     def run(self):
-        if self._submitted:
-            return
-        self._submitted = True
-        self.submit_periodic_task(self.CHECK_INTERVAL, self._loop)
+        if not self._submitted:
+            self._submitted = True
+            self.submit_periodic_task(self.CHECK_INTERVAL, self._loop)
+        # [lw] Vision/input runs on the executor, not against its trigger scheduler.
+        if self._activity.running:
+            self._activity.process()
+            return self._activity.running
 
     def _loop(self):
         if not self.enabled:

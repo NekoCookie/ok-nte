@@ -112,5 +112,12 @@ when the executor is idle. Start/stop notify and persistent activity status expo
 conditions without OCR contents. `tests.test_activity` covers busy/start/resume/stop and
 notification delivery. Real-window scheduler and notification acceptance remains open.
 
+Movement corrective record: live logs showed repeated task-occupancy/HUD-miss gating.
+Vision and bounded input now run in Requiem's executor turn; its periodic callback only
+polls the toggle. Active activity retains trigger priority; one-time tasks retain priority.
+Pulses are bounded to 200ms with independent stop polling. HUD confirmation expires after
+0.6s and cards invalidate it; new danger frames are required. Regressions cover executor
+ownership, repeated danger, OCR miss expiry and both minus keys. Live exit timing is pending.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.

@@ -14,6 +14,52 @@ from src.lw.activity import (
 
 
 class TestActivity(unittest.TestCase):
+    def test_keyboard_minus_and_numpad_minus(self):
+        from src.lw.activity import activity_key_pressed
+
+        for key in (189, 109):
+            with patch("win32api.GetAsyncKeyState",
+                       side_effect=lambda vk: 0x8000 if vk == key else 0):
+                self.assertTrue(activity_key_pressed(MagicMock(), "-"))
+
+    def test_hotkey_poll_never_captures_or_moves(self):
+        controller, task = self.make_controller()
+        controller.armed_key = "5"
+        controller.running = True
+        with patch.object(controller, "tick") as tick:
+            controller.poll()
+            tick.assert_not_called()
+        task.executor.method.get_frame.assert_not_called()
+
+    def test_consecutive_danger_frames_keep_requesting_escape(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        mask = np.zeros((540, 960), np.uint8)
+        cv2.circle(mask, (480, 305), 70, 255, -1)
+        with (patch.object(controller, "text", side_effect=["", "轨外回响"] * 3),
+              patch("src.lw.activity.danger_mask", return_value=mask),
+              patch.object(controller, "pulse") as pulse):
+            for _ in range(3):
+                controller.tick()
+            self.assertEqual(pulse.call_count, 3)
+
+    def test_one_hud_miss_does_not_cancel_escape_but_expiry_does(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        mask = np.zeros((540, 960), np.uint8)
+        cv2.circle(mask, (480, 305), 70, 255, -1)
+        with (patch.object(controller, "text", side_effect=["", "轨外回响", "", "", "", ""]),
+              patch("src.lw.activity.time.monotonic", return_value=100) as clock,
+              patch("src.lw.activity.danger_mask", return_value=mask),
+              patch.object(controller, "pulse") as pulse):
+            controller.tick()
+            clock.return_value = 100.3
+            controller.tick()
+            self.assertEqual(pulse.call_count, 2)
+            clock.return_value = 101
+            controller.tick()
+            self.assertEqual(pulse.call_count, 2)
+
     def make_controller(self):
         task = MagicMock()
         task.CONF_INPUT_MODE, task.INPUT_BG = "input", "background"
@@ -113,6 +159,7 @@ class TestActivity(unittest.TestCase):
 
     def test_background_pulse_releases_keys_on_error(self):
         controller, task = self.make_controller()
+        controller.running = True
         task.executor.interaction.send_key_down.side_effect = [None, RuntimeError("failure")]
         with self.assertRaises(RuntimeError):
             controller.pulse(("w", "a"))
@@ -131,7 +178,7 @@ class TestActivity(unittest.TestCase):
         task.executor.method.get_frame.assert_not_called()
         task.executor.current_task = None
         with patch.object(controller, "tick") as tick:
-            controller.poll()
+            controller.process()
             tick.assert_called_once_with()
         self.assertTrue(controller.running)
 
@@ -176,6 +223,7 @@ class TestActivity(unittest.TestCase):
 
     def test_background_pulse_interrupts_when_activity_is_disabled(self):
         controller, task = self.make_controller()
+        controller.running = True
         task.executor.interaction.send_key_down.side_effect = (
             lambda key: task.config.update({ENABLE: False})
         )
@@ -185,6 +233,7 @@ class TestActivity(unittest.TestCase):
 
     def test_cards_require_two_reads_and_click_only_once(self):
         controller, task = self.make_controller()
+        controller.running = True
         task.config[PRIORITY] = "卡牌乙,卡牌甲"
         with patch.object(controller, "text", side_effect=(
             ["选取卡牌", "卡牌甲", "卡牌乙", "卡牌丙"] * 2 + ["选取卡牌"]
