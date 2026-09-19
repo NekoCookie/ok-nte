@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 from src.lw.activity import (
-    DODGE_EQUIVALENT, ENABLE, FOOT_X, FOOT_Y, GROUP, HOTKEY, MOVE_SECONDS, PRIORITY,
+    ENABLE, FOOT_X, FOOT_Y, GROUP, HOTKEY, MOVE_SECONDS, PRIORITY,
     ActivityController, configure_activity, danger_mask, escape_keys, select_card,
 )
 
@@ -187,16 +187,31 @@ class TestActivity(unittest.TestCase):
         cv2.rectangle(frame, (280, 110), (680, 420), (0, 0, 255), 4)
         self.assertFalse(boss_warning_mask(frame).any())
 
-    def test_dodge_adds_calibrated_displacement_once(self):
+    def test_dodge_counts_directions_without_converting_to_seconds(self):
         controller, task = self.make_controller()
         controller.running = True
-        task.config[DODGE_EQUIVALENT] = 2.0
         now = [0.0]
         with (patch("src.lw.activity.time.monotonic", side_effect=lambda: now[0]),
               patch("src.lw.activity.time.sleep", side_effect=lambda delay: now.__setitem__(0, now[0] + delay))):
-            controller.pulse(("d",), sprint=True)
+            controller.pulse(("w", "d"), sprint=True)
         self.assertEqual(controller.dodge_count, 1)
-        self.assertAlmostEqual(controller.drift[0], controller.direction_seconds["d"] + 2)
+        self.assertEqual(controller.direction_dodges, {"w": 1, "a": 0, "s": 0, "d": 1})
+        self.assertAlmostEqual(controller.drift[0], controller.direction_seconds["d"] / 2**.5)
+        with (patch("src.lw.activity.time.monotonic", side_effect=lambda: now[0]),
+              patch("src.lw.activity.time.sleep", side_effect=lambda delay: now.__setitem__(0, now[0] + delay))):
+            controller.pulse(("a",), sprint=False)
+        self.assertEqual(controller.direction_dodges["a"], 0)
+
+    def test_time_and_dodge_balance_both_influence_near_exits(self):
+        mask = np.zeros((540, 960), np.uint8)
+        cv2.circle(mask, (480, 300), 60, 255, -1)
+        self.assertEqual(escape_keys(mask, (480, 300), dodge_drift=(4, 0)), ("a",))
+        # Large seconds cannot drown out the independent dodge-count objective.
+        keys = escape_keys(mask, (480, 300), drift=(1000, 0), dodge_drift=(0, 4))
+        self.assertIn("a", keys)
+        self.assertIn("w", keys)
+        cv2.rectangle(mask, (450, 250), (700, 350), 255, -1)
+        self.assertNotEqual(escape_keys(mask, (480, 300), dodge_drift=(-100, 0)), ("d",))
 
 
     def test_persistent_danger_does_not_stop_activity_after_four_seconds(self):
@@ -359,7 +374,7 @@ class TestActivity(unittest.TestCase):
         self.assertEqual(task.default_config[HOTKEY], "5")
         self.assertEqual(task.default_config[PRIORITY], "")
         self.assertEqual(task.config_type[GROUP]["sub_configs"][True],
-                         [ENABLE, HOTKEY, MOVE_SECONDS, DODGE_EQUIVALENT,
+                         [ENABLE, HOTKEY, MOVE_SECONDS,
                           PRIORITY, FOOT_X, FOOT_Y])
 
     def test_card_order_and_no_random_fallback(self):

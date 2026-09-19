@@ -17,17 +17,6 @@ PRIORITY = "选卡优先级"
 FOOT_X = "活动脚底横坐标比例"
 FOOT_Y = "活动脚底纵坐标比例"
 MOVE_SECONDS = "活动单次移动时长(s)"
-DODGE_EQUIVALENT = "活动闪避折算步行秒数"
-
-
-def dodge_equivalent(config):
-    try:
-        value = float(config.get(DODGE_EQUIVALENT, 1.0))
-    except (ValueError, TypeError):
-        return 1.0
-    return min(5.0, max(0.0, value)) if math.isfinite(value) else 1.0
-
-
 def movement_seconds(config):
     try:
         value = float(config.get(MOVE_SECONDS, 0.2))
@@ -47,10 +36,10 @@ def activity_key_pressed(task, key):
 def configure_activity(task):
     task.default_config.update({
         GROUP: False, ENABLE: False, HOTKEY: "5", PRIORITY: "",
-        FOOT_X: 0.5, FOOT_Y: 0.565, MOVE_SECONDS: 0.2, DODGE_EQUIVALENT: 1.0,
+        FOOT_X: 0.5, FOOT_Y: 0.565, MOVE_SECONDS: 0.2,
     })
     task.config_type[GROUP] = {
-        "sub_configs": {True: [ENABLE, HOTKEY, MOVE_SECONDS, DODGE_EQUIVALENT,
+        "sub_configs": {True: [ENABLE, HOTKEY, MOVE_SECONDS,
                                PRIORITY, FOOT_X, FOOT_Y]},
     }
     task.config_description.update({
@@ -61,7 +50,6 @@ def configure_activity(task):
         FOOT_X: "角色脚底横坐标/画面宽度, 默认0.5; 不是地图中心; 镜头变化需校准",
         FOOT_Y: "角色脚底纵坐标/画面高度, 默认0.565; 不是地图中心或人物身体中心",
         MOVE_SECONDS: "每次移动按住多久, 默认0.2秒; 范围0.05~1.0秒; 越长位移越大但重新识别越慢; 可随时按热键停止",
-        DODGE_EQUIVALENT: "每次右键闪避额外计入的步行秒数, 0~5; 默认1.0是待校准估计, 非真实坐标",
     })
 
 
@@ -155,7 +143,7 @@ DIRECTIONS = (
 )
 
 
-def escape_keys(mask, foot, previous=(), drift=(0.0, 0.0)):
+def escape_keys(mask, foot, previous=(), drift=(0.0, 0.0), dodge_drift=(0, 0)):
     x, y = foot
     if not (0 <= x < 960 and 0 <= y < 540) or not mask[y, x]:
         return ()
@@ -176,9 +164,13 @@ def escape_keys(mask, foot, previous=(), drift=(0.0, 0.0)):
     shortest = min(item[0] for item in candidates)
     # Safety first: only bias comparably short exits toward the starting position.
     near = [item for item in candidates if item[0] <= shortest + 12]
+    # Independently normalize time and counts; neither unit overwhelms the other.
+    biases = [tuple(value / max(1.0, math.hypot(*vector)) for value in vector)
+              for vector in (drift, dodge_drift)]
     return min(near, key=lambda item: (
         item[0] + (0 if item[1] == previous else 4)
-        + max(-12, min(12, 8 * (drift[0] * item[2][0] + drift[1] * item[2][1])))
+        + 8 * sum(vector[0] * item[2][0] + vector[1] * item[2][1]
+                  for vector in biases)
     ))[1]
 
 
@@ -200,6 +192,7 @@ class ActivityController:
         self.drift = [0.0, 0.0]
         self.next_motion_summary = 0.0
         self.dodge_count = 0
+        self.direction_dodges = dict.fromkeys(("w", "a", "s", "d"), 0)
         self.next_dodge = 0.0
         self.next_text_scan = 0.0
         self.next_text_click = 0.0
@@ -301,6 +294,7 @@ class ActivityController:
                 self.direction_seconds = dict.fromkeys(("w", "a", "s", "d"), 0.0)
                 self.drift = [0.0, 0.0]
                 self.dodge_count = 0
+                self.direction_dodges = dict.fromkeys(("w", "a", "s", "d"), 0)
                 self.next_dodge = 0.0
                 self.next_tick = 0.0
                 self.report("已启用, 程序总暂停中, 请先恢复程序运行"
@@ -448,7 +442,9 @@ class ActivityController:
             return
         boss_mask = boss_warning_mask(frame)
         mask = cv2.bitwise_or(danger_mask(frame), boss_mask)
-        keys = escape_keys(mask, foot, self.previous, self.drift)
+        dodge_drift = (self.direction_dodges["d"] - self.direction_dodges["a"],
+                       self.direction_dodges["s"] - self.direction_dodges["w"])
+        keys = escape_keys(mask, foot, self.previous, self.drift, dodge_drift)
         if time.monotonic() - captured_at > 0.5:
             self.previous = ()
             self.report("识别耗时超过500ms, 已丢弃旧画面移动指令")
@@ -502,10 +498,8 @@ class ActivityController:
                     win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
                 self.dodge_count += 1
                 self.next_dodge = time.monotonic() + 1.0
-                amount = dodge_equivalent(self.task.config) / math.sqrt(max(1, len(started)))
                 for key in started:
-                    self.drift[0] += amount * ((key == "d") - (key == "a"))
-                    self.drift[1] += amount * ((key == "s") - (key == "w"))
+                    self.direction_dodges[key] += 1
             deadline = time.monotonic() + movement_seconds(self.task.config)
             while time.monotonic() < deadline and self.running and self.available():
                 time.sleep(0.01)
@@ -548,7 +542,9 @@ class ActivityController:
                 summary = ", ".join(f"{key.upper()}={value:.2f}s"
                                     for key, value in self.direction_seconds.items())
                 self.task.info_set("活动累计移动", summary)
-                summary += (f", 闪避={self.dodge_count}次, "
-                            f"估计偏移=({self.drift[0]:.2f},{self.drift[1]:.2f})步行秒")
+                dodges = ", ".join(f"{key.upper()}={value}次"
+                                   for key, value in self.direction_dodges.items())
+                self.task.info_set("活动累计闪避", dodges)
+                summary += f", 闪避总计={self.dodge_count}次, 各方向闪避: {dodges}"
                 self.task.log_info(f"活动累计移动: {summary}")
                 self.next_motion_summary = ended + 5

@@ -181,5 +181,12 @@ CaptureException retries without input. Settlement screenshot OCR selects return
 under user's configured ordering. 58 focused and 855 full-suite tests pass, syntax/diff pass.
 Historical tests above remain historical; live complete-loop/cursor/dodge acceptance open.
 
+Directional balance revision: remove dodge-to-seconds configuration and conversion.
+Track per-direction dodge counts independently from held-key seconds, reset on start,
+and give independently normalized time/count imbalance equal influence among near exits.
+Diagonal dodges increment both involved directions once; normal movement adds no count.
+59 focused and 856 full-suite regressions pass, including independent counts, combined balance and safety
+priority. Live map-centering remains unverified; this is not world-coordinate tracking.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.
