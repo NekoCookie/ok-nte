@@ -206,5 +206,12 @@ are negative for the oversized detector. One combined detection measured 172ms l
 not a performance guarantee. 862 full-suite tests and syntax/diff checks pass.
 Live detection and successful escape remain open.
 
+Medium BOSS ring follow-up: add a second radius search spanning the gap between small
+mob rings and oversized rings, retain large-range candidates independently, scale arc
+spread evidence by radius and require containment of configured player foot. 66 focused
+tests pass including a bottom-clipped medium ring triggering directional dodge. Supplied
+medium, large and oversized screenshots detect; two small-mob samples remain negative.
+Live frame-to-frame detection stability and escape remain open.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.

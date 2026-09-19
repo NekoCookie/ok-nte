@@ -70,7 +70,7 @@ def select_card(texts, priority):
 
 
 
-def oversized_boss_ellipse(frame):
+def oversized_boss_ellipse(frame, foot=(480, 305)):
     """Recover a clipped large ring from distributed, locally contrasting red arcs."""
     image = cv2.resize(frame[:, :, :3], (480, 270))
     h, s, v = cv2.split(cv2.cvtColor(image, cv2.COLOR_BGR2HSV))
@@ -86,21 +86,29 @@ def oversized_boss_ellipse(frame):
     valid[bands > 0] = 0
     red *= valid
     angles = np.linspace(0, 2 * math.pi, 180, endpoint=False)
-    best, best_score = None, 0.0
-    for ratio in (.7, .85, 1.0):
+    best, best_score = None, (False, 0.0)
+    for ratio, min_radius, max_radius in (
+        (ratio, low, high) for low, high in ((220, 400), (90, 400))
+        for ratio in (.7, .85, 1.0)
+    ):
         stretched = cv2.copyMakeBorder(
             cv2.resize(red, (480, round(270 / ratio))),
             100, 250, 100, 100, cv2.BORDER_CONSTANT,
         )
         circles = cv2.HoughCircles(
             cv2.GaussianBlur(stretched, (5, 5), 0), cv2.HOUGH_GRADIENT,
-            dp=2, minDist=35, param1=70, param2=30, minRadius=220, maxRadius=400,
+            dp=2, minDist=35, param1=70, param2=30,
+            minRadius=min_radius, maxRadius=max_radius,
         )
         if circles is None:
             continue
         for cx, cy, radius in circles[0][:40]:
             cx -= 100
             cy = (cy - 100) * ratio
+            if ((foot[0] / 2 - cx) / radius)**2 + (
+                (foot[1] / 2 - cy) / (radius * ratio)
+            )**2 >= 1:
+                continue
             xs = cx + radius * np.cos(angles)
             ys = cy + radius * ratio * np.sin(angles)
             visible = (xs >= 5) & (xs < 475) & (ys >= 5) & (ys < 265)
@@ -123,8 +131,10 @@ def oversized_boss_ellipse(frame):
             score = np.count_nonzero(supported) / np.count_nonzero(visible)
             sectors = sum(np.count_nonzero(part) >= 3 for part in np.array_split(supported, 8))
             spread = np.ptp(xs[supported]) if np.any(supported) else 0
-            if score >= .60 and sectors >= 4 and spread >= 330 and score > best_score:
-                best_score = score
+            quality = (radius >= 220, score)
+            if (score >= .60 and sectors >= 4 and spread >= min(330, radius * 1.3)
+                    and quality > best_score):
+                best_score = quality
                 best = ((float(cx * 2), float(cy * 2)),
                         (float(radius * 4), float(radius * ratio * 4)), 0.0)
     return best
@@ -529,7 +539,7 @@ class ActivityController:
         if not (100 <= foot[0] < 800 and 110 <= foot[1] < 420):
             self.stop("脚底坐标不在识别范围内, 请重新校准")
             return
-        oversized = oversized_boss_ellipse(frame)
+        oversized = oversized_boss_ellipse(frame, foot)
         boss_mask = boss_warning_mask(frame, oversized)
         mask = cv2.bitwise_or(danger_mask(frame), boss_mask)
         dodge_drift = (self.direction_dodges["d"] - self.direction_dodges["a"],

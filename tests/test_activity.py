@@ -14,6 +14,21 @@ from src.lw.activity import (
 
 
 class TestActivity(unittest.TestCase):
+    def test_medium_boss_ring_clipped_at_bottom_triggers_directional_dodge(self):
+        from src.lw.activity import oversized_boss_ellipse
+
+        frame = np.zeros((540, 960, 3), np.uint8)
+        cv2.ellipse(frame, (465, 350), (230, 196), 0, 0, 360, (25, 25, 150), 9)
+        ellipse = oversized_boss_ellipse(frame)
+        self.assertIsNotNone(ellipse)
+        controller, task = self.make_controller()
+        controller.running = True
+        task.executor.method.get_frame.return_value = frame
+        with (patch.object(controller, "text", return_value="伤害跳字"),
+              patch.object(controller, "pulse") as pulse):
+            controller.tick()
+        self.assertTrue(pulse.call_args.kwargs["sprint"])
+
     def test_oversized_clipped_ring_survives_banner_occlusion(self):
         from src.lw.activity import oversized_boss_ellipse, boss_warning_mask
 
