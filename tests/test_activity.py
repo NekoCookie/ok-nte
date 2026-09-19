@@ -14,6 +14,32 @@ from src.lw.activity import (
 
 
 class TestActivity(unittest.TestCase):
+    def test_danger_preempts_persistent_text_and_click_cooldown(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.config[PRIORITY] = "常驻文字"
+        controller.next_text_click = float("inf")
+        mask = np.zeros((540, 960), np.uint8)
+        cv2.circle(mask, (480, 305), 70, 255, -1)
+        with (patch.object(controller, "text", return_value="轨外回响"),
+              patch.object(controller, "click_configured_text") as click,
+              patch("src.lw.activity.danger_mask", return_value=mask),
+              patch.object(controller, "pulse") as pulse):
+            controller.tick()
+            controller.tick()
+        self.assertEqual(pulse.call_count, 2)
+        click.assert_not_called()
+
+    def test_click_cooldown_returns_no_action(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.config[PRIORITY] = "开始挑战"
+        controller.next_text_click = float("inf")
+        task.ocr.return_value = [SimpleNamespace(name="开始挑战", x=20, y=20,
+                                                width=100, height=30)]
+        self.assertFalse(controller.click_configured_text(np.zeros((540, 960, 3), np.uint8)))
+        task.executor.interaction.click.assert_not_called()
+
     def test_any_page_clicks_configured_text_at_detected_coordinates(self):
         controller, task = self.make_controller()
         controller.running = True

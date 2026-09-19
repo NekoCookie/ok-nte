@@ -158,5 +158,11 @@ window. Click detected box centers in user priority order, with a two-second rep
 Removed fixed-card crop/latch/image-difference logic. Missing frames wait without input;
 movement still requires activity HUD. 47 focused tests pass; live entry/full suite pending.
 
+OCR scheduling correction: confirmed activity danger is evaluated before generic text OCR;
+danger also suppresses clicks when no exit is found. Click/scan cooldown returns no action,
+not a blocking state. Menus retain generic text clicks. Logs name the configured matched term.
+49 focused regressions pass, including persistent text/cooldown while danger continues;
+syntax/diff pass. Live HUD recognition and movement acceptance remain open.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.

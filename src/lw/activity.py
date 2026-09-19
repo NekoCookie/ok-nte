@@ -313,7 +313,7 @@ class ActivityController:
             return False
         now = time.monotonic()
         if now < self.next_text_scan:
-            return self.text_waiting
+            return False
         self.next_text_scan = now + 0.4
         boxes = self.task.ocr(frame=frame, threshold=.8)
         scale = 1
@@ -328,18 +328,21 @@ class ActivityController:
         if index is None:
             return False
         if now < self.next_text_click:
-            self.report("已命中文字, 等待点击间隔")
-            return True
+            return False
         box = boxes[index]
+        matched = next(word.strip() for word in re.split(r"[/,\uFF0C\n]", priority)
+                       if len(re.sub(r"\s+", "", word)) >= 2
+                       and re.sub(r"\s+", "", word) in re.sub(r"\s+", "", box.name))
         x, y = (box.x + box.width / 2) / scale, (box.y + box.height / 2) / scale
         if (not self.running or not self.available()
                 or time.monotonic() - now > 2
                 or not (0 <= x < frame.shape[1] and 0 <= y < frame.shape[0])):
-            return True
+            return False
         result = self.task.executor.interaction.click(x=round(x), y=round(y))
         self.next_text_click = time.monotonic() + (2 if result is not False else .5)
-        self.report("已点击优先文字" if result is not False else "文字点击被拦截, 等待重试")
-        return True
+        self.report(f"已点击配置词: {matched}" if result is not False
+                    else f"配置词点击被拦截: {matched}")
+        return result is not False
 
     def tick(self):
         task = self.task
@@ -354,9 +357,6 @@ class ActivityController:
         if abs(width / height - 16 / 9) > 0.04:
             self.stop("仅支持16:9画面, 已停止")
             return
-        if self.click_configured_text(frame):
-            self.last_scene_seen = float("-inf")
-            return
         # Require activity-specific HUD on this frame, not a cached scene assumption.
         if time.monotonic() - self.last_scene_seen >= 0.25:
             hud = self.text(frame, (0.84, 0.24, 0.995, 0.34), threshold=0.6)
@@ -365,7 +365,8 @@ class ActivityController:
                 self.last_scene_seen = time.monotonic()
         if time.monotonic() - self.last_scene_seen > 0.6:
             self.previous = ()
-            self.report("未识别到轨外回响界面, 暂不移动")
+            if not self.click_configured_text(frame):
+                self.report("未识别到轨外回响界面, 暂不移动")
             return
         foot = (round(float(task.config.get(FOOT_X, 0.5)) * 960),
                 round(float(task.config.get(FOOT_Y, 0.565)) * 540))
@@ -386,6 +387,8 @@ class ActivityController:
             self.report("脚下危险但未找到安全出口" if mask[foot[1], foot[0]]
                         else "确认脱离中" if self.safe_frames < 2
                         else "监测中, 脚下未发现红区")
+            if not mask[foot[1], foot[0]] and self.click_configured_text(frame):
+                self.last_scene_seen = float("-inf")
             return
         self.safe_frames = 0
         self.previous = keys
