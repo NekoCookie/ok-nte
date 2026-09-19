@@ -3,6 +3,7 @@
 import math
 import random
 import re
+import sys
 import time
 
 import cv2
@@ -204,6 +205,29 @@ class ActivityController:
         self.next_text_click = 0.0
         self.text_waiting = False
         self.unmatched_cards_since = None
+        self.observed_pause = False
+
+    def install_pause_diagnostics(self):
+        """Observe framework events synchronously to retain the caller, without patching it."""
+        from ok.gui.Communicate import communicate
+        from PySide6.QtCore import Qt
+
+        def on_pause(paused):
+            if not self.task.config.get(ENABLE, False):
+                return
+            frame = sys._getframe(1)
+            callers = []
+            for _ in range(5):
+                if frame is None:
+                    break
+                callers.append(f"{frame.f_globals.get('__name__', '')}.{frame.f_code.co_name}")
+                frame = frame.f_back
+            self.task.log_info(
+                f"活动执行器状态: {'暂停' if paused else '恢复'}, 来源={' <- '.join(callers)}"
+            )
+
+        communicate.executor_paused.connect(on_pause, Qt.ConnectionType.DirectConnection)
+        self._pause_observer = on_pause
 
     def report(self, message, notify=False):
         """Expose state without logging OCR contents or flooding the log."""
@@ -279,10 +303,20 @@ class ActivityController:
                 self.dodge_count = 0
                 self.next_dodge = 0.0
                 self.next_tick = 0.0
-                self.report("已启动, 等待识别活动画面", notify=True)
+                self.report("已启用, 程序总暂停中, 请先恢复程序运行"
+                            if task.executor.paused else "已启动, 等待识别活动画面", notify=True)
+                self.observed_pause = bool(task.executor.paused)
             return True
         if not self.running:
             return down
+        paused = bool(task.executor.paused)
+        if paused != self.observed_pause:
+            self.observed_pause = paused
+            self.last_scene_seen = float("-inf")
+            self.unmatched_cards_since = None
+            self.next_text_scan = 0.0
+            self.report("程序总暂停, 活动等待恢复" if paused
+                        else "程序已恢复, 活动重新识别画面", notify=True)
         return True
 
     def process(self):
@@ -301,7 +335,15 @@ class ActivityController:
         try:
             self.tick()
         except Exception as error:
-            self.stop(f"异常停止: {type(error).__name__}")
+            from ok.task.exceptions import CaptureException
+
+            if isinstance(error, CaptureException):
+                self.last_scene_seen = float("-inf")
+                self.unmatched_cards_since = None
+                self.next_tick = time.monotonic() + 0.5
+                self.report("截图异常, 暂停输入并等待恢复")
+            else:
+                self.stop(f"异常停止: {type(error).__name__}")
         return True
 
     def text(self, frame, rect, threshold=0.8):

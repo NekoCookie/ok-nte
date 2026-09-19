@@ -174,5 +174,12 @@ selection after 10 seconds without a configured match; other pages never random-
 Both text and fallback clicks use framework move_back=True. 55 focused tests pass;
 live cursor restoration/full suite pending.
 
+Final diagnostic pass: independent hotkey poll observes pause/resume and notifies even
+when executor OCR waits inside framework pause. Synchronous executor-paused signal records
+caller module/function chain without paths or locals; global pause is never auto-resumed.
+CaptureException retries without input. Settlement screenshot OCR selects return button
+under user's configured ordering. 58 focused and 855 full-suite tests pass, syntax/diff pass.
+Historical tests above remain historical; live complete-loop/cursor/dodge acceptance open.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.

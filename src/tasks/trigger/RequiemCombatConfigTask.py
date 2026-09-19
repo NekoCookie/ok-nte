@@ -724,6 +724,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
 
     def run(self):
         if not self._submitted:
+            if not hasattr(self._activity, "_pause_observer"):  # [lw] Bind once per task.
+                self._activity.install_pause_diagnostics()
             self._submitted = True
             self.submit_periodic_task(self.CHECK_INTERVAL, self._loop)
         # [lw] Vision/input runs on the executor, not against its trigger scheduler.

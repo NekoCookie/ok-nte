@@ -14,6 +14,44 @@ from src.lw.activity import (
 
 
 class TestActivity(unittest.TestCase):
+    def test_pause_and_resume_are_visible_without_overriding_global_pause(self):
+        controller, task = self.make_controller()
+        controller.poll()
+        task.executor.paused = True
+        task._is_key_pressed.return_value = True
+        controller.poll()
+        self.assertTrue(controller.running)
+        self.assertTrue(controller.observed_pause)
+        task.executor.start.assert_not_called()
+        task._is_key_pressed.return_value = False
+        controller.poll()
+        task.executor.paused = False
+        controller.poll()
+        self.assertFalse(controller.observed_pause)
+        self.assertTrue(task.log_info.call_args.kwargs["notify"])
+
+    def test_pause_event_logs_source_without_mutating_executor(self):
+        from ok.gui.Communicate import communicate
+
+        controller, task = self.make_controller()
+        controller.install_pause_diagnostics()
+        try:
+            communicate.executor_paused.emit(True)
+            task.log_info.assert_called_once()
+            task.executor.start.assert_not_called()
+        finally:
+            communicate.executor_paused.disconnect(controller._pause_observer)
+
+    def test_capture_exception_keeps_activity_armed_for_retry(self):
+        from ok.task.exceptions import CaptureException
+
+        controller, task = self.make_controller()
+        controller.running = True
+        with patch.object(controller, "tick", side_effect=CaptureException("test")):
+            controller.process()
+        self.assertTrue(controller.running)
+        task.executor.interaction.click.assert_not_called()
+
     def test_unmatched_cards_random_after_ten_seconds_and_restore_mouse(self):
         controller, task = self.make_controller()
         controller.running = True
