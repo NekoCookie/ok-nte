@@ -68,6 +68,27 @@ def select_card(texts, priority):
     return None
 
 
+def replacement_levels(boxes, width, height):
+    """Require all six slot levels; unknown/conflicting OCR must never mean level zero."""
+    levels = {}
+    for box in boxes:
+        match = re.fullmatch(r"LV[.:：]?(\d+)", re.sub(r"\s+", "", box.name).upper())
+        if not match:
+            continue
+        x = (box.x + box.width / 2) / width
+        y = (box.y + box.height / 2) / height
+        if not .585 <= y <= .635:
+            continue
+        slot = round((x - .316) / (1 / 12))
+        if not 0 <= slot < 6 or abs(x - (.316 + slot / 12)) > .035:
+            continue
+        value = int(match[1])
+        if value < 1 or (slot in levels and levels[slot] != value):
+            return None
+        levels[slot] = value
+    return tuple(levels[i] for i in range(6)) if len(levels) == 6 else None
+
+
 
 
 def oversized_boss_ellipse(frame, foot=(480, 305)):
@@ -290,6 +311,8 @@ class ActivityController:
         self.text_waiting = False
         self.unmatched_cards_since = None
         self.observed_pause = False
+        self.replacement_pending = None
+        self.replacement_confirm_at = 0.0
 
     def install_pause_diagnostics(self):
         """Observe framework events synchronously to retain the caller, without patching it."""
@@ -325,6 +348,7 @@ class ActivityController:
             self.last_status_log = now
 
     def stop(self, reason="已停止"):
+        self.replacement_pending = None
         was_running = self.running
         self.running = False
         self.previous = ()
@@ -396,6 +420,7 @@ class ActivityController:
             return down
         paused = bool(task.executor.paused)
         if paused != self.observed_pause:
+            self.replacement_pending = None
             self.observed_pause = paused
             self.last_scene_seen = float("-inf")
             self.unmatched_cards_since = None
@@ -443,6 +468,14 @@ class ActivityController:
             return False
         self.next_text_scan = now + 0.4
         boxes = self.task.ocr(frame=frame, threshold=.8)
+        replacement_page = any(
+            "选择要替换的技能" in re.sub(r"\s+", "", box.name)
+            and .37 <= box.y / frame.shape[0] <= .46 for box in boxes
+        )
+        if replacement_page:
+            self.unmatched_cards_since = None
+            return self.replace_skill(frame, boxes, now)
+        self.replacement_pending = None
         card_page = any(
             "选取卡牌" in re.sub(r"\s+", "", box.name)
             and box.y < frame.shape[0] * .25 for box in boxes
@@ -499,6 +532,56 @@ class ActivityController:
         self.report(f"已点击配置词: {matched}" if result is not False
                     else f"配置词点击被拦截: {matched}")
         return result is not False
+
+    def replace_skill(self, frame, boxes, captured_at):
+        """Two fresh-frame steps, then retry the icon/confirm cycle after two seconds."""
+        height, width = frame.shape[:2]
+        levels = replacement_levels(boxes, width, height)
+        if levels is None:
+            self.report("技能替换等级未读全, 等待重新识别")
+            return True
+        slot = min(range(6), key=lambda i: (levels[i], -i))
+        signature = (levels, slot)
+        if self.replacement_pending != signature:
+            self.replacement_pending = None
+        now = time.monotonic()
+        if not self.running or not self.available() or now - captured_at > 2:
+            return True
+        if self.replacement_pending is None:
+            if now < self.next_text_click:
+                return True
+            result = self.task.executor.interaction.click(
+                x=round((.316 + slot / 12) * width), y=round(.55 * height), move_back=True,
+            )
+            self.next_text_click = time.monotonic() + 2
+            if result is not False:
+                self.replacement_pending = signature
+                self.replacement_confirm_at = time.monotonic() + .25
+                self.report(f"已点选替换技能: 第{slot + 1}个, Lv.{levels[slot]}, 等待确认")
+            else:
+                self.report("替换技能点选被拦截, 2秒后重试")
+            return True
+        if now < self.replacement_confirm_at:
+            return True
+        confirm = next((box for box in boxes
+                        if re.sub(r"\s+", "", box.name) in ("确认", "确定")
+                        and .50 <= (box.x + box.width / 2) / width <= .70
+                        and .70 <= (box.y + box.height / 2) / height <= .80), None)
+        if confirm is None:
+            self.report("技能已点选, 等待识别替换确认按钮")
+            return True
+        result = self.task.executor.interaction.click(
+            x=round(confirm.x + confirm.width / 2),
+            y=round(confirm.y + confirm.height / 2), move_back=True,
+        )
+        self.next_text_click = time.monotonic() + 2
+        self.replacement_confirm_at = self.next_text_click
+        if result is not False:
+            self.replacement_pending = None
+            self.report("已发送技能替换确认, 若仍停留则2秒后重新点选并确认")
+        else:
+            self.report("替换确认被拦截, 2秒后重试")
+        return True
 
     def tick(self):
         task = self.task

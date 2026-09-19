@@ -14,6 +14,81 @@ from src.lw.activity import (
 
 
 class TestActivity(unittest.TestCase):
+    @staticmethod
+    def replacement_boxes(levels=(9, 10, 4, 9, 1, 1)):
+        boxes = [SimpleNamespace(name="选择要替换的技能", y=220),
+                 SimpleNamespace(name="确认", x=550, y=395, width=40, height=20)]
+        for index, level in enumerate(levels):
+            if level is not None:
+                boxes.append(SimpleNamespace(name=f"Lv. {level}",
+                                             x=(.316 + index / 12) * 960 - 15,
+                                             y=320, width=30, height=18))
+        return boxes
+
+    def test_replacement_selects_rightmost_lowest_then_confirms_and_retries(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.config[PRIORITY] = "确认"  # Generic OCR must not skip icon selection.
+        task.ocr.return_value = self.replacement_boxes()
+        frame = np.zeros((540, 960, 3), np.uint8)
+        with patch("src.lw.activity.time.monotonic", return_value=100) as clock:
+            controller.click_configured_text(frame)
+            click = task.executor.interaction.click
+            self.assertEqual(click.call_args.kwargs,
+                             dict(x=703, y=297, move_back=True))
+            clock.return_value = 100.5
+            controller.click_configured_text(frame)
+            self.assertEqual(click.call_args.kwargs,
+                             dict(x=570, y=405, move_back=True))
+            clock.return_value = 102.4
+            controller.click_configured_text(frame)
+            self.assertEqual(click.call_count, 2)
+            clock.return_value = 102.9
+            controller.click_configured_text(frame)
+            self.assertEqual(click.call_count, 3)
+            self.assertEqual(click.call_args.kwargs["x"], 703)
+
+    def test_replacement_uses_unique_lowest_and_waits_for_all_levels(self):
+        for levels, expected in (((9, 10, 1, 9, 4, 4), 463),
+                                 ((9, 10, None, 9, 1, 1), None)):
+            controller, task = self.make_controller()
+            controller.running = True
+            task.ocr.return_value = self.replacement_boxes(levels)
+            controller.click_configured_text(np.zeros((540, 960, 3), np.uint8))
+            if expected is None:
+                task.executor.interaction.click.assert_not_called()
+            else:
+                self.assertEqual(task.executor.interaction.click.call_args.kwargs["x"], expected)
+
+    def test_replacement_failed_selection_never_confirms_and_stop_clears_pending(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.ocr.return_value = self.replacement_boxes()
+        task.executor.interaction.click.return_value = False
+        frame = np.zeros((540, 960, 3), np.uint8)
+        with patch("src.lw.activity.time.monotonic", return_value=100) as clock:
+            controller.click_configured_text(frame)
+            clock.return_value = 100.5
+            controller.click_configured_text(frame)
+        task.executor.interaction.click.assert_called_once()
+        self.assertIsNone(controller.replacement_pending)
+        controller.replacement_pending = ((1,) * 6, 5)
+        controller.stop()
+        self.assertIsNone(controller.replacement_pending)
+
+    def test_replacement_popup_disappearance_cancels_confirmation(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        frame = np.zeros((540, 960, 3), np.uint8)
+        with patch("src.lw.activity.time.monotonic", return_value=100) as clock:
+            task.ocr.return_value = self.replacement_boxes()
+            controller.click_configured_text(frame)
+            clock.return_value = 100.5
+            task.ocr.return_value = []
+            controller.click_configured_text(frame)
+        self.assertIsNone(controller.replacement_pending)
+        task.executor.interaction.click.assert_called_once()
+
     def test_medium_boss_ring_clipped_at_bottom_triggers_directional_dodge(self):
         from src.lw.activity import oversized_boss_ellipse
 

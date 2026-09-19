@@ -213,5 +213,14 @@ tests pass including a bottom-clipped medium ring triggering directional dodge. 
 medium, large and oversized screenshots detect; two small-mob samples remain negative.
 Live frame-to-frame detection stability and escape remain open.
 
+Skill replacement: recognized replacement popup preempts generic OCR clicks. All six
+slot levels must parse without conflict; choose lowest level, ties rightmost. Click icon,
+then confirm only from a fresh popup frame; retry remaining popup two seconds after last
+click. Unknown levels do not imply zero; rejected icon clicks never advance to confirm.
+Stop/pause/popup disappearance clear pending selection. All clicks retain cursor restore.
+70 focused tests pass; actual screenshot OCR reads 9/10/4/9/1/1 and selects slot six.
+867 full-suite tests and syntax/diff checks pass for both follow-ups.
+Live selection/confirmation remains open.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.
