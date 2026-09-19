@@ -345,7 +345,7 @@ class ActivityController:
         return " ".join(box.name for box in boxes)
 
     def click_configured_text(self, frame):
-        """One OCR rule on any page; click actual detected text, not fixed card slots."""
+        """Match OCR anywhere; card attributes select the card's clickable upper area."""
         priority = str(self.task.config.get(PRIORITY, ""))
         now = time.monotonic()
         if now < self.next_text_scan:
@@ -391,6 +391,14 @@ class ActivityController:
                        if len(re.sub(r"\s+", "", word)) >= 2
                        and re.sub(r"\s+", "", word) in re.sub(r"\s+", "", box.name))
         x, y = (box.x + box.width / 2) / scale, (box.y + box.height / 2) / scale
+        if card_page and .245 <= y / frame.shape[0] <= .75:
+            # Attribute panels consume clicks without selecting the card. Remap only
+            # text inside a card, never menu controls such as refresh/lock/remove.
+            for left, right in ((.18, .37), (.405, .60), (.63, .825)):
+                if left <= x / frame.shape[1] <= right:
+                    x = (left + right) / 2 * frame.shape[1]
+                    y = .40 * frame.shape[0]
+                    break
         if (not self.running or not self.available()
                 or time.monotonic() - now > 2
                 or not (0 <= x < frame.shape[1] and 0 <= y < frame.shape[0])):

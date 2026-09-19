@@ -188,5 +188,12 @@ Diagonal dodges increment both involved directions once; normal movement adds no
 59 focused and 856 full-suite regressions pass, including independent counts, combined balance and safety
 priority. Live map-centering remains unverified; this is not world-coordinate tracking.
 
+Card hit-target correction: OCR matches in a recognized card's bounds map to its upper
+clickable area instead of the non-selecting black attribute panel. Other pages and
+peripheral card controls retain OCR-center clicks and move_back=True. 61 focused tests
+pass, including all three slots at 1080p/1440p/2160p and doubled OCR coordinates.
+858 full-suite tests and syntax/diff checks pass. Actual game selection remains pending
+live verification.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.

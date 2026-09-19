@@ -14,6 +14,38 @@ from src.lw.activity import (
 
 
 class TestActivity(unittest.TestCase):
+    def test_card_attribute_click_targets_upper_card_at_supported_resolutions(self):
+        for width, height in ((1920, 1080), (2560, 1440), (3840, 2160)):
+            for center in (.275, .505, .73):
+                for scaled in (False, True):
+                    with self.subTest(width=width, center=center, scaled=scaled):
+                        controller, task = self.make_controller()
+                        controller.running = True
+                        task.config[PRIORITY] = "定时回复生命"
+                        title = SimpleNamespace(name="选取卡牌", y=.16 * height)
+                        scale = 2 if scaled else 1
+                        attr = SimpleNamespace(name="定时回复生命",
+                                               x=(center - .04) * width * scale,
+                                               y=.63 * height * scale,
+                                               width=.08 * width * scale,
+                                               height=.02 * height * scale)
+                        task.ocr.side_effect = [[title], [attr]] if scaled else [[title, attr]]
+                        controller.click_configured_text(np.zeros((height, width, 3), np.uint8))
+                        click = task.executor.interaction.click.call_args.kwargs
+                        self.assertLess(abs(click["x"] / width - center), .005)
+                        self.assertEqual(click["y"], round(.4 * height))
+                        self.assertTrue(click["move_back"])
+
+    def test_card_page_controls_keep_actual_text_coordinates(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.config[PRIORITY] = "刷新"
+        task.ocr.return_value = [SimpleNamespace(name="选取卡牌", y=80),
+                                SimpleNamespace(name="刷新", x=840, y=470,
+                                                width=60, height=30)]
+        controller.click_configured_text(np.zeros((540, 960, 3), np.uint8))
+        task.executor.interaction.click.assert_called_once_with(x=870, y=485, move_back=True)
+
     def test_pause_and_resume_are_visible_without_overriding_global_pause(self):
         controller, task = self.make_controller()
         controller.poll()
