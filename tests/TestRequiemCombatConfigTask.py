@@ -176,6 +176,20 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             ],
         )
 
+    def test_activity_is_polled_before_manual_master_gate(self):
+        task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
+        task._enabled = True
+        task.config = {task.CONF_MANUAL_KEY_TRIGGERS: False}
+        task._activity = mock.MagicMock()
+        task._activity.poll.return_value = True
+        task._poll_manual_key_triggers = mock.MagicMock()
+        task._poll_gamepad_test = mock.MagicMock()
+
+        self.assertTrue(task._loop())
+        task._activity.poll.assert_called_once_with()
+        task._poll_manual_key_triggers.assert_not_called()
+        task._poll_gamepad_test.assert_not_called()
+
     def test_disabled_manual_key_switch_does_not_poll_any_manual_trigger(self):
         task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
         task.config = {task.CONF_MANUAL_KEY_TRIGGERS: False}
@@ -198,7 +212,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         ):
             poller.assert_not_called()
         self.assertFalse(task._manual_key_triggers_armed)
-        task._activity.stop.assert_called_once_with()
+        task._activity.stop.assert_not_called()
         task._activity.poll.assert_not_called()
 
     def test_enabled_manual_key_switch_polls_all_manual_trigger_handlers(self):

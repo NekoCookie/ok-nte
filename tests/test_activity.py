@@ -84,10 +84,19 @@ class TestActivity(unittest.TestCase):
             controller.poll()
             self.assertFalse(controller.running)
 
-    def test_master_switch_stops_activity_even_in_background(self):
+    def test_activity_starts_with_manual_master_disabled_in_background(self):
+        controller, task = self.make_controller()
+        task._manual_key_triggers_enabled.return_value = False
+        controller.poll()
+        task._is_key_pressed.return_value = True
+        self.assertTrue(controller.poll())
+        self.assertTrue(controller.running)
+        task._manual_key_triggers_enabled.assert_not_called()
+
+    def test_activity_switch_stops_activity_in_background(self):
         controller, task = self.make_controller()
         controller.running = True
-        task._manual_key_triggers_enabled.return_value = False
+        task.config[ENABLE] = False
         self.assertFalse(controller.poll())
         self.assertFalse(controller.running)
         task.executor.method.get_frame.assert_not_called()
@@ -109,10 +118,10 @@ class TestActivity(unittest.TestCase):
             controller.pulse(("w", "a"))
         self.assertEqual(task.executor.interaction.send_key_up.call_count, 2)
 
-    def test_background_pulse_interrupts_when_master_is_disabled(self):
+    def test_background_pulse_interrupts_when_activity_is_disabled(self):
         controller, task = self.make_controller()
         task.executor.interaction.send_key_down.side_effect = (
-            lambda key: setattr(task._manual_key_triggers_enabled, "return_value", False)
+            lambda key: task.config.update({ENABLE: False})
         )
         controller.pulse(("w", "a"))
         task.executor.interaction.send_key_down.assert_called_once_with("w")

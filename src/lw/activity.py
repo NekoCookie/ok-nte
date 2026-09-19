@@ -26,7 +26,7 @@ def configure_activity(task):
     }
     task.config_description.update({
         GROUP: "展开活动独立配置, 不影响其他配置大项",
-        ENABLE: "实验功能, 默认关闭; 受启用手动触发按键总开关控制, 复用方案输入方式",
+        ENABLE: "实验功能, 默认关闭; 独立控制活动热键, 不受手动触发总开关影响; 复用方案输入方式",
         HOTKEY: "按一下启动, 再按一下停止; 支持5、mouse4、mouse5; 不要与其他宏重复",
         PRIORITY: "按优先顺序填写卡牌名称, 用英文逗号分隔; 空白或未匹配时等待手选, 不随机选卡",
         FOOT_X: "固定跟随镜头的角色脚底横坐标/画面宽度; 默认0.5, 镜头变化需重新校准",
@@ -141,7 +141,6 @@ class ActivityController:
         task = self.task
         background = task.config.get(task.CONF_INPUT_MODE) == task.INPUT_BG
         return (task.enabled and task.config.get(ENABLE, False)
-                and task._manual_key_triggers_enabled()
                 and not task.executor.paused and not task.executor.exit_event.is_set()
                 and (background or task.is_foreground())
                 and task.executor.current_task in (None, task))

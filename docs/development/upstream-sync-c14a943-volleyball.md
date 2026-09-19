@@ -93,11 +93,12 @@ removed by I-04; no user screenshot or local runtime artifact is committed.
 
 Status: open; independent LW activity implementation, not another upstream merge.
 Existing B/L/U/M evidence above is unchanged. `RequiemCombatConfigTask` only wires
-the activity controller and configuration into the existing manual-key gate.
+the activity controller and configuration before the existing manual-key gate.
+The activity enable switch is independent of the manual-key master, per the revised user request.
 
 | Behavior | Contract and side effects | Regression | Manual acceptance | Status |
 | --- | --- | --- | --- | --- |
-| Activity group and toggle | Top-level group, default off; 5/mouse4/mouse5 press edge toggles; master off stops | `tests.test_activity`, `tests.TestRequiemCombatConfigTask` | Toggle in background and disable master; no further input within 200ms | automated passed; live pending |
+| Activity group and toggle | Top-level group, default off; 5/mouse4/mouse5 press edge toggles; independent of manual master; activity off stops | `tests.test_activity`, `tests.TestRequiemCombatConfigTask` | Toggle in background with manual master off; disable activity and confirm no further input within 200ms | automated passed; live pending |
 | Red warning escape | Bounded WASD via existing background interaction or foreground hardware; release on exceptions; unknown scene cannot move | `tests.test_activity` | 10 circles and 10 strips, exit all overlaps; calibrate fixed-camera foot position | automated and two supplied screenshots passed; live pending |
 | OCR cards | Explicit configured priority; two stable reads and single click; empty/unknown never random | `tests.test_activity` | Verify OCR and one click per popup; no accidental refresh | automated passed; live and sourced preset pending |
 
