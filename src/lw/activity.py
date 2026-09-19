@@ -45,9 +45,9 @@ def configure_activity(task):
         GROUP: "展开活动独立配置, 不影响其他配置大项",
         ENABLE: "实验功能, 默认关闭; 独立控制活动热键, 不受手动触发总开关影响; 复用方案输入方式",
         HOTKEY: "按一下启动, 再按一下停止; 支持5、mouse4、mouse5; 不要与其他宏重复",
-        PRIORITY: "按优先顺序填写卡牌名称, 用英文逗号分隔; 空白或未匹配时等待手选, 不随机选卡",
-        FOOT_X: "固定跟随镜头的角色脚底横坐标/画面宽度; 默认0.5, 镜头变化需重新校准",
-        FOOT_Y: "固定跟随镜头的角色脚底纵坐标/画面高度; 默认0.565, 不是人物中心",
+        PRIORITY: "从左到右优先, 支持/、逗号和换行; 可填写传说能力; 空白或未匹配时等待手选",
+        FOOT_X: "角色脚底横坐标/画面宽度, 默认0.5; 不是地图中心; 镜头变化需校准",
+        FOOT_Y: "角色脚底纵坐标/画面高度, 默认0.565; 不是地图中心或人物身体中心",
         MOVE_SECONDS: "每次移动按住多久, 默认0.2秒; 范围0.05~1.0秒; 越长位移越大但重新识别越慢; 可随时按热键停止",
     })
 
@@ -57,7 +57,7 @@ def select_card(texts, priority):
     def normalize(text):
         return re.sub(r"\s+", "", text)
 
-    names = [normalize(s) for s in re.split(r"[,\uFF0C\n]", priority) if s.strip()]
+    names = [normalize(s) for s in re.split(r"[/,\uFF0C\n]", priority) if s.strip()]
     for name in names:
         if len(name) < 2:
             continue
@@ -113,7 +113,7 @@ DIRECTIONS = (
 )
 
 
-def escape_keys(mask, foot, previous=()):
+def escape_keys(mask, foot, previous=(), drift=(0.0, 0.0)):
     x, y = foot
     if not (0 <= x < 960 and 0 <= y < 540) or not mask[y, x]:
         return ()
@@ -127,9 +127,17 @@ def escape_keys(mask, foot, previous=()):
                 break
             safe_run = safe_run + 1 if mask[py, px] == 0 else 0
             if safe_run >= 22:
-                candidates.append((distance + (0 if keys == previous else 8), keys))
+                candidates.append((distance, keys, (dx / length, dy / length)))
                 break
-    return min(candidates, default=(0, ()))[1]
+    if not candidates:
+        return ()
+    shortest = min(item[0] for item in candidates)
+    # Safety first: only bias comparably short exits toward the starting position.
+    near = [item for item in candidates if item[0] <= shortest + 12]
+    return min(near, key=lambda item: (
+        item[0] + (0 if item[1] == previous else 4)
+        + max(-12, min(12, 8 * (drift[0] * item[2][0] + drift[1] * item[2][1])))
+    ))[1]
 
 
 class ActivityController:
@@ -150,6 +158,9 @@ class ActivityController:
         self.last_status_log = 0.0
         self.last_scene_seen = float("-inf")
         self.safe_frames = 0
+        self.direction_seconds = dict.fromkeys(("w", "a", "s", "d"), 0.0)
+        self.drift = [0.0, 0.0]
+        self.next_motion_summary = 0.0
 
     def report(self, message, notify=False):
         """Expose state without logging OCR contents or flooding the log."""
@@ -220,6 +231,8 @@ class ActivityController:
                 self.stop()
             else:
                 self.running = True
+                self.direction_seconds = dict.fromkeys(("w", "a", "s", "d"), 0.0)
+                self.drift = [0.0, 0.0]
                 self.next_tick = 0.0
                 self.report("已启动, 等待识别活动画面", notify=True)
             return True
@@ -273,8 +286,21 @@ class ActivityController:
                 return
             texts = [self.text(frame, (left, 0.25, left + 0.19, 0.74))
                      for left in (0.18, 0.41, 0.635)]
+            # Rarity text is small and colored; inspect its own OCR region.
+            for index, left in enumerate((0.18, 0.41, 0.635)):
+                if ("传说" in str(task.config.get(PRIORITY, ""))
+                        and "传说能力" not in re.sub(r"\s+", "", texts[index])):
+                    rarity = self.text(frame, (left + 0.125, 0.34, left + 0.187, 0.38),
+                                       threshold=0.7)
+                    if "传说能力" in re.sub(r"\s+", "", rarity):
+                        texts[index] += " 传说能力"
             index = select_card(texts, str(task.config.get(PRIORITY, "")))
-            candidate = (index, tuple(re.sub(r"\s+", "", text) for text in texts))
+            priority = str(task.config.get(PRIORITY, ""))
+            matched = next((word.strip() for word in re.split(r"[/,\uFF0C\n]", priority)
+                            if index is not None and len(word.strip()) >= 2
+                            and re.sub(r"\s+", "", word) in
+                            re.sub(r"\s+", "", texts[index])), None)
+            candidate = (index, matched, priority)
             if (index is not None and candidate == self.card_candidate
                     and self.running and self.available()
                     and time.monotonic() - captured_at < 2):
@@ -292,10 +318,11 @@ class ActivityController:
             return
         self.card_candidate = None
         # Require activity-specific HUD on this frame, not a cached scene assumption.
-        hud = self.text(frame, (0.84, 0.24, 0.995, 0.34), threshold=0.6)
-        hud = re.sub(r"\s+", "", hud).upper()
-        if "轨外回响" in hud or ("轨外" in hud and "BOSS" in hud):
-            self.last_scene_seen = time.monotonic()
+        if time.monotonic() - self.last_scene_seen >= 0.25:
+            hud = self.text(frame, (0.84, 0.24, 0.995, 0.34), threshold=0.6)
+            hud = re.sub(r"\s+", "", hud).upper()
+            if "轨外回响" in hud or ("轨外" in hud and "BOSS" in hud):
+                self.last_scene_seen = time.monotonic()
         if time.monotonic() - self.last_scene_seen > 0.6:
             self.previous = ()
             self.report("未识别到轨外回响界面, 暂不移动")
@@ -309,7 +336,7 @@ class ActivityController:
             self.stop("脚底坐标不在识别范围内, 请重新校准")
             return
         mask = danger_mask(frame)
-        keys = escape_keys(mask, foot, self.previous)
+        keys = escape_keys(mask, foot, self.previous, self.drift)
         if time.monotonic() - captured_at > 0.5:
             self.previous = ()
             self.report("识别耗时超过500ms, 已丢弃旧画面移动指令")
@@ -332,15 +359,18 @@ class ActivityController:
             self.stop("持续未脱离危险区, 已停止, 请检查位置或障碍")
             return
         self.report(f"躲避红区: {'+'.join(keys).upper()}")
-        self.pulse(keys)
+        clearance = cv2.distanceTransform(mask, cv2.DIST_L2, 5)[foot[1], foot[0]]
+        self.pulse(keys, sprint=clearance >= 45)
 
-    def pulse(self, keys):
+    def pulse(self, keys, sprint=False):
         import win32api
         import win32con
 
         interaction = self.task.executor.interaction
         background = self.task.config.get(self.task.CONF_INPUT_MODE) == self.task.INPUT_BG
         held = []
+        started = {}
+        right_down = False
         try:
             for key in keys:
                 if not self.running or not self.available():
@@ -350,10 +380,32 @@ class ActivityController:
                     interaction.send_key_down(key)
                 else:
                     win32api.keybd_event(self.task._get_vk_code(key), 0, 0, 0)
+                started[key] = time.monotonic()
+            if sprint and self.running and self.available():
+                right_down = True
+                if background:
+                    interaction.mouse_down(key="right")
+                else:
+                    win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
             deadline = time.monotonic() + movement_seconds(self.task.config)
             while time.monotonic() < deadline and self.running and self.available():
                 time.sleep(0.01)
         finally:
+            if right_down:
+                try:
+                    if background:
+                        interaction.mouse_up(key="right")
+                    else:
+                        win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
+                except Exception as error:
+                    self.stop(f"右键释放失败: {type(error).__name__}")
+            ended = time.monotonic()
+            for key, start in started.items():
+                elapsed = max(0.0, ended - start)
+                self.direction_seconds[key] += elapsed
+                amount = elapsed / math.sqrt(max(1, len(started)))
+                self.drift[0] += amount * ((key == "d") - (key == "a"))
+                self.drift[1] += amount * ((key == "s") - (key == "w"))
             for key in reversed(held):
                 try:
                     if background:
@@ -365,3 +417,9 @@ class ActivityController:
                 except Exception as error:
                     self.stop()
                     self.task.log_info(f"活动移动松键失败: {type(error).__name__}")
+            if started and ended >= self.next_motion_summary:
+                summary = ", ".join(f"{key.upper()}={value:.2f}s"
+                                    for key, value in self.direction_seconds.items())
+                self.task.info_set("活动累计移动", summary)
+                self.task.log_info(f"活动累计移动: {summary}")
+                self.next_motion_summary = ended + 5

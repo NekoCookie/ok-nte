@@ -14,6 +14,38 @@ from src.lw.activity import (
 
 
 class TestActivity(unittest.TestCase):
+    def test_slash_priorities_preserve_user_order(self):
+        texts = ["生命值", "传说能力", "移速"]
+        self.assertEqual(select_card(texts, "传说能力/生命值/移速"), 1)
+        self.assertEqual(select_card(texts, "移速/传说能力"), 2)
+
+    def test_drift_bias_returns_toward_origin_only_for_near_exits(self):
+        mask = np.zeros((540, 960), np.uint8)
+        cv2.circle(mask, (480, 300), 60, 255, -1)
+        self.assertEqual(escape_keys(mask, (480, 300), drift=(3, 0)), ("a",))
+
+    def test_sprint_releases_right_mouse_even_when_wait_fails(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        with patch("src.lw.activity.time.sleep", side_effect=RuntimeError("test")):
+            with self.assertRaises(RuntimeError):
+                controller.pulse(("a",), sprint=True)
+        task.executor.interaction.mouse_down.assert_called_once_with(key="right")
+        task.executor.interaction.mouse_up.assert_called_once_with(key="right")
+        task.executor.interaction.send_key_up.assert_called_once_with("a")
+
+    def test_card_decorative_ocr_changes_do_not_block_same_choice(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.config[PRIORITY] = "传说能力/卡牌甲"
+        with patch.object(controller, "text", side_effect=[
+            "选取卡牌", "卡牌甲", "卡牌乙", "传说能力 INFO", "", "",
+            "选取卡牌", "卡牌甲", "卡牌乙", "传说能力 INF0", "", "",
+        ]):
+            controller.tick()
+            controller.tick()
+        task.executor.interaction.click.assert_called_once_with(x=1402, y=432)
+
     def test_move_duration_is_configurable_and_bounded(self):
         from src.lw.activity import movement_seconds
 

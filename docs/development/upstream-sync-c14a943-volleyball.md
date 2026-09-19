@@ -125,5 +125,13 @@ clamped 0.05-1.0s). Invalid values fall back; stop polling and finally-release r
 strip. 39 focused tests pass; live timing and the reported vertical-strip segmentation
 remain open, without claiming this configuration change fixes that visual failure.
 
+Additional activity acceptance: slash-separated card priorities retain order; stable selection
+uses matching preference and slot, with dedicated legendary-rarity OCR. Direction durations
+are aggregated and near-equivalent safe exits bias toward the starting point, not a claimed
+world coordinate. Deep warning areas request right-mouse sprint with finally release in both
+input modes. `tests.test_activity` covers ordering, card OCR variation, inward exit bias and
+sprint error release (43 focused tests total). Supplied screenshot OCR recognizes legendary
+text; live sprint timing, boundary avoidance and continuous movement remain open.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.
