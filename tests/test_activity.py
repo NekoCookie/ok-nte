@@ -14,6 +14,47 @@ from src.lw.activity import (
 
 
 class TestActivity(unittest.TestCase):
+    def test_damage_numbers_label_alone_identifies_both_battle_modes(self):
+        for label in ("伤害跳字: 开", "伤害跳字: 关"):
+            controller, task = self.make_controller()
+            controller.running = True
+            with (patch.object(controller, "text", return_value=label),
+                  patch.object(controller, "click_configured_text") as click):
+                controller.tick()
+            click.assert_not_called()
+            self.assertGreater(controller.last_scene_seen, 0)
+
+    def test_endless_battle_never_clicks_text_even_when_safe(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.config[PRIORITY] = "无尽挑战"
+        with (patch.object(controller, "text", side_effect=["伤害跳字: 开 无尽挑战", "00:52"]),
+              patch.object(controller, "click_configured_text") as click):
+            controller.tick()
+        click.assert_not_called()
+        task.executor.interaction.click.assert_not_called()
+
+    def test_endless_battle_can_move_without_clicking_mode_label(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        mask = np.zeros((540, 960), np.uint8)
+        cv2.circle(mask, (480, 305), 60, 255, -1)
+        with (patch.object(controller, "text", side_effect=["无尽挑战", "00:52"]),
+              patch("src.lw.activity.danger_mask", return_value=mask),
+              patch.object(controller, "click_configured_text") as click,
+              patch.object(controller, "pulse") as pulse):
+            controller.tick()
+        pulse.assert_called_once()
+        click.assert_not_called()
+
+    def test_endless_hud_timer_miss_does_not_turn_into_menu_click(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        with (patch.object(controller, "text", side_effect=["无尽挑战", ""]),
+              patch.object(controller, "click_configured_text") as click):
+            controller.tick()
+        click.assert_not_called()
+
     def test_danger_preempts_persistent_text_and_click_cooldown(self):
         controller, task = self.make_controller()
         controller.running = True

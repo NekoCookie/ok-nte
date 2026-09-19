@@ -164,5 +164,10 @@ not a blocking state. Menus retain generic text clicks. Logs name the configured
 49 focused regressions pass, including persistent text/cooldown while danger continues;
 syntax/diff pass. Live HUD recognition and movement acceptance remain open.
 
+Battle HUD correction: damage-numbers label identifies both modes regardless of on/off.
+OCR area expanded upward to include it; endless label plus timer is fallback. Confirmed
+battle never clicks configured text, even when safe. Supplied endless screenshot recognizes
+the shared label. 53 focused tests, syntax/diff pass; full suite/live input pending.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.

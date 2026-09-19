@@ -359,10 +359,18 @@ class ActivityController:
             return
         # Require activity-specific HUD on this frame, not a cached scene assumption.
         if time.monotonic() - self.last_scene_seen >= 0.25:
-            hud = self.text(frame, (0.84, 0.24, 0.995, 0.34), threshold=0.6)
+            hud = self.text(frame, (0.84, 0.13, 0.995, 0.34), threshold=0.6)
             hud = re.sub(r"\s+", "", hud).upper()
-            if "轨外回响" in hud or ("轨外" in hud and "BOSS" in hud):
+            if ("伤害跳字" in hud or "轨外回响" in hud
+                    or ("轨外" in hud and "BOSS" in hud)):
                 self.last_scene_seen = time.monotonic()
+            elif "无尽挑战" in hud:
+                timer = self.text(frame, (0.44, 0.07, 0.56, 0.13), threshold=0.6)
+                if re.search(r"\d{1,2}[:：]\d{2}", re.sub(r"\s+", "", timer)):
+                    self.last_scene_seen = time.monotonic()
+                else:
+                    self.report("检测到局内标识, 等待计时确认; 禁止文字点击")
+                    return
         if time.monotonic() - self.last_scene_seen > 0.6:
             self.previous = ()
             if not self.click_configured_text(frame):
@@ -387,8 +395,6 @@ class ActivityController:
             self.report("脚下危险但未找到安全出口" if mask[foot[1], foot[0]]
                         else "确认脱离中" if self.safe_frames < 2
                         else "监测中, 脚下未发现红区")
-            if not mask[foot[1], foot[0]] and self.click_configured_text(frame):
-                self.last_scene_seen = float("-inf")
             return
         self.safe_frames = 0
         self.previous = keys
