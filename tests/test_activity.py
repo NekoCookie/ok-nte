@@ -25,14 +25,83 @@ class TestActivity(unittest.TestCase):
         self.assertEqual(escape_keys(mask, (480, 300), drift=(3, 0)), ("a",))
 
     def test_sprint_releases_right_mouse_even_when_wait_fails(self):
+        import win32con
+
         controller, task = self.make_controller()
         controller.running = True
-        with patch("src.lw.activity.time.sleep", side_effect=RuntimeError("test")):
+        now = [0.0]
+        task.executor.interaction.post.side_effect = [RuntimeError("test"), None]
+        with (patch("src.lw.activity.time.monotonic", side_effect=lambda: now[0]),
+              patch("src.lw.activity.time.sleep", side_effect=lambda delay: now.__setitem__(0, now[0] + delay))):
             with self.assertRaises(RuntimeError):
                 controller.pulse(("a",), sprint=True)
-        task.executor.interaction.mouse_down.assert_called_once_with(key="right")
-        task.executor.interaction.mouse_up.assert_called_once_with(key="right")
+        self.assertEqual(task.executor.interaction.post.call_args_list[-1].args[0],
+                         win32con.WM_RBUTTONUP)
         task.executor.interaction.send_key_up.assert_called_once_with("a")
+
+    def test_sprint_holds_direction_before_during_and_after_right_button(self):
+        import win32con
+
+        controller, task = self.make_controller()
+        controller.running = True
+        now, events = [0.0], []
+        interaction = task.executor.interaction
+        interaction.update_mouse_pos.side_effect = lambda *args: events.append(("prepare", now[0]))
+        interaction.send_key_down.side_effect = lambda key: events.append(("down", now[0]))
+        interaction.send_key_up.side_effect = lambda key: events.append(("up", now[0]))
+        interaction.post.side_effect = lambda msg, *args: events.append((msg, now[0]))
+        with (patch("src.lw.activity.time.monotonic", side_effect=lambda: now[0]),
+              patch("src.lw.activity.time.sleep", side_effect=lambda delay: now.__setitem__(0, now[0] + delay))):
+            controller.pulse(("a",), sprint=True)
+        self.assertEqual([event[0] for event in events],
+                         ["prepare", "down", win32con.WM_RBUTTONDOWN,
+                          win32con.WM_RBUTTONUP, "up"])
+        self.assertGreaterEqual(events[2][1] - events[1][1], 0.06)
+        self.assertGreaterEqual(events[4][1] - events[3][1], 0.029)
+
+    def test_consecutive_card_rounds_rearm_without_battle_hud(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.config[PRIORITY] = "卡牌乙"
+        with patch.object(controller, "text", return_value="选取卡牌 卡牌乙"):
+            controller.tick()
+            controller.tick()
+            self.assertEqual(task.executor.interaction.click.call_count, 1)
+            controller.tick()
+            self.assertEqual(task.executor.interaction.click.call_count, 1)
+            task.executor.method.get_frame.return_value = np.full((1080, 1920, 3), 100, np.uint8)
+            controller.tick()
+            self.assertEqual(task.executor.interaction.click.call_count, 1)
+            controller.tick()
+            controller.tick()
+            self.assertEqual(task.executor.interaction.click.call_count, 2)
+            controller.tick()
+            self.assertEqual(task.executor.interaction.click.call_count, 2)
+
+    def test_rejected_click_does_not_latch_card_round(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.config[PRIORITY] = "卡牌乙"
+        task.executor.interaction.click.return_value = False
+        with patch.object(controller, "text", return_value="选取卡牌 卡牌乙"):
+            controller.tick()
+            controller.tick()
+        self.assertFalse(controller.card_latched)
+
+    def test_single_transition_frame_does_not_reclick_same_cards(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.config[PRIORITY] = "卡牌乙"
+        original = task.executor.method.get_frame.return_value
+        with patch.object(controller, "text", return_value="选取卡牌 卡牌乙"):
+            controller.tick()
+            controller.tick()
+            task.executor.method.get_frame.return_value = np.full_like(original, 100)
+            controller.tick()
+            task.executor.method.get_frame.return_value = original
+            controller.tick()
+            controller.tick()
+        self.assertEqual(task.executor.interaction.click.call_count, 1)
 
     def test_card_decorative_ocr_changes_do_not_block_same_choice(self):
         controller, task = self.make_controller()

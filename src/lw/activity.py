@@ -67,6 +67,19 @@ def select_card(texts, priority):
     return None
 
 
+def card_snapshot(frame):
+    height, width = frame.shape[:2]
+    return np.concatenate([
+        cv2.resize(frame[int(height * .29):int(height * .43),
+                         int(width * left):int(width * (left + .175))], (72, 48))
+        for left in (.185, .415, .640)
+    ], axis=1).astype(np.float32)
+
+
+def card_difference(first, second):
+    return float(np.mean(np.abs(first - second)))
+
+
 def danger_mask(frame):
     """Work at 960x540, fill warning outlines and conservatively merge overlaps."""
     image = cv2.resize(frame[:, :, :3], (960, 540))
@@ -152,6 +165,8 @@ class ActivityController:
         self.card_latched = False
         self.card_missing = 0
         self.card_candidate = None
+        self.clicked_cards = None
+        self.pending_cards = None
         self.previous = ()
         self.escape_started = None
         self.status = ""
@@ -179,6 +194,8 @@ class ActivityController:
         self.previous = ()
         self.escape_started = None
         self.card_candidate = None
+        self.clicked_cards = None
+        self.pending_cards = None
         self.card_latched = False
         self.card_missing = 0
         self.last_scene_seen = float("-inf")
@@ -281,9 +298,25 @@ class ActivityController:
             self.previous = ()
             self.escape_started = None
             self.card_missing = 0
+            snapshot = card_snapshot(frame)
             if self.card_latched:
-                self.report("已选卡, 等待返回活动")
-                return
+                self.next_tick = time.monotonic() + 0.3
+                if (self.clicked_cards is not None
+                        and card_difference(snapshot, self.clicked_cards) > 8):
+                    if (self.pending_cards is not None
+                            and card_difference(snapshot, self.pending_cards) < 3):
+                        self.card_latched = False
+                        self.card_candidate = None
+                        self.pending_cards = None
+                        self.report("检测到下一轮卡牌, 重新选卡")
+                    else:
+                        self.pending_cards = snapshot
+                        self.report("卡牌已变化, 确认下一轮")
+                        return
+                else:
+                    self.pending_cards = None
+                    self.report("已选卡, 等待卡牌变化或返回活动")
+                    return
             texts = [self.text(frame, (left, 0.25, left + 0.19, 0.74))
                      for left in (0.18, 0.41, 0.635)]
             # Rarity text is small and colored; inspect its own OCR region.
@@ -304,11 +337,15 @@ class ActivityController:
             if (index is not None and candidate == self.card_candidate
                     and self.running and self.available()
                     and time.monotonic() - captured_at < 2):
-                task.executor.interaction.click(
+                result = task.executor.interaction.click(
                     x=round(width * (0.275, 0.505, 0.73)[index]), y=round(height * 0.40),
                 )
-                self.card_latched = True
-                self.report(f"已点击第{index + 1}张卡牌")
+                if result is not False:
+                    self.card_latched = True
+                    self.clicked_cards = snapshot
+                    self.report(f"已点击第{index + 1}张卡牌")
+                else:
+                    self.report("选卡点击被窗口状态拦截, 等待重试")
             elif index is None:
                 self.report("选卡优先级为空或无匹配, 等待手选")
             else:
@@ -372,6 +409,9 @@ class ActivityController:
         started = {}
         right_down = False
         try:
+            # Resolve/activate the mouse target BEFORE holding direction. Do not let
+            # mouse_down retarget or reactivate the window after direction key-down.
+            right_pos = interaction.update_mouse_pos(-1, -1) if background and sprint else 0
             for key in keys:
                 if not self.running or not self.available():
                     return
@@ -382,9 +422,14 @@ class ActivityController:
                     win32api.keybd_event(self.task._get_vk_code(key), 0, 0, 0)
                 started[key] = time.monotonic()
             if sprint and self.running and self.available():
+                lead_deadline = time.monotonic() + 0.06
+                while time.monotonic() < lead_deadline:
+                    if not self.running or not self.available():
+                        return
+                    time.sleep(0.01)
                 right_down = True
                 if background:
-                    interaction.mouse_down(key="right")
+                    interaction.post(win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, right_pos)
                 else:
                     win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
             deadline = time.monotonic() + movement_seconds(self.task.config)
@@ -394,11 +439,19 @@ class ActivityController:
             if right_down:
                 try:
                     if background:
-                        interaction.mouse_up(key="right")
+                        interaction.post(win32con.WM_RBUTTONUP, 0, right_pos)
                     else:
                         win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
                 except Exception as error:
                     self.stop(f"右键释放失败: {type(error).__name__}")
+            # Preserve movement briefly after normal right release; never delay a stop.
+            if right_down and self.running and self.available():
+                tail_deadline = time.monotonic() + 0.03
+                try:
+                    while time.monotonic() < tail_deadline and self.running and self.available():
+                        time.sleep(0.01)
+                except Exception as error:
+                    self.stop(f"移动收尾异常: {type(error).__name__}")
             ended = time.monotonic()
             for key, start in started.items():
                 elapsed = max(0.0, ended - start)

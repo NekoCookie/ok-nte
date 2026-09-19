@@ -133,5 +133,12 @@ input modes. `tests.test_activity` covers ordering, card OCR variation, inward e
 sprint error release (43 focused tests total). Supplied screenshot OCR recognizes legendary
 text; live sprint timing, boundary avoidance and continuous movement remain open.
 
+Consecutive-card/input correction: changed, stable card-region snapshots rearm selection
+without battle HUD; unchanged cards and single-frame transitions cannot cause another click.
+Explicitly rejected clicks do not latch. Background mouse target preparation precedes direction
+input, with a 60ms direction lead and normal 30ms tail around right-button messages. Error and
+stop paths still release inputs. `tests.test_activity` covers the transaction and input overlap
+(47 focused tests total). Real-window consecutive-card and directional-dodge acceptance pending.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.
