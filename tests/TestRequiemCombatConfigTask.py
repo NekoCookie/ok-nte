@@ -179,6 +179,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
     def test_disabled_manual_key_switch_does_not_poll_any_manual_trigger(self):
         task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
         task.config = {task.CONF_MANUAL_KEY_TRIGGERS: False}
+        task._activity = mock.MagicMock()
         task._manual_key_triggers_armed = True
         task._poll_coaxis_trigger = mock.MagicMock()
         task._poll_dodge_test_trigger = mock.MagicMock()
@@ -197,10 +198,14 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         ):
             poller.assert_not_called()
         self.assertFalse(task._manual_key_triggers_armed)
+        task._activity.stop.assert_called_once_with()
+        task._activity.poll.assert_not_called()
 
     def test_enabled_manual_key_switch_polls_all_manual_trigger_handlers(self):
         task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
         task.config = {task.CONF_MANUAL_KEY_TRIGGERS: True}
+        task._activity = mock.MagicMock()
+        task._activity.poll.return_value = False
         task._manual_key_triggers_armed = True
         task._poll_coaxis_trigger = mock.MagicMock(return_value=False)
         task._poll_dodge_test_trigger = mock.MagicMock(return_value=False)

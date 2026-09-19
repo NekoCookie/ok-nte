@@ -10,6 +10,7 @@ from ok.util.config import Config
 from ok.util.file import get_relative_path
 
 from src.combat import requiem_combo
+from src.lw.activity import ActivityController, configure_activity  # [lw]
 from src.lw.requiem_zankou_axis import (
     CoordinatedAxisSettings,
     RequiemZankouAxisTester,
@@ -673,7 +674,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "▸ 分组折叠: 展开手动按键总开关, 闪避反击测试/禁用技能大招/首平A/模拟闪避"
                 ),
                 self.CONF_MANUAL_KEY_TRIGGERS: (
-                    "开=允许鼠标侧键4A, 合轴及所有手动测试按键; "
+                    "开=允许鼠标侧键4A, 合轴、活动辅助及所有手动测试按键; "  # [lw]
                     "关=统一忽略这些手动按键"
                 ),
                 self.CONF_GROUP_GAMEPAD: "▸ 分组折叠: 展开实体手柄与虚拟手柄共存测试",
@@ -685,6 +686,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             }
         )
         self.name = "安魂曲配置"
+        configure_activity(self)  # [lw] Independent top-level activity group.
+        self._activity = ActivityController(self)  # [lw]
         self.description = "安魂曲4A跳A宏 / 实战闪避反击等配置; 含闪避反击测试开关"
         self._submitted = False
         self._key_was_down = False
@@ -727,6 +730,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
 
     def _loop(self):
         if not self.enabled:
+            self._activity.stop()  # [lw]
             self._close_gamepad_test()
             self._gamepad_error_reported = False
             self._submitted = False
@@ -756,6 +760,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         """Run every manual test-key listener from one guarded entry point."""
 
         if not self._manual_key_triggers_enabled():
+            self._activity.stop()  # [lw] Master switch also stops activity input.
+            self._activity.armed_key = None
             self._manual_key_triggers_armed = False
             self._reset_manual_key_trigger_state()
             return False
@@ -764,6 +770,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             return False
         # Add every new hand-operated test key listener here so the master switch guards it.
         for poller in (
+            self._activity.poll,  # [lw] Same master gate, before other manual macros.
             self._poll_coaxis_trigger,
             self._poll_dodge_test_trigger,
             self._poll_free_skill_combo_test_trigger,

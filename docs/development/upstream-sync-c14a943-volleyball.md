@@ -89,5 +89,21 @@ removed by I-04; no user screenshot or local runtime artifact is committed.
 
 ## Closure gate
 
+### Post-baseline addition: activity assistant (2026-09-19)
+
+Status: open; independent LW activity implementation, not another upstream merge.
+Existing B/L/U/M evidence above is unchanged. `RequiemCombatConfigTask` only wires
+the activity controller and configuration into the existing manual-key gate.
+
+| Behavior | Contract and side effects | Regression | Manual acceptance | Status |
+| --- | --- | --- | --- | --- |
+| Activity group and toggle | Top-level group, default off; 5/mouse4/mouse5 press edge toggles; master off stops | `tests.test_activity`, `tests.TestRequiemCombatConfigTask` | Toggle in background and disable master; no further input within 200ms | automated passed; live pending |
+| Red warning escape | Bounded WASD via existing background interaction or foreground hardware; release on exceptions; unknown scene cannot move | `tests.test_activity` | 10 circles and 10 strips, exit all overlaps; calibrate fixed-camera foot position | automated and two supplied screenshots passed; live pending |
+| OCR cards | Explicit configured priority; two stable reads and single click; empty/unknown never random | `tests.test_activity` | Verify OCR and one click per popup; no accidental refresh | automated passed; live and sourced preset pending |
+
+No screenshots or local configuration are included. Details and research limitations:
+`docs/development/activity-assistant.md`. This addition does not claim real-window
+acceptance or change this ledger's open status.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.
