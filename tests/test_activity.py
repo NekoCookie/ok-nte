@@ -14,6 +14,31 @@ from src.lw.activity import (
 
 
 class TestActivity(unittest.TestCase):
+    def test_any_page_clicks_configured_text_at_detected_coordinates(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.config[PRIORITY] = "无尽挑战/开始挑战"
+        task.ocr.return_value = [SimpleNamespace(name="开始挑战", x=100, y=200,
+                                                width=120, height=40)]
+        controller.tick()
+        task.executor.interaction.click.assert_called_once_with(x=160, y=220)
+        task.executor.interaction.send_key_down.assert_not_called()
+
+    def test_text_priority_and_bounded_repeat_without_scene_change(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.config[PRIORITY] = "乙/甲甲/乙乙"
+        task.ocr.return_value = [SimpleNamespace(name=name, x=x, y=20, width=20, height=20)
+                                for name, x in (("乙乙", 20), ("甲甲", 100))]
+        with patch("src.lw.activity.time.monotonic", return_value=100) as clock:
+            controller.tick()
+            clock.return_value = 101
+            controller.tick()
+            self.assertEqual(task.executor.interaction.click.call_count, 1)
+            clock.return_value = 103
+            controller.tick()
+        self.assertEqual(task.executor.interaction.click.call_count, 2)
+        self.assertEqual(task.executor.interaction.click.call_args.kwargs, {"x": 110, "y": 30})
     def test_boss_ring_is_distinct_from_small_rings_and_rectangle(self):
         from src.lw.activity import boss_warning_mask
 
@@ -37,22 +62,13 @@ class TestActivity(unittest.TestCase):
         self.assertEqual(controller.dodge_count, 1)
         self.assertAlmostEqual(controller.drift[0], controller.direction_seconds["d"] + 2)
 
-    def test_enlarged_effect_ocr_recovers_missing_health_character(self):
-        controller, task = self.make_controller()
-        controller.running = True
-        task.config[PRIORITY] = "定时回复生命"
-        task.ocr.return_value = [SimpleNamespace(name="定时回复生命")]
-        with patch.object(controller, "text", return_value="选取卡牌 定时回复命"):
-            controller.tick()
-            controller.tick()
-        task.executor.interaction.click.assert_called_once_with(x=528, y=432)
 
     def test_persistent_danger_does_not_stop_activity_after_four_seconds(self):
         controller, task = self.make_controller()
         controller.running = True
         mask = np.zeros((540, 960), np.uint8)
         cv2.circle(mask, (480, 305), 70, 255, -1)
-        with (patch.object(controller, "text", side_effect=["", "轨外回响"] * 4),
+        with (patch.object(controller, "text", return_value="轨外回响"),
               patch("src.lw.activity.danger_mask", return_value=mask),
               patch("src.lw.activity.time.monotonic", return_value=100) as clock,
               patch.object(controller, "pulse") as pulse):
@@ -109,61 +125,9 @@ class TestActivity(unittest.TestCase):
         self.assertGreaterEqual(events[2][1] - events[1][1], 0.06)
         self.assertGreaterEqual(events[4][1] - events[3][1], 0.029)
 
-    def test_consecutive_card_rounds_rearm_without_battle_hud(self):
-        controller, task = self.make_controller()
-        controller.running = True
-        task.config[PRIORITY] = "卡牌乙"
-        with patch.object(controller, "text", return_value="选取卡牌 卡牌乙"):
-            controller.tick()
-            controller.tick()
-            self.assertEqual(task.executor.interaction.click.call_count, 1)
-            controller.tick()
-            self.assertEqual(task.executor.interaction.click.call_count, 1)
-            task.executor.method.get_frame.return_value = np.full((1080, 1920, 3), 100, np.uint8)
-            controller.tick()
-            self.assertEqual(task.executor.interaction.click.call_count, 1)
-            controller.tick()
-            controller.tick()
-            self.assertEqual(task.executor.interaction.click.call_count, 2)
-            controller.tick()
-            self.assertEqual(task.executor.interaction.click.call_count, 2)
 
-    def test_rejected_click_does_not_latch_card_round(self):
-        controller, task = self.make_controller()
-        controller.running = True
-        task.config[PRIORITY] = "卡牌乙"
-        task.executor.interaction.click.return_value = False
-        with patch.object(controller, "text", return_value="选取卡牌 卡牌乙"):
-            controller.tick()
-            controller.tick()
-        self.assertFalse(controller.card_latched)
 
-    def test_single_transition_frame_does_not_reclick_same_cards(self):
-        controller, task = self.make_controller()
-        controller.running = True
-        task.config[PRIORITY] = "卡牌乙"
-        original = task.executor.method.get_frame.return_value
-        with patch.object(controller, "text", return_value="选取卡牌 卡牌乙"):
-            controller.tick()
-            controller.tick()
-            task.executor.method.get_frame.return_value = np.full_like(original, 100)
-            controller.tick()
-            task.executor.method.get_frame.return_value = original
-            controller.tick()
-            controller.tick()
-        self.assertEqual(task.executor.interaction.click.call_count, 1)
 
-    def test_card_decorative_ocr_changes_do_not_block_same_choice(self):
-        controller, task = self.make_controller()
-        controller.running = True
-        task.config[PRIORITY] = "传说能力/卡牌甲"
-        with patch.object(controller, "text", side_effect=[
-            "选取卡牌", "卡牌甲", "卡牌乙", "传说能力 INFO", "", "",
-            "选取卡牌", "卡牌甲", "卡牌乙", "传说能力 INF0", "", "",
-        ]):
-            controller.tick()
-            controller.tick()
-        task.executor.interaction.click.assert_called_once_with(x=1402, y=432)
 
     def test_move_duration_is_configurable_and_bounded(self):
         from src.lw.activity import movement_seconds
@@ -210,7 +174,7 @@ class TestActivity(unittest.TestCase):
         controller.running = True
         mask = np.zeros((540, 960), np.uint8)
         cv2.circle(mask, (480, 305), 70, 255, -1)
-        with (patch.object(controller, "text", side_effect=["", "轨外回响"] * 3),
+        with (patch.object(controller, "text", return_value="轨外回响"),
               patch("src.lw.activity.danger_mask", return_value=mask),
               patch.object(controller, "pulse") as pulse):
             for _ in range(3):
@@ -222,7 +186,7 @@ class TestActivity(unittest.TestCase):
         controller.running = True
         mask = np.zeros((540, 960), np.uint8)
         cv2.circle(mask, (480, 305), 70, 255, -1)
-        with (patch.object(controller, "text", side_effect=["", "轨外回响", "", "", "", ""]),
+        with (patch.object(controller, "text", side_effect=["轨外回响", "", ""]),
               patch("src.lw.activity.time.monotonic", return_value=100) as clock,
               patch("src.lw.activity.danger_mask", return_value=mask),
               patch.object(controller, "pulse") as pulse):
@@ -406,19 +370,6 @@ class TestActivity(unittest.TestCase):
         task.executor.interaction.send_key_down.assert_called_once_with("w")
         task.executor.interaction.send_key_up.assert_called_once_with("w")
 
-    def test_cards_require_two_reads_and_click_only_once(self):
-        controller, task = self.make_controller()
-        controller.running = True
-        task.config[PRIORITY] = "卡牌乙,卡牌甲"
-        with patch.object(controller, "text", side_effect=(
-            ["选取卡牌", "卡牌甲", "卡牌乙", "卡牌丙"] * 2 + ["选取卡牌"]
-        )):
-            controller.tick()
-            task.executor.interaction.click.assert_not_called()
-            controller.tick()
-            controller.tick()
-        task.executor.interaction.click.assert_called_once_with(x=970, y=432)
-        task.executor.interaction.send_key_down.assert_not_called()
 
     def test_unknown_scene_and_missing_frame_never_move(self):
         controller, task = self.make_controller()
@@ -428,7 +379,7 @@ class TestActivity(unittest.TestCase):
         controller.running = True
         task.executor.method.get_frame.return_value = None
         controller.tick()
-        self.assertFalse(controller.running)
+        self.assertTrue(controller.running)
 
 
 if __name__ == "__main__":

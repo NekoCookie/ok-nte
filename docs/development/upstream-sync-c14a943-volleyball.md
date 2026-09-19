@@ -153,5 +153,10 @@ and a count, with one-second sprint debounce. Default 1s equivalent is explicitl
 Health effect rows receive 3x OCR fallback, verified on supplied missing-character sample.
 51 focused regressions pass; no screenshots committed. Live displacement and centering open.
 
+User-requested OCR contract replacement: configured text now applies anywhere in the game
+window. Click detected box centers in user priority order, with a two-second repeat limit.
+Removed fixed-card crop/latch/image-difference logic. Missing frames wait without input;
+movement still requires activity HUD. 47 focused tests pass; live entry/full suite pending.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.

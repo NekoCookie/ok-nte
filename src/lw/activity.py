@@ -55,7 +55,7 @@ def configure_activity(task):
         GROUP: "展开活动独立配置, 不影响其他配置大项",
         ENABLE: "实验功能, 默认关闭; 独立控制活动热键, 不受手动触发总开关影响; 复用方案输入方式",
         HOTKEY: "按一下启动, 再按一下停止; 支持5、mouse4、mouse5; 不要与其他宏重复",
-        PRIORITY: "从左到右优先, 支持/、逗号和换行; 可填写传说能力; 空白或未匹配时等待手选",
+        PRIORITY: "任意界面按文字从左到右优先点击, 支持/、逗号和换行; 如无尽挑战/开始挑战; 同一文字持续出现最多每2秒点击一次",
         FOOT_X: "角色脚底横坐标/画面宽度, 默认0.5; 不是地图中心; 镜头变化需校准",
         FOOT_Y: "角色脚底纵坐标/画面高度, 默认0.565; 不是地图中心或人物身体中心",
         MOVE_SECONDS: "每次移动按住多久, 默认0.2秒; 范围0.05~1.0秒; 越长位移越大但重新识别越慢; 可随时按热键停止",
@@ -78,17 +78,6 @@ def select_card(texts, priority):
     return None
 
 
-def card_snapshot(frame):
-    height, width = frame.shape[:2]
-    return np.concatenate([
-        cv2.resize(frame[int(height * .29):int(height * .43),
-                         int(width * left):int(width * (left + .175))], (72, 48))
-        for left in (.185, .415, .640)
-    ], axis=1).astype(np.float32)
-
-
-def card_difference(first, second):
-    return float(np.mean(np.abs(first - second)))
 
 
 def boss_warning_mask(frame):
@@ -116,11 +105,6 @@ def boss_warning_mask(frame):
     return result
 
 
-def enlarged_effect_crop(frame, left):
-    height, width = frame.shape[:2]
-    crop = frame[int(.59 * height):int(.69 * height),
-                 int((left + .02) * width):int((left + .175) * width)]
-    return cv2.resize(crop, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
 
 
 def danger_mask(frame):
@@ -205,11 +189,6 @@ class ActivityController:
         self.armed_key = None
         self.was_down = False
         self.next_tick = 0.0
-        self.card_latched = False
-        self.card_missing = 0
-        self.card_candidate = None
-        self.clicked_cards = None
-        self.pending_cards = None
         self.previous = ()
         self.status = ""
         self.last_status_log = 0.0
@@ -220,6 +199,9 @@ class ActivityController:
         self.next_motion_summary = 0.0
         self.dodge_count = 0
         self.next_dodge = 0.0
+        self.next_text_scan = 0.0
+        self.next_text_click = 0.0
+        self.text_waiting = False
 
     def report(self, message, notify=False):
         """Expose state without logging OCR contents or flooding the log."""
@@ -236,13 +218,11 @@ class ActivityController:
         was_running = self.running
         self.running = False
         self.previous = ()
-        self.card_candidate = None
-        self.clicked_cards = None
-        self.pending_cards = None
-        self.card_latched = False
-        self.card_missing = 0
         self.last_scene_seen = float("-inf")
         self.safe_frames = 0
+        self.next_text_scan = 0.0
+        self.next_text_click = 0.0
+        self.text_waiting = False
         if was_running:
             self.report(reason, notify=True)
 
@@ -325,85 +305,58 @@ class ActivityController:
         boxes = self.task.ocr(*rect, frame=frame, threshold=threshold)
         return " ".join(box.name for box in boxes)
 
+    def click_configured_text(self, frame):
+        """One OCR rule on any page; click actual detected text, not fixed card slots."""
+        priority = str(self.task.config.get(PRIORITY, ""))
+        if not priority.strip():
+            self.text_waiting = False
+            return False
+        now = time.monotonic()
+        if now < self.next_text_scan:
+            return self.text_waiting
+        self.next_text_scan = now + 0.4
+        boxes = self.task.ocr(frame=frame, threshold=.8)
+        scale = 1
+        index = select_card([box.name for box in boxes], priority)
+        if index is None and "定时" in priority:
+            # Generic scaled OCR, no card-specific coordinates or image templates.
+            scaled = cv2.resize(frame, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+            boxes = self.task.ocr(frame=scaled, threshold=.8)
+            index = select_card([box.name for box in boxes], priority)
+            scale = 2
+        self.text_waiting = index is not None
+        if index is None:
+            return False
+        if now < self.next_text_click:
+            self.report("已命中文字, 等待点击间隔")
+            return True
+        box = boxes[index]
+        x, y = (box.x + box.width / 2) / scale, (box.y + box.height / 2) / scale
+        if (not self.running or not self.available()
+                or time.monotonic() - now > 2
+                or not (0 <= x < frame.shape[1] and 0 <= y < frame.shape[0])):
+            return True
+        result = self.task.executor.interaction.click(x=round(x), y=round(y))
+        self.next_text_click = time.monotonic() + (2 if result is not False else .5)
+        self.report("已点击优先文字" if result is not False else "文字点击被拦截, 等待重试")
+        return True
+
     def tick(self):
         task = self.task
         captured_at = time.monotonic()
         frame = task.executor.method.get_frame()
         if frame is None:
-            self.stop("截图不可用, 已停止")
+            self.last_scene_seen = float("-inf")
+            self.report("截图暂不可用, 等待恢复")
+            self.next_tick = time.monotonic() + 0.5
             return
         height, width = frame.shape[:2]
         if abs(width / height - 16 / 9) > 0.04:
             self.stop("仅支持16:9画面, 已停止")
             return
-        # OCR happens while every movement key is already released.
-        title = self.text(frame, (0.40, 0.12, 0.60, 0.19))
-        if "选取卡牌" in re.sub(r"\s+", "", title):
+        if self.click_configured_text(frame):
             self.last_scene_seen = float("-inf")
-            self.previous = ()
-            self.card_missing = 0
-            snapshot = card_snapshot(frame)
-            if self.card_latched:
-                self.next_tick = time.monotonic() + 0.3
-                if (self.clicked_cards is not None
-                        and card_difference(snapshot, self.clicked_cards) > 8):
-                    if (self.pending_cards is not None
-                            and card_difference(snapshot, self.pending_cards) < 3):
-                        self.card_latched = False
-                        self.card_candidate = None
-                        self.pending_cards = None
-                        self.report("检测到下一轮卡牌, 重新选卡")
-                    else:
-                        self.pending_cards = snapshot
-                        self.report("卡牌已变化, 确认下一轮")
-                        return
-                else:
-                    self.pending_cards = None
-                    self.report("已选卡, 等待卡牌变化或返回活动")
-                    return
-            texts = [self.text(frame, (left, 0.25, left + 0.19, 0.74))
-                     for left in (0.18, 0.41, 0.635)]
-            # Inspect the small effect rows independently; confidence can be high
-            # even when full-card OCR drops a character.
-            if "定时" in str(task.config.get(PRIORITY, "")):
-                for i, left in enumerate((.18, .41, .635)):
-                    boxes = task.ocr(frame=enlarged_effect_crop(frame, left), threshold=.8)
-                    texts[i] += " " + " ".join(box.name for box in boxes)
-            # Rarity text is small and colored; inspect its own OCR region.
-            for index, left in enumerate((0.18, 0.41, 0.635)):
-                if ("传说" in str(task.config.get(PRIORITY, ""))
-                        and "传说能力" not in re.sub(r"\s+", "", texts[index])):
-                    rarity = self.text(frame, (left + 0.125, 0.34, left + 0.187, 0.38),
-                                       threshold=0.7)
-                    if "传说能力" in re.sub(r"\s+", "", rarity):
-                        texts[index] += " 传说能力"
-            index = select_card(texts, str(task.config.get(PRIORITY, "")))
-            priority = str(task.config.get(PRIORITY, ""))
-            matched = next((word.strip() for word in re.split(r"[/,\uFF0C\n]", priority)
-                            if index is not None and len(word.strip()) >= 2
-                            and re.sub(r"\s+", "", word) in
-                            re.sub(r"\s+", "", texts[index])), None)
-            candidate = (index, matched, priority)
-            if (index is not None and candidate == self.card_candidate
-                    and self.running and self.available()
-                    and time.monotonic() - captured_at < 2):
-                result = task.executor.interaction.click(
-                    x=round(width * (0.275, 0.505, 0.73)[index]), y=round(height * 0.40),
-                )
-                if result is not False:
-                    self.card_latched = True
-                    self.clicked_cards = snapshot
-                    self.report(f"已点击第{index + 1}张卡牌")
-                else:
-                    self.report("选卡点击被窗口状态拦截, 等待重试")
-            elif index is None:
-                self.report("选卡优先级为空或无匹配, 等待手选")
-            else:
-                self.report("选卡识别中, 等待第二次确认")
-            self.card_candidate = candidate
-            self.next_tick = time.monotonic() + 0.4
             return
-        self.card_candidate = None
         # Require activity-specific HUD on this frame, not a cached scene assumption.
         if time.monotonic() - self.last_scene_seen >= 0.25:
             hud = self.text(frame, (0.84, 0.24, 0.995, 0.34), threshold=0.6)
@@ -414,9 +367,6 @@ class ActivityController:
             self.previous = ()
             self.report("未识别到轨外回响界面, 暂不移动")
             return
-        self.card_missing += 1
-        if self.card_missing >= 2:
-            self.card_latched = False
         foot = (round(float(task.config.get(FOOT_X, 0.5)) * 960),
                 round(float(task.config.get(FOOT_Y, 0.565)) * 540))
         if not (100 <= foot[0] < 800 and 110 <= foot[1] < 420):
