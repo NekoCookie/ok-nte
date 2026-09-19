@@ -14,6 +14,15 @@ HOTKEY = "活动启动停止键"
 PRIORITY = "选卡优先级"
 FOOT_X = "活动脚底横坐标比例"
 FOOT_Y = "活动脚底纵坐标比例"
+MOVE_SECONDS = "活动单次移动时长(s)"
+
+
+def movement_seconds(config):
+    try:
+        value = float(config.get(MOVE_SECONDS, 0.2))
+    except (TypeError, ValueError):
+        return 0.2
+    return min(1.0, max(0.05, value)) if math.isfinite(value) else 0.2
 
 
 def activity_key_pressed(task, key):
@@ -27,10 +36,10 @@ def activity_key_pressed(task, key):
 def configure_activity(task):
     task.default_config.update({
         GROUP: False, ENABLE: False, HOTKEY: "5", PRIORITY: "",
-        FOOT_X: 0.5, FOOT_Y: 0.565,
+        FOOT_X: 0.5, FOOT_Y: 0.565, MOVE_SECONDS: 0.2,
     })
     task.config_type[GROUP] = {
-        "sub_configs": {True: [ENABLE, HOTKEY, PRIORITY, FOOT_X, FOOT_Y]},
+        "sub_configs": {True: [ENABLE, HOTKEY, MOVE_SECONDS, PRIORITY, FOOT_X, FOOT_Y]},
     }
     task.config_description.update({
         GROUP: "展开活动独立配置, 不影响其他配置大项",
@@ -39,6 +48,7 @@ def configure_activity(task):
         PRIORITY: "按优先顺序填写卡牌名称, 用英文逗号分隔; 空白或未匹配时等待手选, 不随机选卡",
         FOOT_X: "固定跟随镜头的角色脚底横坐标/画面宽度; 默认0.5, 镜头变化需重新校准",
         FOOT_Y: "固定跟随镜头的角色脚底纵坐标/画面高度; 默认0.565, 不是人物中心",
+        MOVE_SECONDS: "每次移动按住多久, 默认0.2秒; 范围0.05~1.0秒; 越长位移越大但重新识别越慢; 可随时按热键停止",
     })
 
 
@@ -340,7 +350,7 @@ class ActivityController:
                     interaction.send_key_down(key)
                 else:
                     win32api.keybd_event(self.task._get_vk_code(key), 0, 0, 0)
-            deadline = time.monotonic() + 0.20
+            deadline = time.monotonic() + movement_seconds(self.task.config)
             while time.monotonic() < deadline and self.running and self.available():
                 time.sleep(0.01)
         finally:

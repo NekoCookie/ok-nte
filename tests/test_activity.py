@@ -8,12 +8,35 @@ import cv2
 import numpy as np
 
 from src.lw.activity import (
-    ENABLE, FOOT_X, FOOT_Y, GROUP, HOTKEY, PRIORITY,
+    ENABLE, FOOT_X, FOOT_Y, GROUP, HOTKEY, MOVE_SECONDS, PRIORITY,
     ActivityController, configure_activity, danger_mask, escape_keys, select_card,
 )
 
 
 class TestActivity(unittest.TestCase):
+    def test_move_duration_is_configurable_and_bounded(self):
+        from src.lw.activity import movement_seconds
+
+        for value, expected in ((0.5, 0.5), (5, 1), (-1, 0.05),
+                                ("bad", 0.2), (float("nan"), 0.2)):
+            self.assertEqual(movement_seconds({MOVE_SECONDS: value}), expected)
+
+    def test_pulse_uses_configured_duration(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        task.config[MOVE_SECONDS] = 0.5
+        now = [0.0]
+        with (patch("src.lw.activity.time.monotonic", side_effect=lambda: now[0]),
+              patch("src.lw.activity.time.sleep", side_effect=lambda delay: now.__setitem__(0, now[0] + delay))):
+            controller.pulse(("a",))
+        self.assertAlmostEqual(now[0], 0.5, places=2)
+        task.executor.interaction.send_key_up.assert_called_once_with("a")
+
+    def test_vertical_strip_exits_sideways_not_along_length(self):
+        mask = np.zeros((540, 960), np.uint8)
+        cv2.rectangle(mask, (450, 130), (510, 400), 255, -1)
+        self.assertIn(escape_keys(mask, (480, 280), ("s",)), (("a",), ("d",)))
+
     def test_keyboard_minus_and_numpad_minus(self):
         from src.lw.activity import activity_key_pressed
 
@@ -85,7 +108,7 @@ class TestActivity(unittest.TestCase):
         self.assertEqual(task.default_config[HOTKEY], "5")
         self.assertEqual(task.default_config[PRIORITY], "")
         self.assertEqual(task.config_type[GROUP]["sub_configs"][True],
-                         [ENABLE, HOTKEY, PRIORITY, FOOT_X, FOOT_Y])
+                         [ENABLE, HOTKEY, MOVE_SECONDS, PRIORITY, FOOT_X, FOOT_Y])
 
     def test_card_order_and_no_random_fallback(self):
         self.assertEqual(select_card(["卡牌甲", "卡牌 乙", "卡牌丙"], "卡牌乙,卡牌甲"), 1)

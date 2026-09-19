@@ -119,5 +119,11 @@ Pulses are bounded to 200ms with independent stop polling. HUD confirmation expi
 0.6s and cards invalidate it; new danger frames are required. Regressions cover executor
 ownership, repeated danger, OCR miss expiry and both minus keys. Live exit timing is pending.
 
+Configurable movement addition: each pulse reads `活动单次移动时长(s)` (default 0.2s,
+clamped 0.05-1.0s). Invalid values fall back; stop polling and finally-release remain.
+`tests.test_activity` verifies duration consumption, bounds and side exits for a vertical
+strip. 39 focused tests pass; live timing and the reported vertical-strip segmentation
+remain open, without claiming this configuration change fixes that visual failure.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.
