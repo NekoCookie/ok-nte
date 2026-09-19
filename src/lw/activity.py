@@ -70,7 +70,67 @@ def select_card(texts, priority):
 
 
 
-def boss_warning_mask(frame):
+def oversized_boss_ellipse(frame):
+    """Recover a clipped large ring from distributed, locally contrasting red arcs."""
+    image = cv2.resize(frame[:, :, :3], (480, 270))
+    h, s, v = cv2.split(cv2.cvtColor(image, cv2.COLOR_BGR2HSV))
+    red = (((h < 10) | (h > 174)) & (s > 50) & (v > 45)).astype(np.uint8) * 255
+    valid = np.ones(red.shape, np.uint8)
+    valid[:22] = 0
+    valid[238:] = 0
+    valid[:75, :70] = 0
+    valid[:90, 415:] = 0
+    # Broad horizontal announcements are UI, not floor warning arcs.
+    bands = (np.mean(red > 0, axis=1) > .65).astype(np.uint8)
+    bands = cv2.dilate(bands[:, None], np.ones((9, 1), np.uint8))[:, 0]
+    valid[bands > 0] = 0
+    red *= valid
+    angles = np.linspace(0, 2 * math.pi, 180, endpoint=False)
+    best, best_score = None, 0.0
+    for ratio in (.7, .85, 1.0):
+        stretched = cv2.copyMakeBorder(
+            cv2.resize(red, (480, round(270 / ratio))),
+            100, 250, 100, 100, cv2.BORDER_CONSTANT,
+        )
+        circles = cv2.HoughCircles(
+            cv2.GaussianBlur(stretched, (5, 5), 0), cv2.HOUGH_GRADIENT,
+            dp=2, minDist=35, param1=70, param2=30, minRadius=220, maxRadius=400,
+        )
+        if circles is None:
+            continue
+        for cx, cy, radius in circles[0][:40]:
+            cx -= 100
+            cy = (cy - 100) * ratio
+            xs = cx + radius * np.cos(angles)
+            ys = cy + radius * ratio * np.sin(angles)
+            visible = (xs >= 5) & (xs < 475) & (ys >= 5) & (ys < 265)
+            xi, yi = np.clip(xs.astype(int), 0, 479), np.clip(ys.astype(int), 0, 269)
+            visible &= valid[yi, xi] > 0
+            if np.count_nonzero(visible) < 30:
+                continue
+            hits = np.zeros(180, bool)
+            for offset in (-3, 0, 3):
+                xx = np.clip((cx + (radius + offset) * np.cos(angles)).astype(int), 0, 479)
+                yy = np.clip((cy + (radius + offset) * ratio * np.sin(angles)).astype(int), 0, 269)
+                hits |= red[yy, xx] > 0
+            # Require red to fall away on at least one side of the outline.
+            surround = []
+            for offset in (-12, 12):
+                xx = np.clip((cx + (radius + offset) * np.cos(angles)).astype(int), 0, 479)
+                yy = np.clip((cy + (radius + offset) * ratio * np.sin(angles)).astype(int), 0, 269)
+                surround.append(red[yy, xx] > 0)
+            supported = hits & ~(surround[0] & surround[1]) & visible
+            score = np.count_nonzero(supported) / np.count_nonzero(visible)
+            sectors = sum(np.count_nonzero(part) >= 3 for part in np.array_split(supported, 8))
+            spread = np.ptp(xs[supported]) if np.any(supported) else 0
+            if score >= .60 and sectors >= 4 and spread >= 330 and score > best_score:
+                best_score = score
+                best = ((float(cx * 2), float(cy * 2)),
+                        (float(radius * 4), float(radius * ratio * 4)), 0.0)
+    return best
+
+
+def boss_warning_mask(frame, oversized=None):
     """Require a large, supported ellipse outline, not merged danger area/depth."""
     image = cv2.resize(frame[:, :, :3], (960, 540))
     h, s, v = cv2.split(cv2.cvtColor(image, cv2.COLOR_BGR2HSV))
@@ -92,6 +152,8 @@ def boss_warning_mask(frame):
         pixels = edge > 0
         if np.count_nonzero(pixels) and np.mean(supported[pixels] > 0) >= .60:
             cv2.ellipse(result, ellipse, 255, -1)
+    if oversized is not None:
+        cv2.ellipse(result, oversized, 255, -1)
     return result
 
 
@@ -141,6 +203,25 @@ DIRECTIONS = (
     (-1, -1, ("w", "a")), (1, -1, ("w", "d")),
     (-1, 1, ("s", "a")), (1, 1, ("s", "d")),
 )
+
+
+def oversized_escape_keys(ellipse, foot, previous=()):
+    """A fitted offscreen boundary can guide motion without claiming visible safety."""
+    (cx, cy), (width, height), _ = ellipse
+    rx, ry = width / 2, height / 2
+    px, py = foot[0] - cx, foot[1] - cy
+    c = (px / rx)**2 + (py / ry)**2 - 1
+    if c >= 0:
+        return ()
+    candidates = []
+    for dx, dy, keys in DIRECTIONS:
+        length = math.hypot(dx, dy)
+        dx, dy = dx / length, dy / length
+        a = (dx / rx)**2 + (dy / ry)**2
+        b = 2 * (px * dx / rx**2 + py * dy / ry**2)
+        distance = (-b + math.sqrt(b*b - 4*a*c)) / (2*a)
+        candidates.append((distance + (0 if keys == previous else 4), keys))
+    return min(candidates, key=lambda item: item[0])[1]
 
 
 def escape_keys(mask, foot, previous=(), drift=(0.0, 0.0), dodge_drift=(0, 0)):
@@ -448,11 +529,14 @@ class ActivityController:
         if not (100 <= foot[0] < 800 and 110 <= foot[1] < 420):
             self.stop("脚底坐标不在识别范围内, 请重新校准")
             return
-        boss_mask = boss_warning_mask(frame)
+        oversized = oversized_boss_ellipse(frame)
+        boss_mask = boss_warning_mask(frame, oversized)
         mask = cv2.bitwise_or(danger_mask(frame), boss_mask)
         dodge_drift = (self.direction_dodges["d"] - self.direction_dodges["a"],
                        self.direction_dodges["s"] - self.direction_dodges["w"])
         keys = escape_keys(mask, foot, self.previous, self.drift, dodge_drift)
+        if not keys and oversized is not None:
+            keys = oversized_escape_keys(oversized, foot, self.previous)
         if time.monotonic() - captured_at > 0.5:
             self.previous = ()
             self.report("识别耗时超过500ms, 已丢弃旧画面移动指令")

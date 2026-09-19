@@ -195,5 +195,16 @@ pass, including all three slots at 1080p/1440p/2160p and doubled OCR coordinates
 858 full-suite tests and syntax/diff checks pass. Actual game selection remains pending
 live verification.
 
+Oversized BOSS warning revision: fit clipped, dim large arcs with multiple aspect ratios,
+mask broad announcement rows, require distributed local red-outline evidence. If no
+visible safe ray exists, a confirmed fitted ellipse guides bounded motion toward its
+nearest predicted boundary and permits directional right dodge. No generic offscreen
+escape fallback for unrecognized red areas. 65 focused tests pass, including clipped
+ring/banner, banner plus small-ring rejection, offscreen movement and outside-ring stop.
+Offline supplied oversized screenshot is positive at player foot; three earlier samples
+are negative for the oversized detector. One combined detection measured 172ms locally,
+not a performance guarantee. 862 full-suite tests and syntax/diff checks pass.
+Live detection and successful escape remain open.
+
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.

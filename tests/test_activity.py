@@ -14,6 +14,43 @@ from src.lw.activity import (
 
 
 class TestActivity(unittest.TestCase):
+    def test_oversized_clipped_ring_survives_banner_occlusion(self):
+        from src.lw.activity import oversized_boss_ellipse, boss_warning_mask
+
+        frame = np.zeros((540, 960, 3), np.uint8)
+        cv2.ellipse(frame, (480, 330), (490, 343), 0, 0, 360, (25, 25, 120), 8)
+        cv2.rectangle(frame, (0, 100), (959, 185), (20, 20, 120), -1)
+        ellipse = oversized_boss_ellipse(frame)
+        self.assertIsNotNone(ellipse)
+        self.assertTrue(boss_warning_mask(frame, ellipse)[305, 480])
+
+    def test_banner_and_small_rings_are_not_oversized_warning(self):
+        from src.lw.activity import oversized_boss_ellipse
+
+        frame = np.zeros((540, 960, 3), np.uint8)
+        cv2.rectangle(frame, (0, 100), (959, 185), (20, 20, 120), -1)
+        for center in ((480, 300), (600, 350), (380, 260)):
+            cv2.circle(frame, center, 75, (50, 50, 240), 6)
+        self.assertIsNone(oversized_boss_ellipse(frame))
+
+    def test_offscreen_exit_still_moves_and_dodges_with_direction_held(self):
+        controller, task = self.make_controller()
+        controller.running = True
+        ellipse = ((480., 350.), (1000., 700.), 0.)
+        with (patch.object(controller, "text", return_value="伤害跳字"),
+              patch("src.lw.activity.oversized_boss_ellipse", return_value=ellipse),
+              patch.object(controller, "pulse") as pulse):
+            controller.tick()
+        self.assertEqual(pulse.call_args.args[0], ("w",))
+        self.assertTrue(pulse.call_args.kwargs["sprint"])
+
+    def test_offscreen_fallback_stops_outside_predicted_ring(self):
+        from src.lw.activity import oversized_escape_keys
+
+        ellipse = ((480., 350.), (1000., 700.), 0.)
+        self.assertEqual(oversized_escape_keys(ellipse, (480, 305)), ("w",))
+        self.assertEqual(oversized_escape_keys(ellipse, (480, 710)), ())
+
     def test_card_attribute_click_targets_upper_card_at_supported_resolutions(self):
         for width, height in ((1920, 1080), (2560, 1440), (3840, 2160)):
             for center in (.275, .505, .73):
