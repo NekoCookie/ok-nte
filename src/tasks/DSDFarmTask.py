@@ -101,26 +101,30 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         self.deside_map_zoom()
         self.start_rounds()
         while self.begin_round():
-            self.lw_wait_interac(time_out=10)  # [lw] 传送后等待交互提示, 缺失时自动恢复
-            self.wait_until(
-                lambda: not self.is_in_team(),
-                pre_action=lambda: self.lw_perform_input(  # [lw]
-                    self.send_interac, handle_claim=False
-                ),
-                time_out=10,
-                raise_if_not_found=True,
-            )
-            self.sleep(2)
-            self.refresh_monster()
-            self.ensure_main()
-            if self.do_teleport_on_spot:
-                self.sleep(0.5)
-                self.teleport_on_spot()
-                self.ensure_main()
-            self.deside_action()
-            self.next_frame()
-            self.add_success()
+            self.lw_run_round(self.run_round)  # [lw] 单轮异常先恢复再进下一轮; 未进战斗不计成功
         self.finish_rounds()
+
+    def run_round(self) -> bool:
+        """执行一轮: 交互篝火刷新怪物并跑图接战, 返回本轮是否进入了战斗。"""
+        self.lw_wait_interac(time_out=10)  # [lw] 传送后等待交互提示, 缺失时自动恢复
+        self.wait_until(
+            lambda: not self.is_in_team(),
+            pre_action=lambda: self.lw_perform_input(  # [lw]
+                self.send_interac, handle_claim=False
+            ),
+            time_out=10,
+            raise_if_not_found=True,
+        )
+        self.sleep(2)
+        self.refresh_monster()
+        self.ensure_main()
+        if self.do_teleport_on_spot:
+            self.sleep(0.5)
+            self.teleport_on_spot()
+            self.ensure_main()
+        fought = self.deside_action()
+        self.next_frame()
+        return fought
 
     def sleep_check(self):
         if self.lw_input_paused():  # [lw] 任务或全局暂停时不执行任何恢复输入
@@ -178,26 +182,29 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         elif location == self.locations[2]:
             self.map_zoom(zoom="mid")
 
-    def deside_action(self):
+    def deside_action(self) -> bool:
         self.do_teleport_on_spot = False
         location = self.config.get(self.CONF_LOCATION, None)
 
         if location == self.locations[0]:
-            self.location_0()
+            return self.location_0()
         elif location == self.locations[1]:
-            self.location_1()
+            return self.location_1()
         elif location == self.locations[2]:
-            self.location_2()
+            return self.location_2()
+        return False
 
-    def location_0(self):
-        if self.walk_until_combat(run=True, delay=1):
+    def location_0(self) -> bool:
+        fought = self.walk_until_combat(run=True, delay=1)
+        if fought:
             self.deside_combat_action()
         self.sleep(0.5)
         self.lw_ensure_teleport_or_stop(  # [lw] 失败后停止, 不在错误位置继续跑图
             lambda: self.teleport_to_nearest_bonfire()
         )
+        return fought
 
-    def location_1(self):
+    def location_1(self) -> bool:
         self.send_key_down("w")
         self.sleep(0.37)
         self.send_key_down("lshift")
@@ -221,15 +228,17 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
             self.sleep(0.8)
         self.sleep(2)
         self.send_key_up("w")
-        if self.wait_until(self.in_combat, time_out=10):
+        fought = bool(self.wait_until(self.in_combat, time_out=10))
+        if fought:
             self.deside_combat_action()
         self.sleep(0.5)
         box = self.box_of_screen(0.498, 0.102, 0.931, 0.827)
         self.lw_ensure_teleport_or_stop(  # [lw] 失败后停止, 不在错误位置继续跑图
             lambda: self.teleport_to_top_bonfire(box)
         )
+        return fought
 
-    def location_2(self):
+    def location_2(self) -> bool:
         self.send_key_down("w")
         self.sleep(0.20)
         self.send_key("lshift")
@@ -239,7 +248,8 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         self.send_key_up("w")
         self.sleep(2.10)
         self.send_key_up("a")
-        if self.wait_until(self.in_combat, time_out=10):
+        fought = bool(self.wait_until(self.in_combat, time_out=10))
+        if fought:
             self.deside_combat_action()
         self.sleep(0.5)
         box = self.box_of_screen(0.410, 0.234, 0.560, 0.556)
@@ -247,6 +257,7 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         self.lw_ensure_teleport_or_stop(  # [lw] 失败后停止, 不在错误位置继续跑图
             lambda: self.teleport_to_top_bonfire(box)
         )
+        return fought
 
     def ensure_teleport(self, fun):
         return self.lw_ensure_teleport(fun)  # [lw]

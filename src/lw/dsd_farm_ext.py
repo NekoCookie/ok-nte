@@ -3,6 +3,8 @@
 # - click_traval_button: 修正上游"传送按钮未消失仍返回成功"的假成功判定
 # - lw_wait_interac: 传送后交互提示缺失时, 先回主界面等加载, 仍失败再传送一次
 #   (接线: DSDFarmTask.ensure_teleport 有界重试 + do_run 两个一行钩子)
+# - lw_run_round: 单轮异常(如怪追到篝火导致交互失败)先打完/回主界面/传送回篝火再进下一轮,
+#   连续异常超限才停; 未进入战斗的轮次记为失败而不是成功, 避免空跑被当作正常
 import time
 from typing import TYPE_CHECKING
 
@@ -26,6 +28,8 @@ class DSDFarmExtMixin(_TaskProxy):
     LW_INTERAC_RECOVER_WAIT = 30
     LW_TRAVEL_BUTTON_STUCK_WAIT = 6
     LW_INPUT_PAUSE_POLL_INTERVAL = 0.05
+    LW_MAX_CONSECUTIVE_ROUND_ERRORS = 3
+    LW_ROUND_FAIL_NO_COMBAT = "未检测到战斗"
 
     def _lw_held_keys(self):
         keys = getattr(self, "_lw_held_key_set", None)
@@ -228,6 +232,50 @@ class DSDFarmExtMixin(_TaskProxy):
             self.screenshot("dsd_farm_interac_missing")
             raise WaitFailedException()
         return found
+
+    def _lw_round_error_count(self) -> int:
+        return getattr(self, "_lw_consecutive_round_errors", 0)
+
+    def lw_run_round(self, body) -> bool:
+        """执行一轮并记录结果: 进入战斗才计成功; 单轮异常先恢复再进下一轮, 连续异常超限才停。"""
+        try:
+            fought = bool(body())
+        except TaskDisabledException:
+            raise
+        except Exception as error:
+            errors = self._lw_round_error_count() + 1
+            self._lw_consecutive_round_errors = errors
+            self.log_error("DSDFarmTask round error", error)
+            self.add_failed(f"本轮异常 {type(error).__name__}")
+            if errors >= self.LW_MAX_CONSECUTIVE_ROUND_ERRORS:
+                self.log_error(f"连续 {errors} 轮异常, 已停止九百九十九夜挂机")
+                raise TaskDisabledException()
+            self.lw_recover_round()
+            return False
+        self._lw_consecutive_round_errors = 0
+        if fought:
+            self.add_success()
+        else:
+            self.add_failed(self.LW_ROUND_FAIL_NO_COMBAT)
+        return fought
+
+    def lw_recover_round(self):
+        """单轮异常后的恢复: 怪追到篝火时先打完, 再回主界面并传送回目标篝火。"""
+        try:
+            if self.in_combat():
+                self.log_info("round recovery: in combat, fight before teleporting back")
+                self.deside_combat_action()
+        except TaskDisabledException:
+            raise
+        except Exception as error:
+            self.log_warning_gated(f"round recovery combat failed: {error}")
+        try:
+            self.ensure_main()
+        except TaskDisabledException:
+            raise
+        except Exception as error:
+            self.log_warning_gated(f"round recovery ensure main failed: {error}")
+        self.lw_teleport_back_to_location()
 
     def lw_teleport_back_to_location(self):
         """按当前配置位置重新执行一次有界传送回篝火。"""

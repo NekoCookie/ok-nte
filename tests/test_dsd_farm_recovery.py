@@ -411,5 +411,171 @@ class TestCancellableInput(unittest.TestCase):
         self.assertTrue(task.lw_input_paused())
 
 
+class _RoundStub(DSDFarmExtMixin, _BaseClick):
+    def __init__(self, in_combat=False):
+        super().__init__()
+        self.successes = 0
+        self.failures = []
+        self.errors = []
+        self.warnings = []
+        self.recovery_calls = []
+        self._in_combat = in_combat
+
+    def add_success(self, count=1):
+        self.successes += count
+        return self.successes
+
+    def add_failed(self, reason=None, count=1):
+        self.failures.append(reason)
+        return len(self.failures)
+
+    def log_error(self, message, error=None):
+        self.errors.append(message)
+
+    def log_info(self, message):
+        pass
+
+    def log_warning_gated(self, message):
+        self.warnings.append(message)
+
+    def in_combat(self):
+        return self._in_combat
+
+    def deside_combat_action(self):
+        self.recovery_calls.append("combat")
+
+    def ensure_main(self, **kwargs):
+        self.recovery_calls.append("main")
+
+    def lw_teleport_back_to_location(self):
+        self.recovery_calls.append("teleport")
+        return True
+
+
+class TestLwRunRound(unittest.TestCase):
+    def test_counts_success_only_when_combat_happened(self):
+        task = _RoundStub()
+        self.assertTrue(task.lw_run_round(lambda: True))
+        self.assertEqual(task.successes, 1)
+        self.assertEqual(task.failures, [])
+
+    def test_round_without_combat_is_a_failure_not_a_success(self):
+        task = _RoundStub()
+        self.assertFalse(task.lw_run_round(lambda: False))
+        self.assertEqual(task.successes, 0)
+        self.assertEqual(task.failures, [DSDFarmExtMixin.LW_ROUND_FAIL_NO_COMBAT])
+        self.assertEqual(task.recovery_calls, [])
+
+    def test_round_error_recovers_and_continues(self):
+        task = _RoundStub(in_combat=True)
+
+        def body():
+            raise WaitFailedException()
+
+        self.assertFalse(task.lw_run_round(body))
+        self.assertEqual(task.successes, 0)
+        self.assertEqual(task.failures, ["本轮异常 WaitFailedException"])
+        self.assertEqual(task.recovery_calls, ["combat", "main", "teleport"])
+
+    def test_recovery_skips_combat_when_not_in_combat(self):
+        task = _RoundStub(in_combat=False)
+        task.lw_run_round(mock.Mock(side_effect=CannotFindException("boom")))
+        self.assertEqual(task.recovery_calls, ["main", "teleport"])
+
+    def test_recovery_continues_when_combat_or_main_raise(self):
+        task = _RoundStub(in_combat=True)
+        task.deside_combat_action = mock.Mock(side_effect=CannotFindException("dead"))
+        task.ensure_main = mock.Mock(side_effect=CannotFindException("no main"))
+        task.lw_run_round(mock.Mock(side_effect=WaitFailedException()))
+        self.assertEqual(task.recovery_calls, ["teleport"])
+        self.assertEqual(len(task.warnings), 2)
+
+    def test_stops_after_consecutive_round_errors(self):
+        task = _RoundStub()
+        limit = DSDFarmExtMixin.LW_MAX_CONSECUTIVE_ROUND_ERRORS
+        for _ in range(limit - 1):
+            self.assertFalse(task.lw_run_round(mock.Mock(side_effect=WaitFailedException())))
+        with self.assertRaises(TaskDisabledException):
+            task.lw_run_round(mock.Mock(side_effect=WaitFailedException()))
+        self.assertEqual(len(task.failures), limit)
+        self.assertEqual(task.recovery_calls.count("teleport"), limit - 1)
+
+    def test_success_resets_consecutive_error_count(self):
+        task = _RoundStub()
+        limit = DSDFarmExtMixin.LW_MAX_CONSECUTIVE_ROUND_ERRORS
+        for _ in range(limit - 1):
+            task.lw_run_round(mock.Mock(side_effect=WaitFailedException()))
+        task.lw_run_round(lambda: True)
+        for _ in range(limit - 1):
+            task.lw_run_round(mock.Mock(side_effect=WaitFailedException()))
+        self.assertEqual(task.successes, 1)
+
+    def test_no_combat_rounds_do_not_count_toward_stop(self):
+        task = _RoundStub()
+        for _ in range(DSDFarmExtMixin.LW_MAX_CONSECUTIVE_ROUND_ERRORS * 2):
+            self.assertFalse(task.lw_run_round(lambda: False))
+        self.assertEqual(task.recovery_calls, [])
+
+    def test_task_stop_propagates_without_recovery(self):
+        task = _RoundStub(in_combat=True)
+        with self.assertRaises(TaskDisabledException):
+            task.lw_run_round(mock.Mock(side_effect=TaskDisabledException()))
+        self.assertEqual(task.recovery_calls, [])
+        self.assertEqual(task.failures, [])
+
+    def test_stop_from_recovery_teleport_propagates(self):
+        task = _RoundStub()
+        task.lw_teleport_back_to_location = mock.Mock(side_effect=TaskDisabledException())
+        with self.assertRaises(TaskDisabledException):
+            task.lw_run_round(mock.Mock(side_effect=WaitFailedException()))
+
+
+class TestRunRoundReportsCombat(unittest.TestCase):
+    def _task(self, fought):
+        task = object.__new__(DSDFarmTask)
+        task.do_teleport_on_spot = False
+        task.lw_wait_interac = mock.Mock(return_value=True)
+        task.wait_until = mock.Mock(return_value=True)
+        task.sleep = mock.Mock()
+        task.refresh_monster = mock.Mock()
+        task.ensure_main = mock.Mock()
+        task.next_frame = mock.Mock()
+        task.deside_action = mock.Mock(return_value=fought)
+        return task
+
+    def test_run_round_returns_deside_action_result(self):
+        self.assertTrue(self._task(True).run_round())
+        self.assertFalse(self._task(False).run_round())
+
+    def test_do_run_hands_each_round_to_lw_wrapper(self):
+        task = object.__new__(DSDFarmTask)
+        task.do_teleport_on_spot = True
+        task.deside_map_zoom = mock.Mock()
+        task.start_rounds = mock.Mock()
+        task.begin_round = mock.Mock(side_effect=[True, True, False])
+        task.lw_run_round = mock.Mock(return_value=False)
+        task.finish_rounds = mock.Mock()
+        task.do_run()
+        self.assertEqual(task.lw_run_round.call_count, 2)
+        task.lw_run_round.assert_called_with(task.run_round)
+        task.finish_rounds.assert_called_once()
+
+    def test_location_2_reports_whether_combat_started(self):
+        for in_combat in (True, False):
+            task = object.__new__(DSDFarmTask)
+            task.send_key_down = mock.Mock()
+            task.send_key_up = mock.Mock()
+            task.send_key = mock.Mock()
+            task.sleep = mock.Mock()
+            task.wait_until = mock.Mock(return_value=in_combat)
+            task.deside_combat_action = mock.Mock()
+            task.box_of_screen = mock.Mock(return_value=Box(0, 0, 10, 10))
+            task.lw_ensure_teleport_or_stop = mock.Mock(return_value=True)
+            task.teleport_to_top_bonfire = mock.Mock()
+            self.assertEqual(task.location_2(), in_combat)
+            self.assertEqual(task.deside_combat_action.called, in_combat)
+            self.assertTrue(task.do_teleport_on_spot)
+
+
 if __name__ == "__main__":
     unittest.main()
