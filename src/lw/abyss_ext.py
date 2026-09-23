@@ -9,12 +9,14 @@ import numpy as np
 HALF_UPPER = "上行线"
 HALF_LOWER = "下行线"
 FULL_STARS = 3
+# The last station is labelled "终点站" instead of "第十二站"; sort it after every number.
+TERMINAL_STATION = 99
 
 EXIT_REPLAY = "replay"
 EXIT_NEXT = "next"
 EXIT_END = "end"
 
-STATION_RE = re.compile(r"第\s*([0-9一二两三四五六七八九十]+)\s*站")
+STATION_RE = re.compile(r"第\s*([0-9一二两三四五六七八九十]+)\s*站|终点站")
 SEAL_RE = re.compile(r"印鉴[^0-9]*([0-9/|lI]+)")
 FRACTION_RE = re.compile(r"^[0-9/|lI]+$")
 # OCR often reads the spaced "27 / 36" slash as "1", "l", "I" or "|", or drops it.
@@ -29,6 +31,8 @@ RESTART_HALF_RE = re.compile(r"重启当前半场")
 CONTINUE_RE = re.compile(r"继续挑战")
 TRAVEL_RE = re.compile(r"^传送$")
 NPC_RE = re.compile(r"浮游小姐")
+# A far NPC shows only its waypoint distance, e.g. "25m", until the name fades in.
+DISTANCE_MARKER_RE = re.compile(r"^\d{1,3}m$")
 RECORD_TITLE_RE = re.compile(r"确认记录|是否覆盖")
 RECORD_CONFIRM_RE = re.compile(r"^确认$")
 RECORD_CANCEL_RE = re.compile(r"^取消$")
@@ -63,6 +67,17 @@ def parse_cn_number(text: str) -> int | None:
     return None
 
 
+def station_number(match) -> int | None:
+    """Map a STATION_RE match to its number, with "终点站" as TERMINAL_STATION."""
+    if match is None:
+        return None
+    return TERMINAL_STATION if match.group(1) is None else parse_cn_number(match.group(1))
+
+
+def station_label(station: int | None) -> str:
+    return "终点站" if station == TERMINAL_STATION else f"第{station}站"
+
+
 def _compact(text) -> str:
     return re.sub(r"\s+", "", getattr(text, "name", text) or "")
 
@@ -85,8 +100,7 @@ class AbyssHud:
 def parse_hud(texts) -> AbyssHud | None:
     """Parse the top-left stage HUD, e.g. "第八站 下行线" and "怪物波次 1/1"."""
     joined = "".join(_compact(text) for text in texts or [])
-    station_match = STATION_RE.search(joined)
-    station = parse_cn_number(station_match.group(1)) if station_match else None
+    station = station_number(STATION_RE.search(joined))
     half = HALF_UPPER if "上行" in joined else HALF_LOWER if "下行" in joined else None
     if station is None and half is None:
         return None
@@ -217,8 +231,7 @@ def count_card_stars(frame, label_box, bottom_limit: float = 0.86) -> int | None
 def parse_station_cards(texts, frame) -> list[StationCard]:
     cards = {}
     for text in texts or []:
-        match = STATION_RE.search(_compact(text))
-        number = parse_cn_number(match.group(1)) if match else None
+        number = station_number(STATION_RE.search(_compact(text)))
         if number is None or number in cards:
             continue
         cards[number] = StationCard(number, text, count_card_stars(frame, text))
@@ -305,7 +318,9 @@ def choose_station_exit(stars, replays_used, max_replays, station, station_count
     """Replay an unfinished station within budget, otherwise continue or end the trip."""
     if stars < FULL_STARS and replays_used < max_replays and EXIT_REPLAY in options:
         return EXIT_REPLAY
-    is_last = station is not None and station_count and station >= station_count
+    is_last = station == TERMINAL_STATION or (
+        station is not None and bool(station_count) and station >= station_count
+    )
     if EXIT_NEXT in options and not is_last:
         return EXIT_NEXT
     return EXIT_END if EXIT_END in options else None
@@ -334,7 +349,7 @@ class AbyssTaskMixin:
     HUD_ROI = (0.02, 0.22, 0.22, 0.34)
     POPUP_ROI = (0.30, 0.78, 0.70, 0.90)
     ESC_MENU_ROI = (0.15, 0.55, 0.85, 0.65)
-    NPC_ROI = (0.15, 0.05, 0.90, 0.85)
+    NPC_ROI = (0.22, 0.05, 0.90, 0.85)
     DIALOG_ROI = (0.60, 0.50, 0.98, 0.85)
     TRAVEL_ROI = (0.72, 0.84, 0.99, 0.96)
     RECORD_TITLE_ROI = (0.30, 0.08, 0.70, 0.27)
@@ -396,7 +411,7 @@ class AbyssTaskMixin:
         while True:
             hud = self.abyss_play_station()
             stars = self.abyss_read_stars()
-            self.log_info(f"第{hud.station}站通关, 星数 {stars}/{FULL_STARS}")
+            self.log_info(f"{station_label(hud.station)}通关, 星数 {stars}/{FULL_STARS}")
             choice = self.abyss_leave_station(hud, stars, replays)
             if choice == EXIT_REPLAY:
                 replays += 1
@@ -494,10 +509,10 @@ class AbyssTaskMixin:
             for _ in range(self.STATION_MAX_SCROLLS + 1):
                 cards = self.abyss_read_station_cards()
                 self.log_info(
-                    "站点星数: " + ", ".join(f"{c.number}:{c.stars}" for c in cards)
+                    "站点星数: " + ", ".join(f"{station_label(c.number)}:{c.stars}" for c in cards)
                 )
                 if card := select_station(cards):
-                    self.log_info(f"选择第{card.number}站, 当前星数 {card.stars}")
+                    self.log_info(f"选择{station_label(card.number)}, 当前星数 {card.stars}")
                     self.operate_click(card.box)
                     return self.abyss_start_challenge()
                 if self.scroll_and_is_end(x, y, step, snap_box, after_sleep=0.6):
@@ -622,7 +637,7 @@ class AbyssTaskMixin:
             if hud.half != current_half:
                 current_half = hud.half
                 restarts = 0
-                self.info_set("当前站点", f"第{hud.station}站 {hud.half}")
+                self.info_set("当前站点", f"{station_label(hud.station)} {hud.half}")
             if station_cleared(hud, frame):
                 return hud
             if hud.finished:
@@ -682,8 +697,12 @@ class AbyssTaskMixin:
     # ---------- station exit ----------
 
     def abyss_find_npc(self):
-        texts = self._abyss_ocr(self.NPC_ROI, NPC_RE)
-        return texts[0] if texts else None
+        """Prefer the attendant's name; fall back to its distance marker when far away."""
+        texts = self._abyss_ocr(self.NPC_ROI)
+        for pattern in (NPC_RE, DISTANCE_MARKER_RE):
+            if found := [t for t in texts if pattern.search(_compact(t))]:
+                return found[0]
+        return None
 
     def abyss_read_dialog_options(self) -> dict:
         return parse_dialog_options(self._abyss_ocr(self.DIALOG_ROI))

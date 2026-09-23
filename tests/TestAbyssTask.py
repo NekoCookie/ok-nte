@@ -132,6 +132,24 @@ class TestAbyssParsing(unittest.TestCase):
         full_waves = ax.AbyssHud(8, ax.HALF_LOWER, (1, 1))
         self.assertTrue(ax.station_cleared(full_waves, np.zeros_like(frame)))
 
+    def test_terminal_station_hud_and_card(self):
+        # Real OCR of the supplied last-station HUD: "终点站", "下行线", "怪物波次", "11".
+        hud = ax.parse_hud([SimpleNamespace(name=n) for n in ("终点站", "下行线", "怪物波次", "11")])
+        self.assertEqual(hud, ax.AbyssHud(ax.TERMINAL_STATION, ax.HALF_LOWER, (1, 1)))
+        self.assertEqual(ax.station_label(hud.station), "终点站")
+
+        labels = [text("第十一站", 0.888, 0.479), text("终点站", 0.888, 0.618)]
+        frame = station_frame([(labels[0], 3), (labels[1], 0)])
+        cards = ax.parse_station_cards(labels, frame)
+        self.assertEqual([(c.number, c.stars) for c in cards], [(11, 3), (ax.TERMINAL_STATION, 0)])
+        self.assertEqual(ax.select_station(cards).number, ax.TERMINAL_STATION)
+
+    def test_terminal_station_ends_trip_even_without_route_count(self):
+        options = {ax.EXIT_NEXT: 1, ax.EXIT_REPLAY: 2, ax.EXIT_END: 3}
+        self.assertEqual(
+            ax.choose_station_exit(3, 0, 2, ax.TERMINAL_STATION, 0, options), ax.EXIT_END
+        )
+
     def test_station_exit_policy(self):
         options = {ax.EXIT_NEXT: 1, ax.EXIT_REPLAY: 2, ax.EXIT_END: 3}
         self.assertEqual(ax.choose_station_exit(2, 0, 2, 8, 12, options), ax.EXIT_REPLAY)
@@ -435,6 +453,30 @@ class TestAbyssRecordPrompt(unittest.TestCase):
         task.open = False
         self.assertFalse(task.abyss_handle_record_prompt())
         self.assertEqual(task.clicked, [])
+
+
+class NpcTask(ax.AbyssTaskMixin):
+    def __init__(self, texts):
+        self.texts = texts
+
+    def _abyss_ocr(self, roi, match=None, frame=None):
+        return self.texts
+
+
+class TestAbyssFindNpc(unittest.TestCase):
+    def test_far_npc_is_found_by_distance_marker(self):
+        # Real OCR of the supplied far view: timer, a building sign and the "25m" marker.
+        marker = text("25m", 0.608, 0.358)
+        task = NpcTask([text("m07:41", 0.485, 0.156), text("银行", 0.514, 0.18), marker])
+        self.assertIs(task.abyss_find_npc(), marker)
+
+    def test_name_is_preferred_over_distance_marker(self):
+        name = text("浮游小姐2001号", 0.407, 0.396)
+        task = NpcTask([text("12m", 0.6, 0.3), name])
+        self.assertIs(task.abyss_find_npc(), name)
+
+    def test_timer_is_not_a_distance_marker(self):
+        self.assertIsNone(NpcTask([text("08:31", 0.505, 0.156)]).abyss_find_npc())
 
 
 class TestAbyssRegistration(unittest.TestCase):
