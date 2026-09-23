@@ -3,12 +3,13 @@ from qfluentwidgets import FluentIcon
 
 from src import text_white_color
 from src.Labels import Labels
+from src.lw.daily_claim_ext import DailyClaimExtMixin  # [lw]
 from src.tasks.BaseNTETask import BaseNTETask
 from src.tasks.NTEOneTimeTask import NTEOneTimeTask
 from src.utils import image_utils as iu
 
 
-class DailyClaimTask(NTEOneTimeTask, BaseNTETask):
+class DailyClaimTask(DailyClaimExtMixin, NTEOneTimeTask, BaseNTETask):  # [lw]
     CONF_CLAIM_MAIL = "邮件"
     CONF_CLAIM_ACTIVITY = "活跃度奖励"
     CONF_CLAIM_BATTLE_PASS = "环期任务奖励"
@@ -44,10 +45,11 @@ class DailyClaimTask(NTEOneTimeTask, BaseNTETask):
             self.CONF_CLAIM_ACTIVITY: self.claim_activity_rewards,
             self.CONF_CLAIM_BATTLE_PASS: self.claim_battle_pass_rewards,
         }
+        self.lw_begin_claims()  # [lw]
         for key, task in tasks.items():
             self.ensure_main()
             if self.config.get(key, True):
-                results.append(task())
+                results.append(self.lw_run_claim_item(key, task))  # [lw] isolate + reason
 
         return all(result is not False for result in results)
 
@@ -120,7 +122,8 @@ class DailyClaimTask(NTEOneTimeTask, BaseNTETask):
 
     def claim_battle_pass_rewards(self):
         def action():
-            self.openF2panel()
+            if not self.lw_open_f2_panel():  # [lw] quiet: F2 may be absent between pools
+                return None
             self.operate_click(0.0570, 0.3451)
             self.sleep(0.5)
             return self.wait_panel(Labels.f2_mission_panel)

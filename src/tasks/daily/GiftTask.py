@@ -2,7 +2,7 @@ import re
 
 import cv2
 import numpy as np
-from ok import TaskDisabledException
+from ok import CannotFindException, TaskDisabledException
 from qfluentwidgets import FluentIcon
 
 from src.gifts.GiftManager import GiftManager
@@ -69,7 +69,8 @@ class GiftTask(NTEOneTimeTask, BaseNTETask):
     def run_gifts(self) -> dict:
         profiles = self.manager.get_enabled_profiles()
         if not profiles:
-            raise TaskDisabledException("No enabled gift profile has selected gifts")
+            # [lw] A normal error lets the daily routine record it and continue.
+            raise ValueError("没有已启用且选择了礼物的角色")
 
         summary = {"success": 0, "skipped": [], "failed": []}
         self._report(f"开始赠礼，共 {len(profiles)} 个已启用角色")
@@ -105,7 +106,8 @@ class GiftTask(NTEOneTimeTask, BaseNTETask):
         result = self.retry_on_action(action, self.ensure_main)
         if not result:
             self.log_error("无法找到赠礼面板")
-            raise TaskDisabledException()
+            # [lw] TaskDisabledException means "user stopped" and restarts the whole daily chain.
+            raise CannotFindException("无法找到赠礼面板")
         self.sleep(1)
         self.operate_click(0.802, 0.124)
         self.sleep(1)

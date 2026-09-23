@@ -197,3 +197,26 @@ class TestPhoneMenuEntry(unittest.TestCase):
         task = self.make_task([])
         self.assertFalse(task.lw_click_phone_menu("羁遇"))
         task.operate_click.assert_not_called()
+
+
+class TestGiftFailureDoesNotStopDaily(unittest.TestCase):
+    def test_missing_bond_panel_is_an_ordinary_failure_not_a_user_stop(self):
+        from unittest.mock import Mock
+
+        from ok import CannotFindException, TaskDisabledException
+
+        task = object.__new__(GiftTask)
+        task.retry_on_action = Mock(return_value=None)
+        task.log_error = Mock()
+        with self.assertRaises(CannotFindException) as caught:
+            task._enter_gift_page_from_main()
+        self.assertNotIsInstance(caught.exception, TaskDisabledException)
+
+    def test_no_enabled_profile_is_an_ordinary_failure_not_a_user_stop(self):
+        from ok import TaskDisabledException
+
+        task = object.__new__(GiftTask)
+        task.manager = SimpleNamespace(get_enabled_profiles=lambda: {})
+        with self.assertRaises(Exception) as caught:
+            task.run_gifts()
+        self.assertNotIsInstance(caught.exception, TaskDisabledException)
