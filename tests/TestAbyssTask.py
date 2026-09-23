@@ -67,6 +67,35 @@ class TestAbyssParsing(unittest.TestCase):
         self.assertEqual(chosen.station_count, 12)
         self.assertIsNone(ax.select_route(routes[:1]))
 
+    def test_seal_fraction_recovers_misread_or_missing_slash(self):
+        self.assertEqual(ax.parse_seal_fraction("27/36"), (27, 36))
+        self.assertEqual(ax.parse_seal_fraction("27136"), (27, 36))  # real OCR of "27 / 36"
+        self.assertEqual(ax.parse_seal_fraction("30130"), (30, 30))
+        self.assertEqual(ax.parse_seal_fraction("21136"), (21, 36))
+        self.assertEqual(ax.parse_seal_fraction("27l36"), (27, 36))
+        self.assertEqual(ax.parse_seal_fraction("2736"), (27, 36))
+        self.assertIsNone(ax.parse_seal_fraction("36/27"))
+        self.assertIsNone(ax.parse_seal_fraction(""))
+
+    def test_misread_slash_row_is_not_dropped_as_full(self):
+        texts = [
+            text("印鉴收集30/30", 0.896, 0.249), text("前往", 0.901, 0.301),
+            text("印鉴收集27136", 0.897, 0.38), text("前往", 0.901, 0.432),
+        ]
+        routes = ax.parse_routes(texts)
+        self.assertEqual([(r.seals, r.total) for r in routes], [(30, 30), (27, 36)])
+        self.assertEqual(ax.select_route(routes).seals, 27)
+
+    def test_unread_route_row_blocks_the_all_full_conclusion(self):
+        task = object.__new__(ax.AbyssTaskMixin)
+        task._abyss_ocr = lambda roi, match=None, frame=None: [
+            text("印鉴收集30/30", 0.896, 0.249), text("前往", 0.901, 0.301),
+            text("印鉴收集??", 0.897, 0.38), text("前往", 0.901, 0.432),
+        ]
+        self.assertIsNone(task._abyss_read_routes())
+        routes, unread = task._abyss_last_route_read
+        self.assertEqual((len(routes), unread), (1, 1))
+
     def test_station_cards_count_gold_medals_and_pick_first_unfinished(self):
         labels = [text("第六站", 0.888, 0.479), text("第七站", 0.888, 0.618),
                   text("第八站", 0.888, 0.756)]

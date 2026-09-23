@@ -15,8 +15,10 @@ EXIT_NEXT = "next"
 EXIT_END = "end"
 
 STATION_RE = re.compile(r"第\s*([0-9一二两三四五六七八九十]+)\s*站")
-SEAL_RE = re.compile(r"印鉴.*?(\d+)\s*/\s*(\d+)")
-FRACTION_RE = re.compile(r"^(\d+)\s*/\s*(\d+)$")
+SEAL_RE = re.compile(r"印鉴[^0-9]*([0-9/|lI]+)")
+FRACTION_RE = re.compile(r"^[0-9/|lI]+$")
+# OCR often reads the spaced "27 / 36" slash as "1", "l", "I" or "|", or drops it.
+_SLASH_LOOKALIKES = "/1lI|"
 WAVE_RE = re.compile(r"波次[:：]?([0-9OoIl|]{1,2})\s*/\s*([0-9OoIl|]{1,2})")
 WAVE_NO_SLASH_RE = re.compile(r"波次[:：]?([0-9Oo])([0-9Il|])(?![0-9])")
 GO_RE = re.compile(r"前往")
@@ -109,6 +111,27 @@ class AbyssRoute:
         return self.total // FULL_STARS
 
 
+def parse_seal_fraction(text: str) -> tuple[int, int] | None:
+    """Parse "a/b" seals where b is a multiple of 3 and a <= b, tolerating a misread slash."""
+    text = re.sub(r"\s+", "", text or "")
+    if "/" in text:
+        done, _, total = text.partition("/")
+        if done.isdigit() and total.isdigit():
+            candidates = [(int(done), int(total))]
+        else:
+            candidates = []
+    else:
+        candidates = []
+        for i in range(1, len(text) - 1):
+            if text[i] in _SLASH_LOOKALIKES and text[:i].isdigit() and text[i + 1:].isdigit():
+                candidates.append((int(text[:i]), int(text[i + 1:])))
+        for i in range(1, len(text)):
+            if text.isdigit():
+                candidates.append((int(text[:i]), int(text[i:])))
+    valid = [(a, b) for a, b in candidates if 0 < b <= 99 and b % FULL_STARS == 0 and a <= b]
+    return valid[0] if valid else None
+
+
 def parse_routes(texts) -> list[AbyssRoute]:
     """Pair each "印鉴收集 a/b" row with the nearest "前往" button below it."""
     texts = list(texts or [])
@@ -117,18 +140,19 @@ def parse_routes(texts) -> list[AbyssRoute]:
         name = _compact(text)
         if "印鉴" not in name:
             continue
-        if match := SEAL_RE.search(name):
-            seals.append((text, int(match.group(1)), int(match.group(2))))
-            continue
-        same_row = [
-            other for other in texts
-            if other is not text and other.x > text.x
-            and abs(_center_y(other) - _center_y(text)) <= text.height
-            and FRACTION_RE.match(_compact(other))
-        ]
-        if same_row:
-            fraction = FRACTION_RE.match(_compact(min(same_row, key=lambda b: b.x)))
-            seals.append((text, int(fraction.group(1)), int(fraction.group(2))))
+        match = SEAL_RE.search(name)
+        fraction = parse_seal_fraction(match.group(1)) if match else None
+        if fraction is None:
+            same_row = [
+                other for other in texts
+                if other is not text and other.x > text.x
+                and abs(_center_y(other) - _center_y(text)) <= text.height
+                and FRACTION_RE.match(_compact(other))
+            ]
+            if same_row:
+                fraction = parse_seal_fraction(_compact(min(same_row, key=lambda b: b.x)))
+        if fraction is not None:
+            seals.append((text, *fraction))
 
     buttons = [text for text in texts if GO_RE.search(_compact(text))]
     routes = []
@@ -386,11 +410,15 @@ class AbyssTaskMixin:
             self.operate_click(tabs[0])
         else:
             self.operate_click(*self.TAB_FALLBACK)
-        routes = self.wait_until(
-            lambda: parse_routes(self._abyss_ocr(self.ROUTE_ROI)), time_out=8, settle_time=0.5
-        )
-        if not routes:
+        self._abyss_last_route_read = None
+        read = self.wait_until(self._abyss_read_routes, time_out=8, settle_time=0.5)
+        read = read or self._abyss_last_route_read
+        if not read:
             raise AbyssAbort("未识别到轨外之境路线列表")
+        routes, unread_rows = read
+        if unread_rows and select_route(routes) is None:
+            # An unreadable seal row must never be treated as a finished route.
+            raise AbyssAbort(f"有 {unread_rows} 条路线的印鉴数未识别, 请截图反馈")
         for route in routes:
             self.log_info(f"路线印鉴 {route.seals}/{route.total}")
         route = select_route(routes)
@@ -400,6 +428,21 @@ class AbyssTaskMixin:
         self._abyss_station_count = route.station_count
         self.operate_click(route.go_button)
         return route
+
+    def _abyss_read_routes(self):
+        """Return (routes, unread rows) once every "前往" row has been read, else None.
+
+        While the page is still settling an incomplete read returns None so the wait
+        continues; after the timeout the caller receives the last partial read.
+        """
+        texts = self._abyss_ocr(self.ROUTE_ROI)
+        routes = parse_routes(texts)
+        buttons = len([t for t in texts if GO_RE.search(_compact(t))])
+        if not routes:
+            return None
+        unread = max(0, buttons - len(routes))
+        self._abyss_last_route_read = (routes, unread)
+        return None if unread else (routes, 0)
 
     def abyss_read_station_cards(self) -> list[StationCard]:
         frame = self.frame
