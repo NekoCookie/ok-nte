@@ -224,3 +224,21 @@ Live selection/confirmation remains open.
 
 The ledger remains open until the implementation commit, provenance audit,
 focused tests, full suite, and real-window scenarios have been recorded.
+
+### Post-baseline addition: Off-Track Realm abyss task (2026-09-23)
+
+Status: open; independent LW one-time task, not another upstream merge. The only RU
+connection is one `[lw]` registration line in `src/config.py`, directly after
+`VolleyballTask`. All screen parsing and flow lives in `src/lw/abyss_ext.py`;
+`src/tasks/AbyssTask.py` only composes it with `NTEOneTimeTask` and `BaseCombatTask`.
+Combat reuses `lw_combat_run()` so the P-13 half-to-half roster reload stays in effect.
+
+| Behavior | Contract and side effects | Regression | Manual acceptance | Status |
+| --- | --- | --- | --- | --- |
+| Route and station selection | F1 tab by OCR (coordinate fallback); first route with unfinished seals; first visible station with fewer than 3 gold medals, scrolling down then up; all-full routes end without input | `tests.TestAbyssTask` parsing tests | Start from main world with station 8 at 0 stars, and again with station 8 full | automated passed; supplied screenshots passed offline OCR; live pending |
+| Half loop | Walk forward until combat; no combat within `未进战斗重启等待(秒)` (default 8s) triggers ESC `重启当前半场`; restart budget per half aborts with notify; cleared upper half waits for the automatic lower half | `TestAbyssStationLoop` | Upper half walk-in, lower half with and without immediate combat, one forced restart | automated passed; live pending |
+| Completion and exit | Lower half is cleared on full waves or the first pink objective check; stars are pink checks; staff NPC is found with RU `rotate_and_find`/`walk_to_box` using OCR `浮游小姐`; under-3-star stations replay within budget, otherwise next station or end trip | parsing and exit-policy tests | Finish a 3-star and an under-3-star station; confirm dialog option and next-station load | automated passed; live pending |
+
+No screenshots are committed (they contain the account UID). Team wipe and time-out
+screens were not supplied; they fall back to the 60s not-in-team restart path and are
+unverified.

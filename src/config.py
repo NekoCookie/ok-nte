@@ -203,6 +203,7 @@ config = {
         ["src.tasks.DSDFarmTask", "DSDFarmTask"],
         ["src.tasks.AutoBidAuctionTask", "AutoBidAuctionTask"],
         ["src.tasks.VolleyballTask", "VolleyballTask"],
+        ["src.tasks.AbyssTask", "AbyssTask"],  # [lw] 轨外之境自动挑战
         # 测试相关
         ["src.tasks.CombatDetectionTestTask", "CombatDetectionTestTask"],
         ["ok", "DiagnosisTask"],
