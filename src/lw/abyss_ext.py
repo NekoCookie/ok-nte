@@ -36,6 +36,9 @@ DISTANCE_MARKER_RE = re.compile(r"^\d{1,3}m$")
 RECORD_TITLE_RE = re.compile(r"确认记录|是否覆盖")
 RECORD_CONFIRM_RE = re.compile(r"^确认$")
 RECORD_CANCEL_RE = re.compile(r"^取消$")
+ROUTE_NAME_RE = re.compile(r"^(?!全日路线|特别路线).{2,8}线$")
+REWARD_PANEL_RE = re.compile(r"累计获得")
+CLAIM_RE = re.compile(r"^领取$")
 OPTION_RES = {
     EXIT_NEXT: re.compile(r"去下一站"),
     EXIT_REPLAY: re.compile(r"再次游览"),
@@ -354,6 +357,15 @@ class AbyssTaskMixin:
     TRAVEL_ROI = (0.72, 0.84, 0.99, 0.96)
     RECORD_TITLE_ROI = (0.30, 0.08, 0.70, 0.27)
     RECORD_BUTTON_ROI = (0.30, 0.74, 0.70, 0.86)
+    # Station page: route cards on the left, seal count with the reward book above it.
+    ROUTE_LIST_ROI = (0.01, 0.11, 0.20, 0.47)
+    SEAL_COUNT_ROI = (0.83, 0.10, 0.97, 0.23)
+    REWARD_ICON_DY = 0.052
+    REWARD_ICON_FALLBACK = (0.902, 0.147)
+    REWARD_PANEL_ROI = (0.15, 0.18, 0.90, 0.88)
+    REWARD_CLOSE = (0.8735, 0.137)
+    REWARD_OVERLAY_DISMISS = (0.5, 0.95)
+    MAX_REWARD_CLAIMS = 12
     # ESC stage-menu captions are not clickable; the round icon sits above the caption.
     ESC_MENU_ICON_DY = 0.143
 
@@ -461,6 +473,12 @@ class AbyssTaskMixin:
             self.log_info(f"路线印鉴 {route.seals}/{route.total}")
         route = select_route(routes)
         if route is None:
+            # Full seals can still have unclaimed milestone rewards.
+            self.log_info("所有路线印鉴已满, 检查未领取的印鉴奖励")
+            self.operate_click(routes[0].go_button)
+            if self._abyss_wait_station_page():
+                self.abyss_claim_all_route_rewards()
+            self.ensure_main()
             self.log_info("所有路线印鉴已满, 无需挑战", notify=True)
             return None
         self._abyss_station_count = route.station_count
@@ -495,14 +513,18 @@ class AbyssTaskMixin:
         elif self.is_in_team() and self.find_interac():
             self.send_key("f", action_name="abyss_entry", interval=3)
 
-    def abyss_enter_first_unfinished_station(self) -> bool:
-        if not self.wait_until(
+    def _abyss_wait_station_page(self) -> bool:
+        return bool(self.wait_until(
             self.abyss_read_station_cards,
             pre_action=self._abyss_advance_to_station_list,
             time_out=self.STATION_LIST_TIMEOUT,
             settle_time=0.5,
-        ):
+        ))
+
+    def abyss_enter_first_unfinished_station(self) -> bool:
+        if not self._abyss_wait_station_page():
             raise AbyssAbort("未识别到站点列表")
+        self.abyss_claim_seal_rewards()
         snap_box = self.box_of_screen(*self.STATION_LIST_ROI)
         x, y = self.STATION_SCROLL_POS
         for step in (-self.STATION_SCROLL_STEP, self.STATION_SCROLL_STEP):
@@ -742,6 +764,7 @@ class AbyssTaskMixin:
         )
         if choice == EXIT_END:
             self.wait_in_team(time_out=60, raise_if_not_found=False)
+            self.abyss_claim_after_trip()
         elif not self.wait_until(
             lambda: self._abyss_left_station(choice, hud.station),
             pre_action=self.abyss_handle_record_prompt,
@@ -785,3 +808,77 @@ class AbyssTaskMixin:
     def _abyss_click_text(self, roi, pattern):
         if texts := self._abyss_ocr(roi, pattern):
             self.operate_click(texts[0], action_name="abyss_text_click", interval=1.5)
+
+    # ---------- seal milestone rewards ----------
+
+    def abyss_claim_after_trip(self):
+        """After "结束行程", reopen the station page from the entrance and claim rewards."""
+        opened = False
+        if self.wait_until(self.find_interac, time_out=8):
+            self.send_key("f", after_sleep=1)
+            opened = bool(self.wait_until(self.abyss_read_station_cards, time_out=20))
+        if not opened:
+            self.log_warning("未在入口处打开轨外之境, 跳过领取印鉴奖励")
+            return
+        self.abyss_claim_all_route_rewards()
+        self.ensure_main()
+
+    def abyss_claim_all_route_rewards(self) -> int:
+        """Switch through every route card on the station page and claim its rewards."""
+        names = self._abyss_ocr(self.ROUTE_LIST_ROI, ROUTE_NAME_RE)
+        if not names:
+            return self.abyss_claim_seal_rewards()
+        claimed = 0
+        for name in names:
+            self.log_info(f"检查路线印鉴奖励: {_compact(name)}")
+            self.operate_click(name, after_sleep=1.5)
+            claimed += self.abyss_claim_seal_rewards()
+        return claimed
+
+    def _abyss_reward_panel_open(self) -> bool:
+        return bool(self._abyss_ocr(self.REWARD_PANEL_ROI, REWARD_PANEL_RE))
+
+    def _abyss_click_reward_icon(self):
+        counts = [
+            t for t in self._abyss_ocr(self.SEAL_COUNT_ROI) if parse_seal_fraction(_compact(t))
+        ]
+        if counts:
+            x = (counts[0].x + counts[0].width / 2) / self.width
+            y = (counts[0].y + counts[0].height / 2) / self.height - self.REWARD_ICON_DY
+        else:
+            x, y = self.REWARD_ICON_FALLBACK
+        self.operate_click(x, y, action_name="abyss_reward_icon", interval=2)
+
+    def abyss_claim_seal_rewards(self) -> int:
+        """Claim every available seal milestone of the current route; never fatal."""
+        if not self.wait_until(
+            self._abyss_reward_panel_open,
+            pre_action=self._abyss_click_reward_icon,
+            time_out=6,
+            settle_time=0.3,
+        ):
+            self.log_warning("未打开印鉴奖励面板, 跳过领取")
+            return 0
+        claimed = 0
+        for _ in range(self.MAX_REWARD_CLAIMS):
+            if not self._abyss_reward_panel_open():
+                # A "rewards obtained" overlay can cover the list after a claim.
+                self.operate_click(*self.REWARD_OVERLAY_DISMISS, after_sleep=1)
+                if not self._abyss_reward_panel_open():
+                    break
+                continue
+            buttons = self._abyss_ocr(self.REWARD_PANEL_ROI, CLAIM_RE)
+            if not buttons:
+                break
+            self.operate_click(buttons[0], after_sleep=1.5)
+            claimed += 1
+        self.wait_until(
+            lambda: not self._abyss_reward_panel_open(),
+            pre_action=lambda: self.operate_click(
+                *self.REWARD_CLOSE, action_name="abyss_reward_close", interval=1.5
+            ),
+            time_out=6,
+        )
+        if claimed:
+            self.log_info(f"领取印鉴奖励 {claimed} 项")
+        return claimed

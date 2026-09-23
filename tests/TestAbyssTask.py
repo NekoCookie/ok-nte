@@ -479,6 +479,91 @@ class TestAbyssFindNpc(unittest.TestCase):
         self.assertIsNone(NpcTask([text("08:31", 0.505, 0.156)]).abyss_find_npc())
 
 
+class RewardTask(ax.AbyssTaskMixin):
+    width, height = W, H
+
+    def __init__(self, claimable=3, overlay_after_claim=False, panel_opens=True):
+        self.claimable = claimable
+        self.overlay_after_claim = overlay_after_claim
+        self.panel_opens = panel_opens
+        self.panel = False
+        self.overlay = False
+        self.clicks = []
+        self.log_info = Mock()
+        self.log_warning = Mock()
+
+    def _abyss_ocr(self, roi, match=None, frame=None):
+        if roi == self.SEAL_COUNT_ROI:
+            return [text("36136", 0.904, 0.199)]  # real OCR of "36/36" on the station page
+        if roi == self.ROUTE_LIST_ROI:
+            names = ("全日路线", "节理环线", "特别路线", "8天2小时", "星流环线")
+            found = [text(n, 0.06, 0.2 + i * 0.07) for i, n in enumerate(names)]
+            return [t for t in found if match is None or match.search(t.name)]
+        visible = self.panel and not self.overlay
+        if match is ax.REWARD_PANEL_RE:
+            return [text("累计获得", 0.222, 0.242)] if visible else []
+        if match is ax.CLAIM_RE:
+            return [text("领取", 0.785, 0.269)] if visible and self.claimable else []
+        return []
+
+    def operate_click(self, *args, **kwargs):
+        if len(args) == 2:
+            point = (round(args[0], 3), round(args[1], 3))
+            self.clicks.append(point)
+            if point == tuple(round(v, 3) for v in ax.AbyssTaskMixin.REWARD_CLOSE):
+                self.panel = False
+            elif point == ax.AbyssTaskMixin.REWARD_OVERLAY_DISMISS:
+                self.overlay = False
+            elif self.panel_opens:
+                self.panel = True
+            return
+        self.clicks.append(args[0].name)
+        if args[0].name == "领取":
+            self.claimable -= 1
+            self.overlay = self.overlay_after_claim
+
+    def wait_until(self, condition, pre_action=None, time_out=0, settle_time=0):
+        for _ in range(3):
+            if pre_action:
+                pre_action()
+            if result := condition():
+                return result
+        return None
+
+
+class TestAbyssSealRewards(unittest.TestCase):
+    def test_book_icon_is_above_the_misread_seal_count(self):
+        task = RewardTask(claimable=0)
+        task._abyss_click_reward_icon()
+        x, y = task.clicks[0]
+        self.assertAlmostEqual(x, 0.904, places=3)
+        self.assertAlmostEqual(y, 0.199 - ax.AbyssTaskMixin.REWARD_ICON_DY, places=3)
+
+    def test_claims_every_available_milestone_then_closes(self):
+        task = RewardTask(claimable=3)  # the supplied panel: 30, 33 and 36 claimable
+        self.assertEqual(task.abyss_claim_seal_rewards(), 3)
+        self.assertEqual(task.clicks.count("领取"), 3)
+        self.assertFalse(task.panel)
+
+    def test_obtained_overlay_is_dismissed_between_claims(self):
+        task = RewardTask(claimable=2, overlay_after_claim=True)
+        self.assertEqual(task.abyss_claim_seal_rewards(), 2)
+        self.assertIn(ax.AbyssTaskMixin.REWARD_OVERLAY_DISMISS, task.clicks)
+
+    def test_panel_that_never_opens_is_skipped_without_error(self):
+        task = RewardTask(panel_opens=False)
+        self.assertEqual(task.abyss_claim_seal_rewards(), 0)
+        task.log_warning.assert_called_once()
+
+    def test_every_route_card_is_visited_and_headers_are_ignored(self):
+        task = RewardTask(claimable=1)
+        task.abyss_claim_all_route_rewards()
+        self.assertIn("节理环线", task.clicks)
+        self.assertIn("星流环线", task.clicks)
+        self.assertNotIn("全日路线", task.clicks)
+        self.assertNotIn("特别路线", task.clicks)
+
+
 class TestAbyssRegistration(unittest.TestCase):
     def test_registered_right_after_volleyball(self):
         tasks = [tuple(item) for item in config["onetime_tasks"]]
