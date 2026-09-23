@@ -169,6 +169,45 @@ class TestAbyssStationLoop(unittest.TestCase):
         task.walk_until_combat.assert_not_called()
 
 
+class MenuTask(ax.AbyssTaskMixin):
+    def __init__(self, menu_open):
+        self.menu_open = menu_open
+        self.continue_button = SimpleNamespace(name="继续挑战")
+        self.restart_button = SimpleNamespace(name="重启当前半场")
+        self.operate_click = Mock(side_effect=lambda *a, **k: setattr(self, "menu_open", False))
+        self.send_key = Mock(side_effect=lambda *a, **k: setattr(self, "menu_open", True))
+        self.wait_in_team = Mock()
+        self.ensure_main = Mock()
+        self.log_info = Mock()
+
+    def _abyss_ocr(self, roi, match=None, frame=None):
+        if not self.menu_open:
+            return []
+        return [self.continue_button if match is ax.CONTINUE_RE else self.restart_button]
+
+
+class TestAbyssStartStates(unittest.TestCase):
+    def test_start_on_stage_esc_menu_continues_instead_of_leaving(self):
+        task = MenuTask(menu_open=True)
+        task.abyss_prepare_start()
+        task.operate_click.assert_called_once_with(task.continue_button, after_sleep=0.5)
+        task.ensure_main.assert_called_once()
+
+    def test_start_without_menu_only_returns_to_main(self):
+        task = MenuTask(menu_open=False)
+        task.abyss_prepare_start()
+        task.operate_click.assert_not_called()
+        task.ensure_main.assert_called_once()
+
+    def test_restart_does_not_toggle_an_already_open_menu_closed(self):
+        task = MenuTask(menu_open=True)
+        task._abyss_open_stage_menu()
+        task.send_key.assert_not_called()
+        task.menu_open = False
+        task._abyss_open_stage_menu()
+        task.send_key.assert_called_once()
+
+
 class TestAbyssRegistration(unittest.TestCase):
     def test_registered_right_after_volleyball(self):
         tasks = [tuple(item) for item in config["onetime_tasks"]]

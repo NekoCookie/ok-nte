@@ -24,6 +24,7 @@ TAB_RE = re.compile(r"轨外之境")
 START_RE = re.compile(r"开始挑战")
 POPUP_RE = re.compile(r"点击空白区域关闭")
 RESTART_HALF_RE = re.compile(r"重启当前半场")
+CONTINUE_RE = re.compile(r"继续挑战")
 NPC_RE = re.compile(r"浮游小姐")
 OPTION_RES = {
     EXIT_NEXT: re.compile(r"去下一站"),
@@ -331,6 +332,7 @@ class AbyssTaskMixin:
         self._abyss_station_count = 0
         self._abyss_cleared = 0
         self.info_set("完成站点", 0)
+        self.abyss_prepare_start()
         if not self.abyss_in_stage():
             route = self.abyss_open_route()
             if route is None:
@@ -352,6 +354,18 @@ class AbyssTaskMixin:
             if choice != EXIT_NEXT:
                 break
         self.log_info(f"轨外之境结束, 本次完成 {self._abyss_cleared} 个站点", notify=True)
+
+    def abyss_prepare_start(self):
+        """Return to a playable screen when the task starts on an overlay.
+
+        The stage ESC menu is resumed with "继续挑战" so a mid-stage start keeps its
+        progress; other panels are closed by RU ``ensure_main``.
+        """
+        if continue_button := self._abyss_ocr(self.ESC_MENU_ROI, CONTINUE_RE):
+            self.log_info("启动时处于关卡ESC菜单, 继续挑战")
+            self.operate_click(continue_button[0], after_sleep=0.5)
+            self.wait_in_team(time_out=10, raise_if_not_found=False)
+        self.ensure_main()
 
     def abyss_in_stage(self) -> bool:
         return bool(self.is_in_team()) and self.abyss_read_hud() is not None
@@ -437,11 +451,16 @@ class AbyssTaskMixin:
         self.lw_combat_run()
         self.wait_in_team(time_out=10, raise_if_not_found=False)
 
+    def _abyss_open_stage_menu(self):
+        # ESC toggles the stage menu, so never press it while the menu is already open.
+        if not self._abyss_ocr(self.ESC_MENU_ROI, RESTART_HALF_RE):
+            self.send_key("esc", action_name="abyss_esc", interval=2)
+
     def abyss_restart_half(self):
         self.log_info("重启当前半场")
         button = self.wait_until(
             lambda: self._abyss_ocr(self.ESC_MENU_ROI, RESTART_HALF_RE),
-            pre_action=lambda: self.send_key("esc", action_name="abyss_esc", interval=2),
+            pre_action=self._abyss_open_stage_menu,
             time_out=8,
             settle_time=0.3,
         )
