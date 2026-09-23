@@ -97,7 +97,8 @@ class GiftTask(NTEOneTimeTask, BaseNTETask):
 
         def action():
             self.openESCpanel()
-            self.operate_click(0.810, 0.708)
+            if not self.lw_click_phone_menu("羁遇"):  # [lw] OCR caption; icon grid layout changes
+                return None
             self.sleep(0.5)
             return self.wait_panel(Labels.bond_panel)
 

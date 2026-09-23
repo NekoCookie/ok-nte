@@ -167,3 +167,33 @@ class TestGiftTask(unittest.TestCase):
             [GiftTask.CHARACTER_SLOT_YS[-1]] * GiftTask.SIDEBAR_SCROLLS_PER_CHARACTER
         )
         self.assertEqual(clicked_slots, expected_clicked_slots)
+
+
+class TestPhoneMenuEntry(unittest.TestCase):
+    def make_task(self, texts):
+        from unittest.mock import Mock
+
+        from src.lw.nte_task_ext import NTETaskExtMixin
+
+        class MenuTask(NTETaskExtMixin):
+            width, height = 2000, 1125
+
+        task = MenuTask()
+        task.box_of_screen = lambda *args: args
+        task.ocr = Mock(return_value=texts)
+        task.operate_click = Mock()
+        return task
+
+    def test_bond_entry_is_clicked_by_caption_not_fixed_slot(self):
+        caption = SimpleNamespace(name="羁遇", x=1473, y=850, width=48, height=30)
+        task = self.make_task([caption])
+
+        self.assertTrue(task.lw_click_phone_menu("羁遇"))
+        x, y = task.operate_click.call_args.args
+        self.assertAlmostEqual(x, 0.7485, places=3)
+        self.assertAlmostEqual(y, 0.7689 - 0.062, places=3)
+
+    def test_missing_caption_does_not_click_stale_coordinate(self):
+        task = self.make_task([])
+        self.assertFalse(task.lw_click_phone_menu("羁遇"))
+        task.operate_click.assert_not_called()

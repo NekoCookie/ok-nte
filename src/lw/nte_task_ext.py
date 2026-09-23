@@ -3,6 +3,8 @@
 #   (接线: BaseNTETask.find_confirm 一行委托到这里)
 # - lw_daily_account_cycle: DailyRoutineTask 跑完自动换号再跑一轮的钩子
 #   (接线: DailyRoutineTask.run 一行调用)
+# - lw_click_phone_menu: ESC 手机菜单按图标下方文字定位入口, 游戏调整图标排列后仍能点准
+#   (接线: GiftTask._enter_gift_page_from_main 一行调用)
 import re
 from typing import TYPE_CHECKING
 
@@ -24,6 +26,10 @@ logger = Logger.get_logger(__name__)
 
 confirm_text_re = re.compile("确认|确定")
 cancel_text_re = re.compile("取消")
+
+# ESC 手机菜单图标网格区域, 以及图标中心相对文字中心的上移量(均为画面比例)
+PHONE_MENU_ROI = (0.70, 0.40, 0.97, 0.84)
+PHONE_MENU_ICON_DY = 0.062
 
 # 取自 confirm_btn_2 模板(assets/images/0.png)的粉色实测范围
 confirm_pink_color = {
@@ -140,3 +146,19 @@ class NTETaskExtMixin(_TaskProxy):
             return ""
         nearest = min(texts, key=lambda t: t.center_distance(btn))
         return nearest.name or ""
+
+    def lw_click_phone_menu(self, label: str) -> bool:
+        """Click the ESC phone-menu icon whose caption matches ``label``.
+
+        Returns False without clicking when the caption is not visible, so callers
+        retry instead of opening whatever now sits at an old fixed coordinate.
+        """
+        texts = self.ocr(box=self.box_of_screen(*PHONE_MENU_ROI), match=re.compile(label))
+        if not texts:
+            logger.warning(f"phone menu entry not found: {label}")
+            return False
+        caption = texts[0]
+        x = (caption.x + caption.width / 2) / self.width
+        y = (caption.y + caption.height / 2) / self.height - PHONE_MENU_ICON_DY
+        self.operate_click(x, y)
+        return True
