@@ -25,6 +25,7 @@ START_RE = re.compile(r"开始挑战")
 POPUP_RE = re.compile(r"点击空白区域关闭")
 RESTART_HALF_RE = re.compile(r"重启当前半场")
 CONTINUE_RE = re.compile(r"继续挑战")
+TRAVEL_RE = re.compile(r"^传送$")
 NPC_RE = re.compile(r"浮游小姐")
 OPTION_RES = {
     EXIT_NEXT: re.compile(r"去下一站"),
@@ -290,8 +291,13 @@ class AbyssTaskMixin:
     ESC_MENU_ROI = (0.15, 0.55, 0.85, 0.65)
     NPC_ROI = (0.15, 0.05, 0.90, 0.85)
     DIALOG_ROI = (0.60, 0.50, 0.98, 0.85)
+    TRAVEL_ROI = (0.72, 0.84, 0.99, 0.96)
+    # ESC stage-menu captions are not clickable; the round icon sits above the caption.
+    ESC_MENU_ICON_DY = 0.143
 
     UPPER_TRANSITION_TIMEOUT = 15
+    STATION_LIST_TIMEOUT = 90
+    WALK_POLL_INTERVAL = 0.3
     NO_TEAM_TIMEOUT = 60
     LEAVE_TIMEOUT = 30
     NPC_ATTEMPTS = 3
@@ -361,9 +367,9 @@ class AbyssTaskMixin:
         The stage ESC menu is resumed with "继续挑战" so a mid-stage start keeps its
         progress; other panels are closed by RU ``ensure_main``.
         """
-        if continue_button := self._abyss_ocr(self.ESC_MENU_ROI, CONTINUE_RE):
+        if self._abyss_ocr(self.ESC_MENU_ROI, CONTINUE_RE):
             self.log_info("启动时处于关卡ESC菜单, 继续挑战")
-            self.operate_click(continue_button[0], after_sleep=0.5)
+            self._abyss_click_menu_entry(CONTINUE_RE)
             self.wait_in_team(time_out=10, raise_if_not_found=False)
         self.ensure_main()
 
@@ -400,8 +406,21 @@ class AbyssTaskMixin:
         texts = self._abyss_ocr(self.STATION_LIST_ROI, STATION_RE, frame=frame)
         return parse_station_cards(texts, frame)
 
+    def _abyss_advance_to_station_list(self):
+        """Handle the map teleport or entrance interaction that can precede the list."""
+        if travel := self._abyss_ocr(self.TRAVEL_ROI, TRAVEL_RE):
+            self.log_info("点击传送前往轨外之境")
+            self.operate_click(travel[0], action_name="abyss_travel", interval=3)
+        elif self.is_in_team() and self.find_interac():
+            self.send_key("f", action_name="abyss_entry", interval=3)
+
     def abyss_enter_first_unfinished_station(self) -> bool:
-        if not self.wait_until(self.abyss_read_station_cards, time_out=10, settle_time=0.5):
+        if not self.wait_until(
+            self.abyss_read_station_cards,
+            pre_action=self._abyss_advance_to_station_list,
+            time_out=self.STATION_LIST_TIMEOUT,
+            settle_time=0.5,
+        ):
             raise AbyssAbort("未识别到站点列表")
         snap_box = self.box_of_screen(*self.STATION_LIST_ROI)
         x, y = self.STATION_SCROLL_POS
@@ -466,9 +485,33 @@ class AbyssTaskMixin:
         )
         if not button:
             raise AbyssAbort("未打开ESC菜单中的重启当前半场")
-        self.operate_click(button[0], after_sleep=1)
+        if not self._abyss_click_menu_entry(RESTART_HALF_RE):
+            raise AbyssAbort("点击重启当前半场后菜单未关闭")
         self.wait_click_confirm(time_out=2, raise_if_not_found=False)
         self.wait_in_team(time_out=60)
+
+    def _abyss_menu_icon_point(self, caption) -> tuple[float, float]:
+        x = (caption.x + caption.width / 2) / self.width
+        y = (caption.y + caption.height / 2) / self.height - self.ESC_MENU_ICON_DY
+        return x, y
+
+    def _abyss_click_menu_entry(self, pattern) -> bool:
+        """Click a stage-menu icon until its caption disappears."""
+
+        def click_icon():
+            if captions := self._abyss_ocr(self.ESC_MENU_ROI, pattern):
+                self.operate_click(
+                    *self._abyss_menu_icon_point(captions[0]),
+                    action_name="abyss_menu_icon",
+                    interval=1.5,
+                )
+
+        return bool(self.wait_until(
+            lambda: not self._abyss_ocr(self.ESC_MENU_ROI, pattern),
+            pre_action=click_icon,
+            time_out=8,
+            settle_time=0.3,
+        ))
 
     def abyss_play_station(self) -> AbyssHud:
         """Fight both halves until the lower half reports all waves cleared."""
@@ -513,12 +556,38 @@ class AbyssTaskMixin:
                     continue
                 self.log_warning("上半场已完成但未进入下半场")
             upper_done_since = None
-            if self.walk_until_combat(time_out=combat_wait, run=True):
+            if self.abyss_walk_until_combat(combat_wait):
                 self.abyss_fight()
                 continue
             self.log_warning(f"{hud.half} {combat_wait:.0f}s 内未进入战斗")
             restarts = self._abyss_count_restart(restarts, max_restarts)
             self.abyss_restart_half()
+
+    def abyss_walk_until_combat(self, time_out: float) -> bool:
+        """Run forward until combat; a buff popup pauses the walk and restarts the timer."""
+        self.middle_click(after_sleep=0.2)
+        deadline = time.time() + time_out
+        held = False
+        try:
+            while time.time() < deadline:
+                if self.in_combat():
+                    return True
+                if self.abyss_close_popup():
+                    if held:
+                        self.send_key_up("w")
+                        held = False
+                    deadline = time.time() + time_out
+                    continue
+                if not held:
+                    self.send_key_down("w")
+                    self.sleep(0.1)
+                    self.send_key("lshift")
+                    held = True
+                self.sleep(self.WALK_POLL_INTERVAL)
+            return bool(self.in_combat())
+        finally:
+            if held:
+                self.send_key_up("w")
 
     def _abyss_count_restart(self, restarts, max_restarts) -> int:
         restarts += 1

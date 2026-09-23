@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import numpy as np
 
@@ -126,7 +126,7 @@ class FakeStationTask(ax.AbyssTaskMixin):
     def __init__(self, huds, combat_results):
         self.config = {self.CONF_COMBAT_WAIT: 8, self.CONF_MAX_RESTARTS: 1}
         self.huds = list(huds)
-        self.walk_until_combat = Mock(side_effect=list(combat_results))
+        self.abyss_walk_until_combat = Mock(side_effect=list(combat_results))
         self.abyss_fight = Mock()
         self.abyss_restart_half = Mock()
         self.abyss_close_popup = Mock(return_value=False)
@@ -149,7 +149,7 @@ class TestAbyssStationLoop(unittest.TestCase):
         task = FakeStationTask([upper, upper, lower, done], [False, True, True])
 
         self.assertEqual(task.abyss_play_station(), done)
-        task.walk_until_combat.assert_called_with(time_out=8.0, run=True)
+        task.abyss_walk_until_combat.assert_called_with(8.0)
         self.assertEqual(task.abyss_restart_half.call_count, 1)
         self.assertEqual(task.abyss_fight.call_count, 2)
 
@@ -166,19 +166,37 @@ class TestAbyssStationLoop(unittest.TestCase):
         )
         task.UPPER_TRANSITION_TIMEOUT = 60
         self.assertTrue(task.abyss_play_station().finished)
-        task.walk_until_combat.assert_not_called()
+        task.abyss_walk_until_combat.assert_not_called()
 
 
 class MenuTask(ax.AbyssTaskMixin):
-    def __init__(self, menu_open):
+    width, height = W, H
+
+    def __init__(self, menu_open, caption_clicks_work=False):
         self.menu_open = menu_open
-        self.continue_button = SimpleNamespace(name="继续挑战")
-        self.restart_button = SimpleNamespace(name="重启当前半场")
-        self.operate_click = Mock(side_effect=lambda *a, **k: setattr(self, "menu_open", False))
+        # Captions from the supplied 2000x1125 ESC-menu screenshot.
+        self.continue_button = text("继续挑战", 0.236, 0.596, width=0.05)
+        self.restart_button = text("重启当前半场", 0.411, 0.596, width=0.075)
+        self.caption_clicks_work = caption_clicks_work
+        self.operate_click = Mock(side_effect=self._click)
         self.send_key = Mock(side_effect=lambda *a, **k: setattr(self, "menu_open", True))
         self.wait_in_team = Mock()
         self.ensure_main = Mock()
         self.log_info = Mock()
+
+    def _click(self, *args, **kwargs):
+        # Only the round icon above the caption reacts in the game.
+        x, y = args
+        if y < 0.5 or self.caption_clicks_work:
+            self.menu_open = False
+
+    def wait_until(self, condition, pre_action=None, time_out=0, settle_time=0):
+        for _ in range(3):
+            if pre_action:
+                pre_action()
+            if result := condition():
+                return result
+        return None
 
     def _abyss_ocr(self, roi, match=None, frame=None):
         if not self.menu_open:
@@ -187,11 +205,21 @@ class MenuTask(ax.AbyssTaskMixin):
 
 
 class TestAbyssStartStates(unittest.TestCase):
-    def test_start_on_stage_esc_menu_continues_instead_of_leaving(self):
+    def test_start_on_stage_esc_menu_clicks_continue_icon_not_caption(self):
         task = MenuTask(menu_open=True)
         task.abyss_prepare_start()
-        task.operate_click.assert_called_once_with(task.continue_button, after_sleep=0.5)
+        (x, y), _ = task.operate_click.call_args
+        self.assertAlmostEqual(x, 0.236, places=3)
+        self.assertAlmostEqual(y, 0.596 - ax.AbyssTaskMixin.ESC_MENU_ICON_DY, places=3)
+        self.assertFalse(task.menu_open)
         task.ensure_main.assert_called_once()
+
+    def test_restart_icon_click_is_verified_by_menu_closing(self):
+        task = MenuTask(menu_open=True)
+        self.assertTrue(task._abyss_click_menu_entry(ax.RESTART_HALF_RE))
+        (x, y), _ = task.operate_click.call_args
+        self.assertAlmostEqual(x, 0.411, places=3)
+        self.assertLess(y, 0.5)
 
     def test_start_without_menu_only_returns_to_main(self):
         task = MenuTask(menu_open=False)
@@ -206,6 +234,69 @@ class TestAbyssStartStates(unittest.TestCase):
         task.menu_open = False
         task._abyss_open_stage_menu()
         task.send_key.assert_called_once()
+
+
+class WalkTask(ax.AbyssTaskMixin):
+    WALK_POLL_INTERVAL = 0
+
+    def __init__(self, popups, combat_after):
+        self.popups = list(popups)
+        self.polls = 0
+        self.combat_after = combat_after
+        self.middle_click = Mock()
+        self.send_key_down = Mock()
+        self.send_key_up = Mock()
+        self.send_key = Mock()
+        self.sleep = Mock()
+
+    def in_combat(self):
+        self.polls += 1
+        return self.polls > self.combat_after
+
+    def abyss_close_popup(self):
+        return self.popups.pop(0) if self.popups else False
+
+
+class TestAbyssWalk(unittest.TestCase):
+    def test_popup_mid_walk_releases_w_then_resumes_until_combat(self):
+        task = WalkTask(popups=[False, True], combat_after=4)
+        self.assertTrue(task.abyss_walk_until_combat(8))
+        self.assertEqual(task.send_key_down.call_count, 2)
+        self.assertEqual(task.send_key_up.call_count, 2)
+
+    def test_timeout_without_combat_releases_w(self):
+        task = WalkTask(popups=[], combat_after=10**9)
+        with patch.object(ax.time, "time", side_effect=[0, 0, 1, 99]):
+            self.assertFalse(task.abyss_walk_until_combat(8))
+        task.send_key_up.assert_called_once_with("w")
+
+
+class TravelTask(ax.AbyssTaskMixin):
+    def __init__(self, travel_visible, in_team=False, interac=False):
+        self.travel = [text("传送", 0.858, 0.893)] if travel_visible else []
+        self.is_in_team = Mock(return_value=in_team)
+        self.find_interac = Mock(return_value=interac)
+        self.operate_click = Mock()
+        self.send_key = Mock()
+        self.log_info = Mock()
+
+    def _abyss_ocr(self, roi, match=None, frame=None):
+        return self.travel if match is ax.TRAVEL_RE else []
+
+
+class TestAbyssTravel(unittest.TestCase):
+    def test_map_teleport_button_is_clicked_before_station_list(self):
+        task = TravelTask(travel_visible=True)
+        task._abyss_advance_to_station_list()
+        task.operate_click.assert_called_once_with(
+            task.travel[0], action_name="abyss_travel", interval=3
+        )
+
+    def test_entrance_interaction_after_teleport(self):
+        task = TravelTask(travel_visible=False, in_team=True, interac=True)
+        task._abyss_advance_to_station_list()
+        task.send_key.assert_called_once_with("f", action_name="abyss_entry", interval=3)
+        task.operate_click.assert_not_called()
 
 
 class TestAbyssRegistration(unittest.TestCase):
