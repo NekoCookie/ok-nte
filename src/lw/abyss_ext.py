@@ -29,6 +29,9 @@ RESTART_HALF_RE = re.compile(r"重启当前半场")
 CONTINUE_RE = re.compile(r"继续挑战")
 TRAVEL_RE = re.compile(r"^传送$")
 NPC_RE = re.compile(r"浮游小姐")
+RECORD_TITLE_RE = re.compile(r"确认记录|是否覆盖")
+RECORD_CONFIRM_RE = re.compile(r"^确认$")
+RECORD_CANCEL_RE = re.compile(r"^取消$")
 OPTION_RES = {
     EXIT_NEXT: re.compile(r"去下一站"),
     EXIT_REPLAY: re.compile(r"再次游览"),
@@ -270,6 +273,24 @@ def station_cleared(hud: AbyssHud | None, frame) -> bool:
     return hud.finished or hud_check_marks(frame)[0]
 
 
+# Seal medals on the "确认记录" overwrite prompt: old record left, new record right.
+RECORD_OLD_STARS_X = (0.352, 0.380, 0.408)
+RECORD_NEW_STARS_X = (0.854, 0.882, 0.910)
+RECORD_STARS_Y = 0.357
+
+
+def count_record_stars(frame, xs) -> int:
+    height, width = frame.shape[:2]
+    y0 = int((RECORD_STARS_Y - STAR_SLOT_HALF_H) * height)
+    y1 = int((RECORD_STARS_Y + STAR_SLOT_HALF_H) * height)
+    stars = 0
+    for x in xs:
+        x0, x1 = int((x - STAR_SLOT_HALF_W) * width), int((x + STAR_SLOT_HALF_W) * width)
+        if gold_ratio(frame[y0:y1, x0:x1]) >= STAR_GOLD_THRESHOLD:
+            stars += 1
+    return stars
+
+
 def parse_dialog_options(texts) -> dict:
     options = {}
     for text in texts or []:
@@ -316,6 +337,8 @@ class AbyssTaskMixin:
     NPC_ROI = (0.15, 0.05, 0.90, 0.85)
     DIALOG_ROI = (0.60, 0.50, 0.98, 0.85)
     TRAVEL_ROI = (0.72, 0.84, 0.99, 0.96)
+    RECORD_TITLE_ROI = (0.30, 0.08, 0.70, 0.27)
+    RECORD_BUTTON_ROI = (0.30, 0.74, 0.70, 0.86)
     # ESC stage-menu captions are not clickable; the round icon sits above the caption.
     ESC_MENU_ICON_DY = 0.143
 
@@ -323,7 +346,7 @@ class AbyssTaskMixin:
     STATION_LIST_TIMEOUT = 90
     WALK_POLL_INTERVAL = 0.3
     NO_TEAM_TIMEOUT = 60
-    LEAVE_TIMEOUT = 30
+    LEAVE_TIMEOUT = 60
     NPC_ATTEMPTS = 3
 
     def configure_abyss(self):
@@ -571,6 +594,9 @@ class AbyssTaskMixin:
                 upper_done_since = None
                 continue
             if not self.is_in_team():
+                if self.abyss_handle_record_prompt():
+                    no_team_since = None
+                    continue
                 # "去下一站" opens the next station's detail page instead of loading it.
                 if start := self._abyss_ocr(self.START_ROI, START_RE):
                     self.log_info("站点详情页, 点击开始挑战")
@@ -698,13 +724,45 @@ class AbyssTaskMixin:
         if choice == EXIT_END:
             self.wait_in_team(time_out=60, raise_if_not_found=False)
         elif not self.wait_until(
-            lambda: not self._abyss_cleared_stage_visible(), time_out=self.LEAVE_TIMEOUT
+            lambda: self._abyss_left_station(choice, hud.station),
+            pre_action=self.abyss_handle_record_prompt,
+            time_out=self.LEAVE_TIMEOUT,
+            settle_time=0.5,
         ):
-            raise AbyssAbort("选择乘务员选项后仍停留在已通关画面")
+            raise AbyssAbort("选择乘务员选项后未进入新的挑战")
         return choice
 
-    def _abyss_cleared_stage_visible(self) -> bool:
+    def _abyss_left_station(self, choice: str, old_station: int | None) -> bool:
+        """The old stage stays on screen for seconds after the choice while its HUD
+        objectives disappear, so only a new stage counts as having left it."""
+        if self._abyss_ocr(self.START_ROI, START_RE):
+            return True
         if not self.is_in_team():
             return False
+        hud = self.abyss_read_hud()
+        if hud is None or hud.half != HALF_UPPER:
+            return False
+        if choice == EXIT_NEXT:
+            return old_station is None or hud.station != old_station
+        return True
+
+    def abyss_handle_record_prompt(self) -> bool:
+        """Answer "确认记录": overwrite only when the new run earned more seals."""
+        if not self._abyss_ocr(self.RECORD_TITLE_ROI, RECORD_TITLE_RE):
+            return False
         frame = self.frame
-        return station_cleared(self.abyss_read_hud(frame), frame)
+        old = count_record_stars(frame, RECORD_OLD_STARS_X)
+        new = count_record_stars(frame, RECORD_NEW_STARS_X)
+        pattern = RECORD_CONFIRM_RE if new > old else RECORD_CANCEL_RE
+        self.log_info(f"确认记录: 原纪录 {old} 星, 新纪录 {new} 星, 选择 {pattern.pattern}")
+        self.wait_until(
+            lambda: not self._abyss_ocr(self.RECORD_TITLE_ROI, RECORD_TITLE_RE),
+            pre_action=lambda: self._abyss_click_text(self.RECORD_BUTTON_ROI, pattern),
+            time_out=10,
+            settle_time=0.3,
+        )
+        return True
+
+    def _abyss_click_text(self, roi, pattern):
+        if texts := self._abyss_ocr(roi, pattern):
+            self.operate_click(texts[0], action_name="abyss_text_click", interval=1.5)

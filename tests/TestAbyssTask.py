@@ -341,6 +341,102 @@ class TestAbyssTravel(unittest.TestCase):
         task.operate_click.assert_not_called()
 
 
+class LeaveTask(ax.AbyssTaskMixin):
+    def __init__(self, hud, in_team=True, start_visible=False):
+        self.hud = hud
+        self.is_in_team = Mock(return_value=in_team)
+        self.start_visible = start_visible
+
+    def abyss_read_hud(self, frame=None):
+        return self.hud
+
+    def _abyss_ocr(self, roi, match=None, frame=None):
+        return [text("开始挑战", 0.879, 0.915)] if self.start_visible else []
+
+
+class TestAbyssLeaveStation(unittest.TestCase):
+    def test_stale_old_stage_without_objectives_is_not_a_new_stage(self):
+        # Real failure: 4s after "去下一站" the old HUD still read "第10站 下行线" with
+        # objectives hidden, the loop walked for 8s and restarted the cleared half.
+        stale = LeaveTask(ax.AbyssHud(10, ax.HALF_LOWER, None))
+        self.assertFalse(stale._abyss_left_station(ax.EXIT_NEXT, 10))
+        self.assertFalse(stale._abyss_left_station(ax.EXIT_REPLAY, 10))
+
+    def test_next_station_requires_a_new_station_number(self):
+        same = LeaveTask(ax.AbyssHud(10, ax.HALF_UPPER, (0, 1)))
+        self.assertFalse(same._abyss_left_station(ax.EXIT_NEXT, 10))
+        nxt = LeaveTask(ax.AbyssHud(11, ax.HALF_UPPER, (0, 1)))
+        self.assertTrue(nxt._abyss_left_station(ax.EXIT_NEXT, 10))
+
+    def test_replay_accepts_restarted_upper_half_and_detail_page(self):
+        self.assertTrue(
+            LeaveTask(ax.AbyssHud(10, ax.HALF_UPPER, (0, 1)))._abyss_left_station(
+                ax.EXIT_REPLAY, 10
+            )
+        )
+        detail = LeaveTask(None, in_team=False, start_visible=True)
+        self.assertTrue(detail._abyss_left_station(ax.EXIT_NEXT, 10))
+
+
+def record_frame(old, new):
+    frame = np.full((H, W, 3), 30, dtype=np.uint8)
+    y = int(ax.RECORD_STARS_Y * H)
+    for xs, count in ((ax.RECORD_OLD_STARS_X, old), (ax.RECORD_NEW_STARS_X, new)):
+        for x in xs[:count]:
+            cx = int(x * W)
+            frame[y - 10:y + 10, cx - 10:cx + 10] = (30, 200, 240)
+    return frame
+
+
+class RecordTask(ax.AbyssTaskMixin):
+    def __init__(self, frame):
+        self.frame = frame
+        self.open = True
+        self.clicked = []
+        self.log_info = Mock()
+
+    def _abyss_ocr(self, roi, match=None, frame=None):
+        if not self.open:
+            return []
+        if match is ax.RECORD_TITLE_RE:
+            return [text("确认记录", 0.5, 0.122)]
+        if match is ax.RECORD_CONFIRM_RE:
+            return [text("确认", 0.586, 0.797)]
+        if match is ax.RECORD_CANCEL_RE:
+            return [text("取消", 0.414, 0.797)]
+        return []
+
+    def operate_click(self, box, **kwargs):
+        self.clicked.append(box.name)
+        self.open = False
+
+    def wait_until(self, condition, pre_action=None, time_out=0, settle_time=0):
+        for _ in range(3):
+            if pre_action:
+                pre_action()
+            if result := condition():
+                return result
+        return None
+
+
+class TestAbyssRecordPrompt(unittest.TestCase):
+    def test_equal_record_keeps_the_original(self):
+        task = RecordTask(record_frame(3, 3))  # the supplied 3-star vs 3-star prompt
+        self.assertTrue(task.abyss_handle_record_prompt())
+        self.assertEqual(task.clicked, ["取消"])
+
+    def test_better_record_overwrites(self):
+        task = RecordTask(record_frame(1, 3))
+        task.abyss_handle_record_prompt()
+        self.assertEqual(task.clicked, ["确认"])
+
+    def test_no_prompt_is_a_no_op(self):
+        task = RecordTask(record_frame(0, 0))
+        task.open = False
+        self.assertFalse(task.abyss_handle_record_prompt())
+        self.assertEqual(task.clicked, [])
+
+
 class TestAbyssRegistration(unittest.TestCase):
     def test_registered_right_after_volleyball(self):
         tasks = [tuple(item) for item in config["onetime_tasks"]]
