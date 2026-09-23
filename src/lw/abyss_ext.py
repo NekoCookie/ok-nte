@@ -528,6 +528,13 @@ class AbyssTaskMixin:
                 upper_done_since = None
                 continue
             if not self.is_in_team():
+                # "去下一站" opens the next station's detail page instead of loading it.
+                if start := self._abyss_ocr(self.START_ROI, START_RE):
+                    self.log_info("站点详情页, 点击开始挑战")
+                    self.operate_click(start[0], action_name="abyss_start", interval=2)
+                    no_team_since = None
+                    self.sleep(0.5)
+                    continue
                 no_team_since = no_team_since or time.time()
                 if time.time() - no_team_since > self.NO_TEAM_TIMEOUT:
                     self.log_warning("长时间未回到队伍画面, 尝试重启当前半场")

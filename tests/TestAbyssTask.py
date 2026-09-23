@@ -160,6 +160,19 @@ class TestAbyssStationLoop(unittest.TestCase):
             task.abyss_play_station()
         self.assertEqual(task.abyss_restart_half.call_count, 1)
 
+    def test_next_station_detail_page_is_started_before_fighting(self):
+        start = text("开始挑战", 0.879, 0.915)
+        done = ax.AbyssHud(10, ax.HALF_LOWER, (1, 1))
+        task = FakeStationTask([done], [])
+        task.is_in_team = Mock(side_effect=[False, True])
+        task._abyss_ocr = Mock(side_effect=lambda roi, match=None, frame=None: (
+            [start] if match is ax.START_RE else []))
+        task.operate_click = Mock()
+        task.log_info = Mock()
+
+        self.assertEqual(task.abyss_play_station(), done)
+        task.operate_click.assert_called_once_with(start, action_name="abyss_start", interval=2)
+
     def test_cleared_upper_half_waits_for_transition_without_walking(self):
         task = FakeStationTask(
             [ax.AbyssHud(8, ax.HALF_UPPER, (1, 1)), ax.AbyssHud(8, ax.HALF_LOWER, (1, 1))], []
