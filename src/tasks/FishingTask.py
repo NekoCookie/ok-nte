@@ -5,13 +5,13 @@ from enum import Enum
 import cv2
 import numpy as np
 from ok import TaskDisabledException, WaitFailedException
-from qfluentwidgets import FluentIcon
 
 from src import text_white_color
 from src.Labels import Labels
-from src.scene_flow import SceneReplan, StepFailure, StepPolicy
 from src.tasks.BaseNTETask import BaseNTETask
+from src.tasks.flow.scene_flow import SceneReplan, StepFailure, StepPolicy
 from src.tasks.NTEOneTimeTask import NTEOneTimeTask
+from src.ui.task_icons import Icon
 from src.utils import image_utils as iu
 
 
@@ -52,9 +52,8 @@ class FishingTask(NTEOneTimeTask, BaseNTETask):
         super().__init__(*args, **kwargs)
         self.name = "自动钓鱼"
         self.description = "自动完成一轮或多轮钓鱼"
-        self.icon = FluentIcon.SYNC
         self.group_name = "都市闲趣"
-        self.group_icon = FluentIcon.GAME
+        self.group_icon = Icon.GAME
         self.add_rounds_config()
         self.default_config.update(
             {

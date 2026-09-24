@@ -11,10 +11,10 @@ from typing import Any
 
 import psutil
 from ok import ConfigOption, og
-from ok.gui.Communicate import communicate
 from ok.util.logger import Logger
 
 from src import GAME_EXE
+from src.events import communicate
 
 logger = Logger.get_logger(__name__)
 
@@ -480,8 +480,10 @@ class _BackgroundAudioRouter:
         with self._lock:
             if self._bound_exit_event is exit_event:
                 return
-            exit_event.bind_stop(self)
             self._bound_exit_event = exit_event
+        # bind_stop may call stop() synchronously when the event is already set.
+        # Do not invoke it while holding _lock, because stop() needs the same lock.
+        exit_event.bind_stop(self)
 
     def stop(self) -> None:
         self.restore_on_exit()
@@ -553,7 +555,7 @@ class _BackgroundAudioRouter:
                 timeout=_COMMAND_TIMEOUT_SECONDS,
                 check=False,
                 shell=False,
-                creationflags=subprocess.CREATE_NO_WINDOW
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
         except Exception as exc:
             logger.error("failed to route game audio with svcl", exc)
@@ -711,7 +713,7 @@ def _export_sound_items(exe_path: str):
         timeout=_COMMAND_TIMEOUT_SECONDS,
         check=False,
         shell=False,
-        creationflags=subprocess.CREATE_NO_WINDOW
+        creationflags=subprocess.CREATE_NO_WINDOW,
     )
     if result.returncode != 0:
         raise RuntimeError(f"svcl failed to list sound items, exit code {result.returncode}")
@@ -805,7 +807,7 @@ def _device_match_key(device: str) -> str:
 
 def _alert_error(message: str) -> None:
     try:
-        from ok.gui.util.Alert import alert_error
+        from ok.ui.qt.util.Alert import alert_error
 
         alert_error(message)
     except Exception:

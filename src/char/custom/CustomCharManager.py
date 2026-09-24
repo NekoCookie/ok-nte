@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import uuid
 import zipfile
@@ -25,6 +26,11 @@ CUSTOM_CHARS_DIR = get_path_relative_to_exe("custom_chars")
 FEATURES_DIR = get_path_relative_to_exe("custom_chars", "features")
 DB_PATH = get_path_relative_to_exe("custom_chars", "db.json")
 EXTERNAL_CHARS_DIR = get_path_relative_to_exe("custom_chars", "external_chars")
+WINDOWS_RESERVED_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{index}" for index in range(1, 10)}
+    | {f"LPT{index}" for index in range(1, 10)}
+)
 
 
 class CustomCharManager:
@@ -44,11 +50,15 @@ class CustomCharManager:
         self._data_lock = RLock()
         for directory in (CUSTOM_CHARS_DIR, FEATURES_DIR, EXTERNAL_CHARS_DIR):
             os.makedirs(directory, exist_ok=True)
+        from src.char.core.CharRegistry import char_registry
+
         context = MigrationContext(
-            is_builtin_impl=self.is_registered_impl,
+            is_builtin_impl=self.is_builtin_impl,
             get_builtin_prefix=self.get_builtin_prefix,
             iter_builtin_impl_items=self.iter_builtin_impl_items,
             generate_combo_id=lambda _existing: f"combo_{uuid.uuid4().hex}",
+            get_external_impl_ids_by_class_name=char_registry.get_external_impl_ids_by_class_name,
+            is_registered_impl=self.is_registered_impl,
         )
         self._db = CustomCharDb(DB_PATH, FEATURES_DIR, context, logger)
         self._feature_cache = {}
@@ -233,6 +243,269 @@ class CustomCharManager:
     def delete_combo(self, combo_id: str):
         """删除出招表"""
         self._db.delete_combo(combo_id)
+
+    @staticmethod
+    def _external_impl_path(impl_id: str) -> Path | None:
+        impl_id = "" if impl_id is None else str(impl_id)
+        if not impl_id.startswith("external:"):
+            return None
+
+        relative_stem = impl_id.removeprefix("external:")
+        root = Path(EXTERNAL_CHARS_DIR).resolve()
+        candidate = (root / f"{relative_stem}.py").resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            return None
+        return candidate
+
+    @classmethod
+    def _builtin_impl_path(cls, impl_id: str) -> Path | None:
+        impl_id = "" if impl_id is None else str(impl_id)
+        if not impl_id.startswith("builtin:"):
+            return None
+        from src.char.core.CharRegistry import char_registry
+
+        entry = char_registry.get(impl_id)
+        if entry is None or entry.source != "builtin":
+            return None
+        import inspect
+
+        try:
+            source_file = inspect.getsourcefile(entry.char_cls)
+            if source_file:
+                path = Path(source_file).resolve()
+                if path.is_file():
+                    return path
+        except (OSError, TypeError) as error:
+            logger.warning(
+                f"Failed to find builtin character source for {impl_id}: {error.__class__.__name__}"
+            )
+        return None
+
+    @staticmethod
+    def _read_impl_source(path: Path | None, source_kind: str) -> str:
+        if path and path.is_file():
+            try:
+                return path.read_text(encoding="utf-8")
+            except OSError as error:
+                logger.error(f"Failed to read {source_kind} character source: {path.name}", error)
+        return ""
+
+    def get_builtin_impl_source(self, impl_id: str) -> str:
+        return self._read_impl_source(self._builtin_impl_path(impl_id), "builtin")
+
+    def get_external_impl_source(self, impl_id: str) -> str:
+        return self._read_impl_source(self._external_impl_path(impl_id), "external")
+
+    @staticmethod
+    def validate_external_directory(directory: str) -> str:
+        """Return a safe single directory name for managed external sources."""
+        directory = str(directory or "")
+        if not directory:
+            raise ValueError("External character directory cannot be empty")
+        if directory != directory.strip() or directory.rstrip(" .") != directory:
+            raise ValueError("External character directory cannot end with a space or dot")
+        if directory.startswith("_"):
+            raise ValueError("External character directory cannot start with an underscore")
+        if directory in {".", ".."} or ".." in directory:
+            raise ValueError("External character directory cannot contain '..'")
+        stem = directory.split(".", 1)[0].upper()
+        if stem in WINDOWS_RESERVED_NAMES:
+            raise ValueError("External character directory cannot use a Windows reserved name")
+        if not re.fullmatch(r"[\w.-]+", directory):
+            raise ValueError("External character directory contains unsupported characters")
+        return directory
+
+    @classmethod
+    def _external_directory_path(cls, directory: str) -> Path | None:
+        try:
+            directory = cls.validate_external_directory(directory)
+        except ValueError:
+            return None
+        root = Path(EXTERNAL_CHARS_DIR).resolve()
+        candidate = (root / directory).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            return None
+        return candidate
+
+    def external_directory_exists(self, directory: str) -> bool:
+        """Return whether a validated managed external-code directory already exists."""
+        target_directory = self._external_directory_path(directory)
+        return target_directory is not None and target_directory.exists()
+
+    def install_external_sources(self, directory: str, sources: dict[str, str]) -> tuple[bool, str]:
+        """Create one isolated external-code directory through the shared manager."""
+        target_directory = self._external_directory_path(directory)
+        if target_directory is None:
+            return False, "External character directory contains unsupported characters"
+        if target_directory.exists():
+            return False, "External character directory already exists"
+        if not sources:
+            return True, ""
+
+        filenames = set()
+        for filename, source in sources.items():
+            if (
+                not isinstance(filename, str)
+                or Path(filename).name != filename
+                or not filename.lower().endswith(".py")
+                or filename in filenames
+                or not isinstance(source, str)
+            ):
+                return False, "External character sources are invalid"
+            filenames.add(filename)
+
+        try:
+            target_directory.mkdir(parents=True, exist_ok=False)
+            for filename, source in sources.items():
+                (target_directory / filename).write_text(source, encoding="utf-8")
+        except OSError as error:
+            if target_directory.exists():
+                shutil.rmtree(target_directory, ignore_errors=True)
+            logger.error("Failed to install external character sources", error)
+            return False, str(error)
+
+        from src.char.core.CharRegistry import char_registry
+
+        char_registry.rescan_external()
+        return True, ""
+
+    def remove_external_sources(self, directory: str) -> None:
+        """Remove a newly installed external-code directory and refresh the registry."""
+        target_directory = self._external_directory_path(directory)
+        if target_directory is not None and target_directory.is_dir():
+            shutil.rmtree(target_directory, ignore_errors=True)
+        from src.char.core.CharRegistry import char_registry
+
+        char_registry.rescan_external()
+
+    def update_external_impl_source(self, impl_id: str, source_code: str) -> tuple[bool, str]:
+        source_path = self._external_impl_path(impl_id)
+        if source_path is None or not source_path.is_file():
+            return False, "External character source file was not found"
+
+        try:
+            compile(source_code, source_path.name, "exec")
+        except SyntaxError as error:
+            return False, f"{error.msg} (line {error.lineno})"
+
+        previous_source = self._read_impl_source(source_path, "external")
+        if not previous_source:
+            return False, "Could not read existing external character source"
+
+        try:
+            source_path.write_text(source_code, encoding="utf-8")
+        except OSError as error:
+            logger.error(f"Failed to write external character file: {source_path.name}", error)
+            return False, str(error)
+
+        from src.char.core.CharRegistry import char_registry
+
+        char_registry.rescan_external()
+        entry = char_registry.get(impl_id)
+        if entry is not None and entry.source == "external":
+            return True, ""
+
+        try:
+            source_path.write_text(previous_source, encoding="utf-8")
+        except OSError as error:
+            logger.error(f"Failed to restore external character file: {source_path.name}", error)
+            return (
+                False,
+                "Updated source could not be loaded and the original could not be restored",
+            )
+
+        char_registry.rescan_external()
+        return False, "Updated external character source could not be loaded"
+
+    def copy_builtin_to_external(
+        self, impl_id: str, directory: str, filename: str
+    ) -> tuple[bool, str, str]:
+        """Copy a builtin character implementation into an external character subfolder."""
+        source_code = self.get_builtin_impl_source(impl_id)
+        if not source_code:
+            return False, "", "Could not read builtin character source code"
+
+        try:
+            directory = self.validate_external_directory(directory)
+        except ValueError as error:
+            return False, "", str(error)
+
+        target_file_stem = str(filename or "").strip()
+        if target_file_stem.lower().endswith(".py"):
+            target_file_stem = target_file_stem[:-3]
+        safe_stem = re.sub(r"[^\w-]+", "_", target_file_stem).strip("_")
+        if not safe_stem:
+            return False, "", "Script filename is required"
+
+        external_root = Path(EXTERNAL_CHARS_DIR).resolve()
+        target_directory = external_root / directory
+        try:
+            target_directory.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            logger.error("Failed to create external character directory", error)
+            return False, "", str(error)
+
+        target_path = (target_directory / f"{safe_stem}.py").resolve()
+        if target_path.exists():
+            return False, "", f"Target file '{safe_stem}.py' already exists"
+
+        try:
+            target_path.write_text(source_code, encoding="utf-8")
+        except OSError as error:
+            logger.error(f"Failed to write external character file: {target_path.name}", error)
+            return False, "", str(error)
+
+        from src.char.core.CharRegistry import char_registry
+
+        char_registry.rescan_external()
+        new_impl_id = f"external:{directory.lower()}/{safe_stem.lower()}"
+        entry = char_registry.get(new_impl_id)
+        if entry is None or entry.source != "external":
+            try:
+                target_path.unlink()
+            except OSError as error:
+                logger.error(
+                    f"Failed to remove invalid external character file: {target_path.name}", error
+                )
+            char_registry.rescan_external()
+            return False, "", "Generated external character file could not be loaded"
+        return True, new_impl_id, ""
+
+    def delete_external_impl(self, impl_id: str) -> bool:
+        """Delete an external character source file and its now-empty source folder."""
+        source_path = self._external_impl_path(impl_id)
+        if source_path is None or not source_path.is_file():
+            return False
+
+        try:
+            source_path.unlink()
+            external_root = Path(EXTERNAL_CHARS_DIR).resolve()
+            source_folder = source_path.parent
+            if source_folder != external_root and not any(source_folder.glob("*.py")):
+                shutil.rmtree(source_folder)
+        except OSError as error:
+            logger.error(f"Failed to delete external character source: {source_path.name}", error)
+            return False
+
+        from src.char.core.CharRegistry import char_registry
+
+        char_registry.rescan_external()
+        return True
+
+    def delete_external_impl_and_references(self, impl_id: str) -> bool:
+        """Delete external source code and clear persisted references to it."""
+        if self.is_builtin_impl(impl_id) or not self.delete_external_impl(impl_id):
+            return False
+
+        self.delete_combo(impl_id)
+        for char_id, char_data in self.get_all_characters().items():
+            if char_data.get("impl_id", "") == impl_id:
+                self.update_character(char_id, impl_id="")
+        return True
 
     def is_custom_combo_exist(self, combo_id: str):
         """判断出招表是否存在"""
@@ -517,14 +790,27 @@ class CustomCharManager:
         out["impl_name"] = self.get_impl_name(impl_id)
         return out
 
+    def get_team_presets(self) -> list[dict]:
+        return self._db.get_team_presets()
+
+    def create_team_preset(self, name: str) -> dict:
+        return self._db.create_team_preset(name)
+
+    def update_team_preset(self, preset_id: str, name=None, slots=None) -> bool:
+        return self._db.update_team_preset(preset_id, name=name, slots=slots)
+
+    def delete_team_preset(self, preset_id: str) -> bool:
+        return self._db.delete_team_preset(preset_id)
+
+    def apply_team_preset(self, preset_id: str, fixed=False) -> list[str] | None:
+        return self._db.apply_team_preset(preset_id, fixed=fixed)
+
+    def clear_fixed_team_preset(self) -> bool:
+        return self._db.clear_fixed_team_preset()
+
     def get_fixed_team(self):
+        """Return the currently selected fixed team preset."""
         return self._db.get_fixed_team()
-
-    def set_fixed_team(self, enabled: bool, slots):
-        self._db.set_fixed_team(enabled, slots)
-
-    def clear_fixed_team(self):
-        self._db.clear_fixed_team()
 
     def export_custom_data(self, zip_path: str | Path) -> bool:
         """Export custom-character data using a stable archive layout."""

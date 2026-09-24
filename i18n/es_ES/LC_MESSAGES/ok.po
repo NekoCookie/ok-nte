@@ -9,9 +9,6 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-msgid "<b style=\"color: #0078d7;\">角色</b> 和 <b style=\"color: #0078d7;\">{combo}</b> 支持输入并创建，也支持选择已有项。"
-msgstr "<b style=\"color: #0078d7;\">Personaje</b> y <b style=\"color: #0078d7;\">{combo}</b> permiten la entrada y creación, también admiten la selección de elementos existentes."
-
 msgid "Arc Key"
 msgstr "Tecla de Arco"
 
@@ -20,18 +17,6 @@ msgstr "Comprobar tarjeta mensual"
 
 msgid "Check for monthly card to avoid interruption of tasks"
 msgstr "Comprobar la tarjeta mensual para evitar la interrupción de las tareas"
-
-msgid "F10"
-msgstr "F10"
-
-msgid "F11"
-msgstr "F11"
-
-msgid "F12"
-msgstr "F12"
-
-msgid "F9"
-msgstr "F9"
 
 msgid "Game Hotkey Config"
 msgstr "Configuración de teclas de acceso rápido"
@@ -69,36 +54,17 @@ msgstr "{combo}: {} vinculado con éxito"
 msgid "{combo}语法错误"
 msgstr "Error de sintaxis en {combo}"
 
-msgid "{fixed_team}已保存"
-msgstr "{fixed_team} guardado"
-
-msgid "{fixed_team}已停用"
-msgstr "{fixed_team} desactivado"
-
-msgid "{fixed_team}已清空"
-msgstr "{fixed_team} vaciado"
-
 msgid "{} 号位"
 msgstr "Espacio {}"
 
 msgid "任务跳过对话"
 msgstr "Tarea: Omitir diálogo"
 
-msgid ""
-"供非中/英语用户自定义传送文字, 逗号分隔\n"
-"例: Teleport, 传送"
-msgstr ""
-"Para que los usuarios que no hablen chino/inglés personalicen el texto de teletransporte, separado por comas\n"
-"Ej: Teleport, 传送"
-
 msgid "保存成功"
 msgstr "Guardado con éxito"
 
 msgid "停用"
 msgstr "Desactivar"
-
-msgid "先扫描并关联特征或手动填写"
-msgstr "Escanear y vincular características primero, o completar manualmente"
 
 msgid "出招表"
 msgstr "Lista de combos"
@@ -119,7 +85,7 @@ msgid "刷新列表"
 msgstr "Actualizar lista"
 
 msgid "匹配成功: {}"
-msgstr "Coincidencia exitosa: {}"
+msgstr "Detectado: {}"
 
 msgid "置信度: {:.2f}"
 msgstr "Confianza: {:.2f}"
@@ -133,8 +99,8 @@ msgstr "Añadir característica"
 msgid "匹配文字"
 msgstr "Coincidir texto"
 
-msgid "受《异环》UI的特殊性影响, 部分场景下存在识别稳定性波动"
-msgstr "Debido a la singularidad de la interfaz de Neverness-to-Everness, la estabilidad del reconocimiento puede fluctuar en algunos escenarios."
+msgid "适用于大世界、轨外之境、999夜等各类场景与副本"
+msgstr "Adecuado para varios escenarios y mazmorras como mundo abierto, Beyond the Rails, 999 Nights, etc."
 
 msgid "可用指令"
 msgstr "Comandos disponibles"
@@ -151,9 +117,6 @@ msgstr "Clic automático de teletransporte en el mapa"
 msgid "填入扫描"
 msgstr "Completar escaneo"
 
-msgid "这是个用于向数据库关联或添加 <b style=\"color: #0078d7;\">角色特征</b> 的工具面板。<br>点击 <b style=\"color: #0078d7;\">{scan_team}</b> 后点击 <b style=\"color: #0078d7;\">关联或添加</b> 特征，自动战斗时就会识别对应的角色。<br><b style=\"color: #d83b01;\">💡 注意：</b>此面板 <b style=\"color: #d83b01;\">不会</b> 在进入战斗或更换阵容时实时自动刷新或同步显示, 因为这是工具面板。<br>如果不想管理 <b style=\"color: #0078d7;\">角色特征</b>，可以直接使用 <b style=\"color: #0078d7;\">{fixed_team}</b> 功能。"
-msgstr "Este es un panel de herramientas para vincular o añadir <b style=\"color: #0078d7;\">Características del personaje</b> a la base de datos.<br>Haga clic en <b style=\"color: #0078d7;\">{scan_team}</b> y luego en <b style=\"color: #0078d7;\">Vincular o Añadir</b> característica, y el personaje correspondiente se identificará durante el combate automático.<br><b style=\"color: #d83b01;\">💡 Nota:</b> Este panel <b style=\"color: #d83b01;\">no se actualizará</b> ni sincronizará automáticamente en tiempo real al entrar en combate o cambiar la composition del equipo, ya que es un panel de herramientas.<br>Si no desea gestionar las <b style=\"color: #0078d7;\">Características del personaje</b>, puede usar directamente la función <b style=\"color: #0078d7;\">{fixed_team}</b>."
-
 msgid "完成每日活跃度"
 msgstr "Completar actividad diaria"
 
@@ -169,45 +132,17 @@ msgstr "Importar datos"
 msgid "导出数据"
 msgstr "Exportar datos"
 
-msgid "已保存 {}/4"
-msgstr "{} / 4 guardados"
-
-msgid "已启用 {}/4"
-msgstr "{} / 4 activados"
-
-msgid "已启用{fixed_team}"
-msgstr "{fixed_team} activado"
-
-msgid "已填入 {}"
-msgstr "{} completado"
-
-msgid "已填入扫描结果"
-msgstr "Resultado del escaneo completado"
-
 msgid "已导入 {} 个文件"
 msgstr "{} archivos importados"
 
-msgid "已恢复自动识别"
-msgstr "Reconocimiento automático restaurado"
-
 msgid "已成功删除角色: {} 以及关联的特征图"
 msgstr "Personaje eliminado con éxito: {} y sus mapas de características asociados"
-
-msgid "已清空槽位"
-msgstr "Espacios vaciados"
 
 msgid "已解除 {} 的{combo}绑定"
 msgstr "{combo} desvinculado para {}"
 
 msgid "应用更改"
 msgstr "Aplicar cambios"
-
-msgid ""
-"当前未绑定任何{combo}。\n"
-"遇到此角色将默认使用基础通用脚本(BaseChar)。"
-msgstr ""
-"Actualmente no hay ningún {combo} vinculado.\n"
-"Este personaje usará por defecto el script general básico (BaseChar)."
 
 msgid "循环次数"
 msgstr "Recuento de ciclos"
@@ -233,17 +168,11 @@ msgstr "Sin imagen"
 msgid "日常任务"
 msgstr "Tareas diarias"
 
-msgid "暂不可用"
-msgstr "Temporalmente no disponible"
-
-msgid "更新"
-msgstr "Actualizar"
-
 msgid "未启用"
 msgstr "Deshabilitado"
 
 msgid "未能识别该特征"
-msgstr "No se pudo identificar esta característica"
+msgstr "No reconocido"
 
 msgid "未获取到特征"
 msgstr "Característica no obtenida"
@@ -251,24 +180,11 @@ msgstr "Característica no obtenida"
 msgid "关联特征"
 msgstr "Vincular característica"
 
-msgid ""
-"此为 Python 脚本，不可在此修改。\n"
-"请在对应的源文件中直接修改代码。"
-msgstr ""
-"Este script de Python no se puede modificar aquí.\n"
-"Modifique el código directamente en el archivo fuente correspondiente."
-
-msgid "没有可用扫描结果"
-msgstr "No hay resultados de escaneo disponibles"
+msgid "此为 Python 脚本, 不可在此修改.\n请在对应的源文件中直接修改代码."
+msgstr "Este es un script de Python y no se puede modificar aquí.\nPor favor, modifique el código directamente en el archivo fuente correspondiente."
 
 msgid "没有找到匹配的指令。"
 msgstr "No se encontraron comandos coincidentes."
-
-msgid "清空"
-msgstr "Vaciar"
-
-msgid "点击上方按钮扫描..."
-msgstr "Haga clic en el botón de arriba para escanear..."
 
 msgid "点击时将短暂控制物理鼠标"
 msgstr "Controla brevemente el ratón físico al hacer clic"
@@ -300,18 +216,6 @@ msgstr "Objetivo automático"
 msgid "自动钓鱼"
 msgstr "Pesca automática"
 
-msgid "自动捕鱼"
-msgstr "Captura automática de peces"
-
-msgid "自动点击捕鱼场景中的彩色鱼"
-msgstr "Hacer clic automáticamente en los peces de colores de la escena de captura"
-
-msgid "捕鱼单轮超时"
-msgstr "Tiempo de espera de una ronda de captura"
-
-msgid "单轮捕鱼最长运行时间, 超时后结束本轮"
-msgstr "Tiempo máximo de una ronda de captura; finalizar la ronda al agotarse"
-
 msgid "角色中心"
 msgstr "Ctr. Pers."
 
@@ -336,8 +240,8 @@ msgstr "Omitir historia"
 msgid "运行一次测试"
 msgstr "Ejecutar una prueba"
 
-msgid "下拉选择，或直接输入名称以创建新{combo}"
-msgstr "Seleccione en el menú desplegable o ingrese directamente un nombre para crear un nuevo {combo}"
+msgid "下拉选择, 或直接输入名称以创建新{combo}"
+msgstr "Seleccione del menú desplegable o ingrese un nombre para crear un nuevo {combo}"
 
 msgid "重命名失败"
 msgstr "Error al renombrar"
@@ -361,11 +265,8 @@ msgstr "Tamaño del equipo inferior a 2"
 msgid "队伍管理"
 msgstr "Gestión Equipo"
 
-msgid "使用ESC"
-msgstr "Usar ESC"
-
-msgid "关闭时仅在中键选中敌人且画面识别到 'Lv' 文字时开启战斗"
-msgstr "Cuando está desactivado, el combate solo comienza si se selecciona un enemigo con el botón central y se detecta 'Lv' en pantalla"
+msgid "关闭时仅在中键选中敌人且画面识别到关键特征时开启战斗"
+msgstr "Al desactivarlo, el combate solo comenzará si se hace clic central en un enemigo y se detectan características clave en la pantalla"
 
 msgid ""
 "开启后优先通过 ESC 键关闭成功界面，避免后台抢占鼠标。\n"
@@ -403,9 +304,6 @@ msgstr "Esquivar todos los ataques"
 
 msgid "Dodge all attacks without performing counter attacks"
 msgstr "Esquivar todos los ataques sin realizar contraataques"
-
-msgid "不支持从OK启动游戏"
-msgstr "No se admite iniciar el juego desde OK"
 
 msgid "任务完成后自动切换至下一个项目"
 msgstr "Cambiar automáticamente al siguiente elemento tras completar la tarea"
@@ -506,9 +404,6 @@ msgstr "Tiempo de espera por canción (s)"
 msgid "异环鼓组音游自动打击与重试"
 msgstr "Juego de ritmo NTE Auto Play y Reintento"
 
-msgid "打歌次数, 0=无限循环"
-msgstr "Número de ejecuciones, 0=Infinito"
-
 msgid "自动音游"
 msgstr "Auto Juego de Ritmo"
 
@@ -579,9 +474,6 @@ msgstr "Introduce o selecciona el nombre del personaje asociado"
 msgid "输入或选择绑定的{combo} (可选)"
 msgstr "Introduce o selecciona el {combo} vinculado (opcional)"
 
-msgid "循环次数(0为无限次)"
-msgstr "Número de bucles (0 para infinito)"
-
 msgid "清空已记录的操作"
 msgstr "Borrar operaciones grabadas"
 
@@ -611,21 +503,6 @@ msgstr "※ Puede escribir directamente en la lista para crear entradas"
 
 msgid "输入或选择角色"
 msgstr "Introduce o selecciona un personaje"
-
-msgid "自动战斗任务不可用"
-msgstr "La tarea de combate automático no está disponible"
-
-msgid "<span style=\"color: #2ecc71;\">● 自动识别：已启用</span>"
-msgstr "<span style=\"color: #2ecc71;\">● Reconocimiento automático: activado</span>"
-
-msgid "<span style=\"color: #95a5a6;\">○ 自动识别：仅空槽启用</span>"
-msgstr "<span style=\"color: #95a5a6;\">○ Reconocimiento automático: solo espacios vacíos</span>"
-
-msgid "<span style=\"color: #2ecc71;\">● {fixed_team}：已启用 ({count}/4)</span>"
-msgstr "<span style=\"color: #2ecc71;\">● {fixed_team}: activado ({count}/4)</span>"
-
-msgid "<span style=\"color: #95a5a6;\">○ {fixed_team}：已停用</span>"
-msgstr "<span style=\"color: #95a5a6;\">○ {fixed_team}: desactivado</span>"
 
 msgid "启动失败"
 msgstr "Error al iniciar"
@@ -843,23 +720,14 @@ msgstr "API_Key del modelo"
 msgid "模型调用地址"
 msgstr "URL de llamada al modelo"
 
-msgid "次数"
-msgstr "Frecuencia"
-
 msgid "游戏语言"
 msgstr "Idioma del juego"
 
 msgid "请选择游戏所设置的语言"
 msgstr "Seleccione el idioma configurado en el juego"
 
-msgid "留言"
-msgstr "Comentario"
-
 msgid "自动发帖"
 msgstr "Publicación automática"
-
-msgid "自动呗果"
-msgstr "Bagel automático"
 
 msgid "自动回帖"
 msgstr "Respuesta automática"
@@ -963,8 +831,8 @@ msgstr "Muebles de anomalía"
 msgid "每2小时重新登入"
 msgstr "Reiniciar sesión cada 2 horas"
 
-msgid "除了选择内建存在的<b style=\"color: #0078d7;\">{combo}</b>外，您也可以自己输入名称来建立自己的<b style=\"color: #0078d7;\">{combo}</b>。"
-msgstr "Además de seleccionar un <b style=\"color: #0078d7;\">{combo}</b> integrado, también puede ingresar un nombre para crear su propio <b style=\"color: #0078d7;\">{combo}</b>."
+msgid "除了选择内建存在的<b style=\"color: #0078d7;\">{combo}</b>外,您也可以自己输入名称来建立自己的<b style=\"color: #0078d7;\">{combo}</b>."
+msgstr "Además de seleccionar un <b style=\"color: #0078d7;\">{combo}</b> integrado, también puedes ingresar un nombre para crear tu propio <b style=\"color: #0078d7;\">{combo}</b>."
 
 msgid "九百九十九夜"
 msgstr "999 Nights"
@@ -1133,23 +1001,6 @@ msgstr "No hay pantalla de juego disponible"
 
 msgid "请先捕获、选择礼物并启用至少一个角色。"
 msgstr "Por favor, capture, seleccione regalos y habilite al menos un personaje primero."
-msgid "▸ 虚拟手柄共存测试(展开)"
-msgstr "▸ Prueba de coexistencia del mando virtual (expandir)"
-
-msgid "启用虚拟手柄A键脉冲"
-msgstr "Activar pulsos del botón A del mando virtual"
-
-msgid "虚拟手柄A键间隔(s)"
-msgstr "Intervalo del botón A del mando virtual (s)"
-
-msgid "▸ 分组折叠: 展开实体手柄与虚拟手柄共存测试"
-msgstr "▸ Grupo: expandir la prueba de coexistencia de mandos físico y virtual"
-
-msgid "开=虚拟Xbox手柄每隔数秒按一次A；不接管、不隐藏实体手柄"
-msgstr "Activado = el mando Xbox virtual pulsa A cada pocos segundos; no controla ni oculta el mando físico"
-
-msgid "虚拟手柄两次A键测试脉冲之间的秒数"
-msgstr "Segundos entre pulsos de prueba del botón A del mando virtual"
 
 msgid "使用录制功能"
 msgstr "Usar función de grabación"
@@ -1263,9 +1114,6 @@ msgstr "[Código externo]"
 msgid "打开外置代码目录"
 msgstr "Abrir carpeta de código externo"
 
-msgid "手动添加或修改 Python 代码后, 需点击 [{refresh}] 按钮以生效。<br>关于编写角色出招表的指南, 请参考 <a href='{doc_url}'>文档</a>。"
-msgstr "Después de añadir o modificar código Python manualmente, haga clic en el botón [{refresh}] para que surta efecto.<br>Para obtener una guía sobre cómo escribir listas de combos de personajes, consulte la <a href='{doc_url}'>documentación</a>."
-
 msgid "日常领取"
 msgstr "Reclamación diaria"
 
@@ -1302,18 +1150,6 @@ msgstr "Contraer todo"
 msgid "全部展开"
 msgstr "Expandir todo"
 
-msgid "重置配置"
-msgstr "Restablecer conf."
-
-msgid "重试失败项"
-msgstr "Reintentar elementos fallidos"
-
-msgid "自动捉迷藏"
-msgstr "Escondite automático"
-
-msgid "徊影憧憧活动自动挂机: 自动点击开始匹配, 对局结束自动开始下一局"
-msgstr "Automatiza el evento Hiding Shadows: inicia el emparejamiento y comienza la siguiente ronda al terminar la partida."
-
 msgid "排球之星"
 msgstr "Estrella del voleibol"
 
@@ -1326,137 +1162,311 @@ msgstr "Pulsar G"
 msgid "挑战玛门"
 msgstr "Desafiar a Mammon"
 
-msgid "▸ 安魂曲残虹合轴(展开)"
-msgstr "▸ Eje coordinado Réquiem-Zankou (desplegar)"
-
-msgid "合轴触发键"
-msgstr "Tecla de activación del eje coordinado"
-
-msgid "安魂曲切换键"
-msgstr "Tecla para cambiar a Réquiem"
-
-msgid "残虹切换键"
-msgstr "Tecla para cambiar a Zankou"
-
-msgid "安魂曲普攻间隔(s)"
-msgstr "Intervalo de ataque básico de Réquiem (s)"
-
-msgid "安魂曲普攻时长(s)"
-msgstr "Duración de ataque básico de Réquiem (s)"
-
-msgid "残虹长按普攻时长(s)"
-msgstr "Duración de ataque mantenido de Zankou (s)"
-
-msgid "残虹接平A延迟(s)"
-msgstr "Retraso del ataque básico final de Zankou (s)"
-
-msgid "▸ 分组折叠: 展开安魂曲主C与残虹主C的合轴触发键和时序"
-msgstr "▸ Grupo: desplegar teclas y tiempos del eje coordinado de los DPS principales Réquiem y Zankou"
-
-msgid "按一下开始重复合轴测试, 再按一下停止; 默认8"
-msgstr "Pulsa una vez para repetir la prueba del eje coordinado y otra vez para detenerla; predeterminado: 8"
-
-msgid "安魂曲在队伍中的数字切换键; 默认1"
-msgstr "Tecla numérica de Réquiem en el equipo; predeterminado: 1"
-
-msgid "残虹在队伍中的数字切换键; 默认2"
-msgstr "Tecla numérica de Zankou en el equipo; predeterminado: 2"
-
-msgid "安魂曲合轴阶段每次普攻的间隔秒数, 最低按0.02s执行"
-msgstr "Intervalo entre ataques básicos de Réquiem durante el eje coordinado; mínimo: 0,02 s"
-
-msgid "安魂曲持续普攻这么久后切到残虹"
-msgstr "Tiempo que Réquiem ataca antes de cambiar a Zankou"
-
-msgid "残虹合轴阶段长按普攻的持续秒数"
-msgstr "Tiempo que Zankou mantiene pulsado el ataque durante el eje coordinado"
-
-msgid "残虹松开长按后等待这么久再接一下平A, 然后切回安魂曲"
-msgstr "Espera tras soltar el ataque de Zankou, da un ataque básico y cambia a Réquiem"
-
-msgid "切到残虹后等待(s)"
-msgstr "Espera tras cambiar a Zankou (s)"
-
-msgid "按下残虹切换键后等待这么久再长按普攻"
-msgstr "Espera este tiempo después de pulsar la tecla de Zankou antes de mantener el ataque básico"
-
-msgid "残虹普攻时长(s)"
-msgstr "Duración del ataque básico de Zankou (s)"
-
-msgid "安魂曲和残虹合轴阶段共用的普攻间隔秒数, 最低按0.02s执行"
-msgstr "Intervalo compartido de ataque básico de Réquiem y Zankou durante el eje coordinado; mínimo: 0,02 s"
-
-msgid "残虹长按结束后按共享间隔持续普攻这么久, 然后切回安魂曲"
-msgstr "Tras el ataque mantenido de Zankou, repite ataques básicos al intervalo compartido durante este tiempo y cambia a Réquiem"
-
-msgid "实战启用合轴"
-msgstr "Activar el eje coordinado en combate"
-
-msgid "开=两个主C模板同队时自动进入实战合轴; 关=仅保留按键测试"
-msgstr "Activado = usar automáticamente el eje en combate cuando ambos DPS principales estén en el equipo; desactivado = conservar solo la prueba de tecla"
-
-msgid "辅助技能就绪是否切人"
-msgstr "Cambiar cuando la habilidad de apoyo esté lista"
-
-msgid "▸ 分组折叠: 展开辅助技能切人以及 Q/E 资源提权开关"
-msgstr "▸ Grupo plegable: cambio por habilidad de apoyo y prioridad de recursos Q/E"
-
-msgid "开=辅助 E 推算就绪时允许主动切人; 关=不因辅助 E 就绪切人"
-msgstr "Activado = permitir el cambio cuando el enfriamiento estimado de la E de apoyo esté listo; desactivado = no cambiar por la E de apoyo"
-
-msgid "开=允许切人时, 辅助 E 就绪会在环合前抢占; 关=仅按普通评分切人"
-msgstr "Activado = si se permite cambiar, la E de apoyo lista se adelanta a las reacciones coordinadas; desactivado = cambiar solo mediante la puntuación normal"
-
 msgid "自动闯关"
-msgstr "Progresión automática"
+msgstr "Desafío automático"
 
-msgid "发球等待时间"
-msgstr "Tiempo de espera del saque"
+msgid "{} 个空槽位"
+msgstr "{} espacios vacíos"
 
-msgid "抛球后等待多久再按发球键, 可设置0.5到5.0秒, 默认2.5秒. 运行中修改会在下一次发球时生效"
-msgstr "Cuánto tiempo esperar después del lanzamiento antes de pulsar la tecla de saque. Rango: de 0,5 a 5,0 segundos; valor predeterminado: 2,5 segundos. Los cambios realizados durante la ejecución se aplican al siguiente saque"
+msgid "固定"
+msgstr "Fijar"
 
-msgid "发球等待时间必须在0.5到5.0秒之间"
-msgstr "El tiempo de espera del saque debe estar entre 0,5 y 5,0 segundos"
+msgid "已从列表移除"
+msgstr "Eliminado de la lista"
 
-msgid "仅按键测试: 按下残虹切换键后等待这么久再长按普攻; 实战由切人识别和环合结算"
-msgstr "Solo prueba de tecla: espera este tiempo tras pulsar la tecla de cambio de Zankou antes de mantener el ataque; en combate se usa la deteccion de cambio y la resolucion de entrada"
+msgid "已删除"
+msgstr "Eliminado"
 
-msgid "残虹声音闪避后普攻时长(s)"
-msgstr "Duracion de ataques normales de Zankou tras esquiva por sonido (s)"
+msgid "已填入"
+msgstr "Rellenado"
 
-msgid "残虹合轴被声音闪避打断后, 按共享间隔持续普攻这么久, 然后从重击重新开始"
-msgstr "Tras interrumpirse el eje coordinado de Zankou por una esquiva activada por sonido, ataca normalmente durante este tiempo con el intervalo compartido y reinicia desde el ataque pesado"
+msgid "已应用"
+msgstr "Aplicado"
 
-msgid "开=所有LW角色模板不放E/Q; G和合轴不受影响(测手感/闪避用); 刷本记得关"
-msgstr "Activado: todas las plantillas de personaje LW omiten E/Q; G y el eje coordinado no se ven afectados (para probar ataques y esquivas); desactivalo para combate normal"
+msgid "已更新 {} 位角色的出招表"
+msgstr "Combo actualizado para {} personajes"
 
-msgid "通用环合普攻时长(s)"
-msgstr "Duracion de ataques basicos de la entrada en reaccion (s)"
+msgid "应用方案"
+msgstr "Aplicar Preset"
 
-msgid "环合切人后的通用普攻时长, 默认1.5s且每0.1s普攻一次; 开启实战合轴的残虹主C改用自身静默等待"
-msgstr "Tras cambiar con una reaccion de entrada, los personajes estandar atacan durante este tiempo; predeterminado: 1.5 s, un ataque cada 0.1 s. Zankou DPS principal con el eje de combate activado usa su propia espera silenciosa"
+msgid "扫描失败"
+msgstr "Error de Escaneo"
 
-msgid "残虹环合静默等待(s)"
-msgstr "Espera silenciosa de entrada de Zankou (s)"
+msgid "搜索方案"
+msgstr "Buscar Presets"
 
-msgid "实战合轴中, 残虹通过环合切入后静默等待这么久, 不进行普攻输入, 再从重击开始; 默认1.5s"
-msgstr "En el eje de combate, cuando Zankou entra mediante una reaccion de entrada, espera en silencio este tiempo sin ataques basicos y luego comienza con un ataque pesado; predeterminado: 1.5 s"
+msgid "新建方案"
+msgstr "Nuevo Preset"
 
-msgid "残虹强化E打断合轴"
-msgstr "Interrumpir el eje con E mejorada de Zankou"
+msgid "方案中不能重复选择角色"
+msgstr "No se pueden seleccionar personajes duplicados en un preset"
 
-msgid "开=合轴中识别到残虹黄色强化E时中断当前动作, 成功释放后请求切人; 关=忽略强化E"
-msgstr "Activado = cuando se reconozca la E mejorada amarilla de Zankou durante el eje coordinado, interrumpe la accion actual y solicita cambio tras lanzarla con exito; desactivado = ignora la E mejorada"
+msgid "方案列表"
+msgstr "Lista de Presets"
 
-msgid "安魂曲免费技能后普攻时长(s)"
-msgstr "Duracion de ataques basicos de Requiem tras habilidad gratis (s)"
+msgid "方案名称重复或内容无效"
+msgstr "El nombre del preset ya existe o el contenido no es válido"
 
-msgid "实战合轴中, 安魂曲释放免费技能后按0.1秒间隔普攻这么久; 辅助大招待开时正常切辅助, 否则请求切残虹"
-msgstr "En el eje de combate, tras usar una habilidad gratis, Requiem ataca cada 0.1 s durante esta duracion; si la definitiva de un apoyo esta pendiente, cambia normalmente al apoyo, de lo contrario solicita a Zankou"
+msgid "无法保存"
+msgstr "No se puede guardar"
 
-msgid "开局残虹黄E后切辅助"
-msgstr "Cambiar a apoyo tras E amarilla inicial de Zankou"
+msgid "无法填入"
+msgstr "No se puede rellenar"
 
-msgid "开=开局先切残虹释放黄色强化E, 随后立刻切回原开局流程选中的辅助; 关=不插入该步骤"
-msgstr "Activado = al inicio, cambia a Zankou para lanzar la E mejorada amarilla y vuelve de inmediato al apoyo elegido por el flujo normal; desactivado = no inserta este paso"
+msgid "没有可填入的角色"
+msgstr "No hay personajes disponibles para rellenar"
+
+msgid "等待扫描..."
+msgstr "Esperando escaneo..."
+
+msgid "输入或选择出招表"
+msgstr "Ingresa o selecciona combo"
+
+msgid "队伍方案"
+msgstr "Presets de Equipo"
+
+msgid "队伍识别"
+msgstr "Identificación de Equipo"
+
+msgid "提示"
+msgstr "Consejos"
+
+msgid "<p><b style=\"color: #d83b01;\">注意：</b>此面板 <b style=\"color: #d83b01;\">不会</b> 在进入战斗或更换阵容时实时自动刷新或同步显示。<br>这是个用于向数据库关联或添加 <b style=\"color: #0078d7;\">角色特征</b> 的工具面板。<br>点击 <b style=\"color: #0078d7;\">{scan_team}</b> 后点击 <b style=\"color: #0078d7;\">关联或添加</b> 特征, 自动战斗时就会识别对应的角色。<br>如果不想管理 <b style=\"color: #0078d7;\">角色特征</b>, 可以直接使用 <b style=\"color: #0078d7;\">{fixed_team}</b> 功能。</p>"
+msgstr "<p><b style=\"color: #d83b01;\">Nota:</b> Este panel <b style=\"color: #d83b01;\">NO</b> se actualiza ni sincroniza automáticamente en tiempo real al entrar en combate o cambiar la alineación.<br>Es un panel de herramientas para asociar o agregar <b style=\"color: #0078d7;\">Características de Personaje</b> a la base de datos.<br>Haz clic en <b style=\"color: #0078d7;\">{scan_team}</b> y luego en <b style=\"color: #0078d7;\">Asociar o Agregar</b> característica para que el combate automático reconozca a los personajes correspondientes.<br>Si no deseas gestionar las <b style=\"color: #0078d7;\">Características de Personaje</b>, puedes usar directamente la función <b style=\"color: #0078d7;\">{fixed_team}</b>.</p>"
+
+msgid "<p>用于配置并保存常用的 4 人队伍阵容与出招表, 修改后立即生效。<br>点击 <b style=\"color: #0078d7;\">{apply_preset}</b> 可一键更新应用方案中各角色的出招表 (未选择出招表则保持原配置不变)。<br>开启 <b style=\"color: #0078d7;\">{fixed_preset}</b> 后自动战斗将直接采用此阵容, 无需等待特征识别 (未录入特征的角色亦可直接战斗)。<br>点击 <b style=\"color: #0078d7;\">{fill_scan}</b> 可将上方特征扫描识别出的队伍角色快速填入当前方案。</p>"
+msgstr "<p>Configura y guarda alineaciones y combos de equipo de 4 personajes, con efecto inmediato tras su modificación.<br>Haz clic en <b style=\"color: #0078d7;\">{apply_preset}</b> para aplicar los combos de cada personaje en este ajuste (los espacios sin combo seleccionado mantendrán la configuración original).<br>Activa <b style=\"color: #0078d7;\">{fixed_preset}</b> para que el combate automático adopte directamente este equipo sin esperar al reconocimiento de características (los personajes sin características registradas pueden combatir directamente).<br>Haz clic en <b style=\"color: #0078d7;\">{fill_scan}</b> para rellenar rápidamente en el ajuste actual los personajes reconocidos en el escaneo superior.</p>"
+
+msgid "OpenVINO 单次推理超时，已自动关闭目标检测；重启程序后会重新尝试启用。"
+msgstr "Se agotó el tiempo de inferencia única de OpenVINO, la detección de objetivos se ha desactivado automáticamente. Se intentará volver a activar al reiniciar el programa."
+
+msgid "管理"
+msgstr "Gestionar"
+
+msgid "批量删除"
+msgstr "Eliminación masiva"
+
+msgid "当前未绑定任何{combo}.\n遇到此角色将默认使用基础通用脚本(BaseChar)."
+msgstr "Actualmente no hay ningún {combo} vinculado.\nSe utilizará el script base genérico (BaseChar) por defecto al encontrar a este personaje."
+
+msgid "显示内置"
+msgstr "Mostrar Integrados"
+
+msgid "复制为外置"
+msgstr "Copiar como Externo"
+
+msgid "复制成功"
+msgstr "Copiado con Éxito"
+
+msgid "复制失败"
+msgstr "Error al Copiar"
+
+msgid "已成功创建外置代码: {}"
+msgstr "Código externo creado con éxito: {}"
+
+msgid "复制为外置代码"
+msgstr "Copiar como Código Externo"
+
+msgid "目录"
+msgstr "Directorio"
+
+msgid "脚本文件名 (.py)"
+msgstr "Nombre del Archivo de Script (.py)"
+
+msgid "将在 external_chars/ 目录下生成独立的 Python 脚本供您编辑与调试."
+msgstr "Se generará un script de Python independiente en el directorio external_chars/ para su edición y depuración."
+
+msgid "无法读取 Python 脚本."
+msgstr "No se pudo leer el script de Python."
+
+msgid "外置代码应用失败"
+msgstr "Error al Aplicar Código Externo"
+
+msgid "已应用外置代码: {}"
+msgstr "Código externo aplicado: {}"
+
+msgid "手动添加或修改 Python 代码后, 需点击 [{refresh}] 以生效. 关于编写角色出招表的指南, 请参考 <a href='{doc_url}'>文档</a>."
+msgstr "Después de añadir o modificar el código de Python manualmente, haga clic en [{refresh}] para aplicar los cambios. Para consultar la guía sobre cómo escribir combos de personajes, consulte la <a href='{doc_url}'>documentación</a>."
+
+msgid "角色"
+msgstr "Personaje"
+
+msgid "指令"
+msgstr "Comando"
+
+msgid "请先应用外置代码更改后再运行测试."
+msgstr "Por favor, aplique los cambios del código externo antes de ejecutar la prueba."
+
+msgid "角色工具任务未注册"
+msgstr "La tarea de herramientas de personagem no está registrada"
+
+msgid "角色工具任务不可用"
+msgstr "La tarea de herramientas de personaje no está disponible"
+
+msgid "询问AI"
+msgstr "Preguntar a la IA"
+
+msgid "AI提示模版已复制。请粘贴到AI聊天机器人中。"
+msgstr "Plantilla de aviso de IA copiada. Péguela en un chatbot de IA."
+
+msgid "{SOURCE}\n\n我想实现: \n\n请修改上面完整的 {class_name} 角色自动化代码。\n\n只返回整个文件完整修改后的 Python 代码，不要返回补丁或解释。\n保持类名为 {class_name}。保留仍然需要的 import。\n\n在思考辅助方法、任务 API、状态、切人、冷却和战斗流程时, 请参考: \nBaseChar 角色基类: {BASE_CHAR_URL}\nCombat Planner 开发指南: {COMBAT_PLANNER_URL}"
+msgstr "{SOURCE}\n\nQuiero lograr: \n\nModifique el código de automatización completo del personaje {class_name} anterior.\n\nDevuelva únicamente el código Python completamente modificado para todo el archivo, sin parches ni explicaciones.\nMantenga el nombre de la clase como {class_name}. Conserve los imports necesarios.\n\nAl considerar métodos auxiliares, API de tareas, estado, cambio de personajes, enfriamientos y flujo de combate, consulte: \nClase base de personaje BaseChar: {BASE_CHAR_URL}\nGuía de desarrollo de Combat Planner: {COMBAT_PLANNER_URL}"
+
+msgid "OK"
+msgstr "Aceptar"
+
+msgid "设置"
+msgstr "Ajustes"
+
+msgid "上传"
+msgstr "Subir"
+
+msgid "作者"
+msgstr "Autor"
+
+msgid "全部作者"
+msgstr "Todos los autores"
+
+msgid "全部角色"
+msgstr "Todos los personajes"
+
+msgid "内置"
+msgstr "Integrado"
+
+msgid "刷新"
+msgstr "Actualizar"
+
+msgid "加载失败: {}"
+msgstr "Error al cargar: {}"
+
+msgid "取消"
+msgstr "Cancelar"
+
+msgid "外置"
+msgstr "Externo"
+
+msgid "外置代码目录"
+msgstr "Directorio de código externo"
+
+msgid "外置代码目录名称无效"
+msgstr "El nombre del directorio de código externo no es válido"
+
+msgid "外置代码目录“{}”已存在, 请修改目录名称后重试。"
+msgstr "El directorio de código externo \"{}\" ya existe. Cambia el nombre e inténtalo de nuevo."
+
+msgid "大小"
+msgstr "Tamaño"
+
+msgid "导入"
+msgstr "Importar"
+
+msgid "导入完成"
+msgstr "Importación completada"
+
+msgid "导出"
+msgstr "Exportar"
+
+msgid "导出完成"
+msgstr "Exportación completada"
+
+msgid "导出社区方案"
+msgstr "Exportar preset comunitario"
+
+msgid "导出队伍"
+msgstr "Exportar equipo"
+
+msgid "工坊"
+msgstr "Taller"
+
+msgid "工坊会显示来自公开仓库的 ZIP 方案."
+msgstr "El taller muestra presets ZIP del repositorio público."
+
+msgid "已创建方案: {}"
+msgstr "Preset creado: {}"
+
+msgid "已加载 {} 个方案"
+msgstr "Se cargaron {} presets"
+
+msgid "当前方案没有可导出的出招表."
+msgstr "El preset actual no tiene una tabla de combos para exportar."
+
+msgid "成员"
+msgstr "Miembros"
+
+msgid "描述"
+msgstr "Descripción"
+
+msgid "搜索名称, 说明, 作者或角色"
+msgstr "Buscar por nombre, descripción, autor o personaje"
+
+msgid "操作失败"
+msgstr "Operación fallida"
+
+msgid "方案说明"
+msgstr "Descripción del preset"
+
+msgid "无法导出"
+msgstr "No se puede exportar"
+
+msgid "更新时间"
+msgstr "Actualizado"
+
+msgid "本地方案名称"
+msgstr "Nombre del preset local"
+
+msgid "正在加载工坊..."
+msgstr "Cargando el taller..."
+
+msgid "没有说明."
+msgstr "Sin descripción."
+
+msgid "版本"
+msgstr "Versión"
+
+msgid "社区方案"
+msgstr "Preset comunitario"
+
+msgid "社区方案含外置代码; 导入后会以本软件权限运行, 请仅导入可信来源."
+msgstr "Los presets comunitarios pueden contener código externo; después de importarlos, se ejecutan con los permisos de este software. Importa solo de fuentes confiables."
+
+msgid "角色阵容"
+msgstr "Personajes del equipo"
+
+msgid "调整筛选条件或稍后刷新工坊."
+msgstr "Ajusta los filtros o actualiza el taller más tarde."
+
+msgid "返回"
+msgstr "Volver"
+
+msgid "选择一个方案"
+msgstr "Selecciona un preset"
+
+msgid "队伍配置"
+msgstr "Configuración del equipo"
+
+msgid "不是该角色?"
+msgstr "¿No es este personaje?"
+
+msgid "删除方案"
+msgstr "Eliminar ajuste preestablecido"
+
+msgid "检测到该方案包含外置代码，是否同时删除对应的代码文件?"
+msgstr "Se detectó que este ajuste preestablecido contiene código externo. ¿Desea eliminar también los archivos de código correspondientes?"
+
+msgid "全部删除"
+msgstr "Eliminar todo"
+
+msgid "仅删除方案"
+msgstr "Eliminar solo el ajuste"
+
+msgid "方案已删除"
+msgstr "Ajuste preestablecido eliminado"
+
+msgid "部分外置代码删除失败: {}"
+msgstr "Error al eliminar parte del código externo: {}"
+
+msgid "启用开战优先级"
+msgstr "Habilitar prioridad de inicio de combate"
+
+msgid "关闭时不按角色执行开战首切"
+msgstr "Al desactivarlo, no se realiza el cambio inicial de personaje al iniciar el combate"

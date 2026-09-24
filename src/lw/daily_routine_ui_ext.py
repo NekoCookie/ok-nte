@@ -6,7 +6,7 @@ from ok.gui.tasks.TaskCard import TaskCard
 from qfluentwidgets import FluentIcon, PushButton
 
 from src.tasks.SwitchAccountTask import SwitchAccountTask
-from src.ui.util import show_dialog_and_wait
+from src.ui.foundation.dialogs import show_dialog_and_wait
 
 
 class DailyRoutineTabExtMixin:

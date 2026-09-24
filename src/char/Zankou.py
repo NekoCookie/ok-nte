@@ -5,7 +5,7 @@ from src.Labels import Labels
 
 class Zankou(BaseChar):
     cn_name = "残虹"
-    element = BaseChar.Element.RED
+    element = BaseChar.ElementType.RED
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -49,21 +49,47 @@ class Zankou(BaseChar):
 
     def perform_skill_combo(self):
         deadline = self.now() + 10
-        to_find = [Labels.zankou_skill_gold, Labels.zankou_skill_purple]
-        click_skill = False
+        clicked_skill = False
         while self.now() < deadline:
-            for feature in to_find:
-                if not self.task.find_one(feature):
-                    continue
-                if click_skill := self.click_skill():
-                    if feature == Labels.zankou_skill_purple:
-                        self.sleep(2)
-                        return True
-            if self.find_ult_purple():
-                return click_skill
+            click_skill, purple_skill = self.click_zankou_skill()
+            if not clicked_skill:
+                clicked_skill = click_skill
+            if purple_skill or self.find_ult_purple():
+                break
+
             self.sleep(0.1)
-            self.heavy_attack(duration=0.5)
-        return click_skill
+
+            mouse_down = getattr(self.task, "mouse_down", None)
+            mouse_up = getattr(self.task, "mouse_up", None)
+            if not callable(mouse_down) or not callable(mouse_up):
+                self.heavy_attack(duration=0.5)
+                break
+            try:
+                mouse_down()
+                for _ in range(5):
+                    if self.find_zankou_skill() or self.find_ult_purple():
+                        break
+                    self.sleep(0.1)
+            finally:
+                mouse_up()
+
+        return clicked_skill
+
+    def find_zankou_skill(self):
+        to_find = [Labels.zankou_skill_gold, Labels.zankou_skill_purple]
+        for feature_name in to_find:
+            if self.task.find_one(feature_name):
+                return feature_name
+
+    def click_zankou_skill(self):
+        click_skill = False
+        purple_skill = False
+        if feature_name := self.find_zankou_skill():
+            if click_skill := self.click_skill():
+                if feature_name == Labels.zankou_skill_purple:
+                    self.sleep(2)
+                    purple_skill = True
+        return click_skill, purple_skill
 
     def find_ult_purple(self):
         return self.task.find_one(Labels.zankou_ult_purple)

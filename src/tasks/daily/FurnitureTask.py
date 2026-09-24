@@ -1,7 +1,6 @@
 import re
 
 from ok import TaskDisabledException
-from qfluentwidgets import FluentIcon
 
 from src.combat.BaseCombatTask import BaseCombatTask
 from src.Labels import Labels
@@ -15,7 +14,6 @@ class FurnitureTask(FurnitureTaskExtMixin, NTEOneTimeTask, BaseCombatTask):  # [
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = "异象家具"
-        self.icon = FluentIcon.SHOPPING_CART
         self.group_name = "日常/周常"
         self.visible = False
         self.lw_init_furniture_retry_state()  # [lw]
@@ -42,7 +40,7 @@ class FurnitureTask(FurnitureTaskExtMixin, NTEOneTimeTask, BaseCombatTask):  # [
     def open_house_panel(self):
         def action():
             self.openF5panel()
-            self.operate_click(0.255, 0.468)
+            self.operate_click(*self.pos.panels.f5.house)
             self.sleep(0.5)
             return self.wait_panel(Labels.f5_house_panel)
 
@@ -166,7 +164,7 @@ class FurnitureTask(FurnitureTaskExtMixin, NTEOneTimeTask, BaseCombatTask):  # [
             pre_action=lambda: self.operate_click(0.891, 0.951, after_sleep=1),
         )
         self.click_traval_button()
-        return self.wait_in_team(time_out=120, settle_time=1)
+        return self.wait_in_team(time_out=300, settle_time=1)
 
     def claim_furniture(self, furniture):
         if not self.teleport_to_furniture(furniture):

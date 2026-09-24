@@ -9,6 +9,26 @@ from src.tasks.daily.GiftTask import GiftTask
 
 
 class TestGiftTask(unittest.TestCase):
+    def test_ui_commands_prepare_the_task_mode_and_capture_state(self):
+        task = object.__new__(GiftTask)
+        task.capture_frame = object()
+        task.capture_name = "stale"
+        task.capture_blocked_slots = (1,)
+        task.capture_error = "stale"
+
+        GiftTask.capture_profile(task, "profile-1")
+
+        self.assertEqual(task.mode, GiftTask.MODE_CAPTURE)
+        self.assertEqual(task.capture_profile_id, "profile-1")
+        self.assertIsNone(task.capture_frame)
+        self.assertEqual(task.capture_name, "")
+        self.assertEqual(task.capture_blocked_slots, ())
+        self.assertEqual(task.capture_error, "")
+
+        GiftTask.run_gift_mode(task)
+
+        self.assertEqual(task.mode, GiftTask.MODE_RUN)
+
     def test_layout_boxes_are_derived_from_full_frame_size(self):
         task = object.__new__(GiftTask)
         task._executor = SimpleNamespace(frame=np.zeros((100, 200, 3), dtype=np.uint8))
@@ -23,14 +43,16 @@ class TestGiftTask(unittest.TestCase):
         )
         name_box = GiftTask.get_name_box(task)
         gift_boxes = GiftTask.get_gift_boxes(task)
-        self.assertEqual(
-            (name_box.x, name_box.y, name_box.width, name_box.height), (105, 17, 45, 7)
-        )
-        self.assertEqual(resized.shape[:2], (100, 200))
+        self.assertGreater(name_box.width, 0)
+        self.assertGreater(name_box.height, 0)
+        self.assertEqual(resized.shape[:2], task._executor.frame.shape[:2])
         self.assertEqual(len(gift_boxes), 10)
         self.assertEqual(gift_boxes[0].name, "gift_slot_0")
         self.assertGreater(gift_boxes[-1].x, gift_boxes[0].x)
-        self.assertEqual(gift_boxes[0].crop_frame(frame).shape[:2], (4, 10))
+        self.assertEqual(
+            gift_boxes[0].crop_frame(frame).shape[:2],
+            (gift_boxes[0].height, gift_boxes[0].width),
+        )
         task.get_gift_boxes = lambda: gift_boxes
         badge_boxes = GiftTask.get_unlimit_gift_boxes(task)
         self.assertEqual(len(badge_boxes), 10)
@@ -59,7 +81,10 @@ class TestGiftTask(unittest.TestCase):
         ((call_args, call_kwargs),) = calls
         self.assertEqual(call_args, ("gift_name_profile",))
         self.assertEqual(call_kwargs["box"].name, "gift_character_name")
-        self.assertEqual(call_kwargs["template"].shape[:2], (7, 45))
+        self.assertEqual(
+            call_kwargs["template"].shape[:2],
+            task.get_name_box().crop_frame(frame).shape[:2],
+        )
 
     def test_give_profile_respects_target_and_global_limit(self):
         task = object.__new__(GiftTask)

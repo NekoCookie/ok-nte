@@ -91,21 +91,36 @@ class _RouteRequest(_RequestLifetime):
         self._progress += 1
         return True
 
+    def complete_switch(self, target_char: "BaseChar") -> bool:
+        step = self.current_step()
+        if (
+            step is None
+            or not (step.switch_step or step.requires_switch)
+            or (step.switch_step and step.wait_for_turn)
+            or not step.matches_char(target_char)
+        ):
+            return False
+        self._progress += 1
+        return True
+
+    def complete_turn(self, char: "BaseChar") -> bool:
+        step = self.current_step()
+        if (
+            step is None
+            or not step.switch_step
+            or not step.wait_for_turn
+            or not step.matches_char(char)
+        ):
+            return False
+        self._progress += 1
+        return True
+
     def complete_entry_reaction(self, source_char: "BaseChar", target_char: "BaseChar") -> bool:
         step = self.current_step()
         if step is None or not step.wants_entry_reaction(source_char, target_char):
             return False
         self._progress += 1
         return True
-
-    def complete_switch(self, target_char: "BaseChar") -> bool:
-        # [lw] A pure strict route completes on confirmed target entry.
-        step = self.current_step()
-        if step is None or not step.wants_switch(target_char):
-            return False
-        self._progress += 1
-        return True
-
 
 @dataclass(slots=True)
 class _ReservationRequest(_RequestLifetime):

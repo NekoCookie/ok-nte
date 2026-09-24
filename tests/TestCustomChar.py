@@ -5,13 +5,15 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 from ok.test.TaskTestCase import TaskTestCase
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
+from src.char.core.CharFactory import get_char_by_impl_id
 from src.char.custom.CustomChar import CustomChar
 from src.char.custom.CustomCharDb import CustomCharDb
 from src.char.custom.CustomCharManager import CustomCharManager
 from src.config import config
-from src.tasks.trigger.AutoCombatTask import AutoCombatTask
+from src.tasks.DebugCharTask import DebugCharTask, TeamScanResult
 from src.ui.CharManagerTab import CharManagerTab
 from src.ui.TeamManagerTab import TeamManagerTab
 
@@ -19,7 +21,7 @@ PREDEFINED_CHARACTER_ID = "builtin:zero"
 
 
 class TestCustomChar(TaskTestCase):
-    task_class = AutoCombatTask
+    task_class = DebugCharTask
     config = config
 
     @staticmethod
@@ -39,44 +41,32 @@ class TestCustomChar(TaskTestCase):
         super().setUpClass()
 
     def test_scan_team(self):
-        from src.ui.TeamManagerTab import team_manager_signals
-
         self.set_image("tests/images/02.png")
-        tab = TeamManagerTab(manager=self.manager)
+        self.task.scan_team()
+        self.task._scan_team()
 
-        # 建立 Mock 物件來捕捉信號參數
-        mock_handler = MagicMock()
-        # 連結至實際發射出的 scan_done 信號
-        team_manager_signals.scan_done.connect(mock_handler)
+        self.assertEqual(self.task.result_error, "")
+        self.assertEqual(len(self.task.scan_results), 4)
+        self.assertIsInstance(self.task.scan_results[0], TeamScanResult)
+        self.assertGreater(self.task.scan_results[0].width, 0)
+        self.assertGreater(self.task.scan_results[0].height, 0)
 
-        try:
-            # 執行真正的掃描 (會運用到 OCR 和 CV)
-            with (
-                patch("src.ui.util.ensure_scan_capture", return_value=""),
-                patch.object(tab, "get_task", return_value=self.task),
-            ):
-                tab.scan_team()
+    def test_character_tool_modes_keep_ui_input_on_the_task(self):
+        self.task.scan_results = (object(),)
+        self.task.result_error = "stale"
 
-            # 確認信號被成功發送了一次
-            mock_handler.assert_called_once()
+        self.task.scan_team()
 
-            # 獲取信號被發送時的參數
-            results, error_msg = mock_handler.call_args[0]
-            self.assertEqual(error_msg, "")
+        self.assertEqual(self.task.mode, DebugCharTask.MODE_SCAN_TEAM)
+        self.assertEqual(self.task.scan_results, ())
+        self.assertEqual(self.task.result_error, "")
 
-            # 驗證傳出的報告結構
-            self.assertIsInstance(results, list)
-            # 因為 02.png 有隊伍，只要解析沒出錯通常 results 的長度會大於 0
-            if len(results) > 0:
-                self.assertIn("index", results[0])
-                self.assertIn("mat", results[0])
-                self.assertIn("width", results[0])
-                self.assertIn("match", results[0])
-            self.assertEqual(len(results), 4)
-        finally:
-            # 測試完畢切斷連結以避免影響其他測試
-            team_manager_signals.scan_done.disconnect(mock_handler)
-            team_manager_signals.scan_done.disconnect(tab.on_scan_done)
+        self.task.test_combo("custom:test", "combo:test", "skill")
+
+        self.assertEqual(self.task.mode, DebugCharTask.MODE_TEST_COMBO)
+        self.assertEqual(self.task._combo_character_id, "custom:test")
+        self.assertEqual(self.task._combo_implementation_id, "combo:test")
+        self.assertEqual(self.task._combo_text, "skill")
 
     def setUp(self):
         super().setUp()
@@ -173,9 +163,7 @@ class TestCustomChar(TaskTestCase):
             char_id, np.zeros((10, 10, 3), dtype=np.uint8), self.task.width, self.task.height
         )
         orphan_feature_id = "orphan_feature"
-        self.manager.save_feature_image(
-            orphan_feature_id, np.zeros((10, 10, 3), dtype=np.uint8)
-        )
+        self.manager.save_feature_image(orphan_feature_id, np.zeros((10, 10, 3), dtype=np.uint8))
         note_path = os.path.join(self.temp_dir, "features", "note.txt")
         with open(note_path, "w", encoding="utf-8") as file:
             file.write("keep")
@@ -278,25 +266,55 @@ class TestCustomChar(TaskTestCase):
 
         # 模擬 on_scan_done 發送了掃描成功結果
         fake_mat = np.zeros((10, 10, 3), dtype=np.uint8)
-        mock_results = [
-            {"index": 0, "mat": fake_mat, "width": 1920, "height": 1080, "match": scan_char_id},
+        mock_results = (
+            TeamScanResult(0, fake_mat, 1920, 1080, scan_char_id, 1.0),
             # index 1 掃描到但未匹配角色字串
-            {"index": 1, "mat": fake_mat, "width": 1920, "height": 1080, "match": None},
-        ]
+            TeamScanResult(1, fake_mat, 1920, 1080, "", None),
+        )
 
         tab.on_scan_done(mock_results)
 
-        # 分析 Slot UI 變化
         # 槽位 0: 應該顯示匹配成功
         self.assertIn("scan_char_1", tab.slots[0].status.text())
         self.assertFalse(tab.slots[0].btn_act.isHidden())
+        self.assertFalse(tab.slots[0].btn_relink.isHidden())
 
         # 槽位 1: 應該顯示未匹配，並出現可關聯的按鈕
         self.assertEqual(tab.slots[1].status.text(), tab.slots[1].tr_unrecognized)
         self.assertFalse(tab.slots[1].btn_act.isHidden())
+        self.assertTrue(tab.slots[1].btn_relink.isHidden())
 
         # 槽位 2: 未收到掃描結果，應被清空並寫著無畫面
         self.assertEqual(tab.slots[2].status.text(), tab.tr_no_feature)
+        self.assertTrue(tab.slots[2].btn_relink.isHidden())
+
+    def test_team_manager_tab_relink_when_mismatched(self):
+        tab = TeamManagerTab(manager=self.manager)
+        combo_id = self.manager.add_combo("combo_test", "skill")
+        wrong_char_id = self.manager.create_character("wrong_char", combo_id)
+
+        fake_mat = np.zeros((10, 10, 3), dtype=np.uint8)
+        slot = tab.slots[0]
+        slot.update_result(fake_mat, 1920, 1080, wrong_char_id, 0.64)
+
+        # 匹配成功但可能是误判, 应该显示加入特征按钮与不是该角色链接
+        self.assertFalse(slot.btn_act.isHidden())
+        self.assertFalse(slot.btn_relink.isHidden())
+
+        dialog = MagicMock()
+        dialog.exec.return_value = True
+        dialog.get_data.return_value = ("correct_char", "", "", "")
+
+        with patch("src.ui.TeamManagerTab.NewCharDialog", return_value=dialog):
+            slot.on_relink()
+
+        self.assertNotEqual(slot.current_match_char_id, wrong_char_id)
+        linked_info = self.manager.get_character_info_by_id(slot.current_match_char_id)
+        assert linked_info is not None
+        self.assertEqual(linked_info["char_name"], "correct_char")
+        self.assertEqual(slot.current_confidence, 1.0)
+        self.assertFalse(slot.btn_act.isEnabled())
+        self.assertTrue(slot.btn_relink.isHidden())
 
     def test_team_manager_tab_disables_add_feature_after_first_link(self):
         tab = TeamManagerTab(manager=self.manager)
@@ -318,6 +336,168 @@ class TestCustomChar(TaskTestCase):
         self.assertEqual(slot.current_confidence, 1.0)
         self.assertIn(slot.tr_confidence.format(1.0), slot.status.text())
         self.assertFalse(slot.btn_act.isEnabled())
+
+    def test_team_manager_command_bar_adds_character(self):
+        tab = TeamManagerTab(manager=self.manager)
+        dialog = MagicMock()
+        dialog.exec.return_value = True
+        dialog.get_data.return_value = ("command_bar_char", "", "", "")
+
+        with patch("src.ui.TeamManagerTab.AddCharacterDialog", return_value=dialog):
+            tab.on_add_character()
+
+        char_id = self._character_id_by_name(self.manager, "command_bar_char")
+        self.assertTrue(char_id)
+        self.assertTrue(tab.fixed_action.isCheckable())
+
+    def test_team_manager_presets_apply_and_fixed_use(self):
+        tab = TeamManagerTab(manager=self.manager)
+        combo_a = self.manager.add_combo("combo_preset_a", "skill")
+        combo_b = self.manager.add_combo("combo_preset_b", "ultimate")
+        char_id = self.manager.create_character("preset_char", combo_a)
+        tab.reload_preset_options()
+
+        tab.on_create_preset()
+        preset_id = tab.current_preset_id
+        self.assertIsNotNone(preset_id)
+        tab.preset_rows[0].set_data(char_id, combo_b)
+        tab.on_preset_slot_changed(0)
+
+        preset = next(
+            preset for preset in self.manager.get_team_presets() if preset["id"] == preset_id
+        )
+        self.assertEqual(preset["slots"][0], {"char_id": char_id, "impl_id": combo_b})
+        tab.on_apply_preset()
+        self.assertEqual(self.manager.get_character_info_by_id(char_id)["impl_id"], combo_b)
+
+        tab.on_toggle_fixed_preset()
+        self.assertTrue(self.manager.get_fixed_team()["enabled"])
+        self.assertEqual(self.manager.get_fixed_team()["slots"][0]["char_id"], char_id)
+        tab.on_toggle_fixed_preset()
+        self.assertFalse(self.manager.get_fixed_team()["enabled"])
+
+    def test_team_manager_preset_search_keeps_the_selected_preset_visible(self):
+        tab = TeamManagerTab(manager=self.manager)
+        first = self.manager.create_team_preset("alpha")
+        second = self.manager.create_team_preset("beta")
+        tab.reload_presets(first["id"])
+
+        tab.preset_list.search_edit.setText("beta")
+
+        self.assertEqual(tab.current_preset_id, second["id"])
+        self.assertEqual(tab.preset_list.currentItem().data(Qt.ItemDataRole.UserRole), second["id"])
+        self.assertFalse(tab.preset_list.currentItem().isHidden())
+
+    def test_team_manager_can_delete_preset_with_its_external_code(self):
+        tab = TeamManagerTab(manager=self.manager)
+        preset = self.manager.create_team_preset("external team")
+        preset["slots"][0]["impl_id"] = "external:team/hero"
+        preset["slots"][1]["impl_id"] = "external:team/hero"
+        tab.current_preset_id = preset["id"]
+        dialog = MagicMock()
+        dialog.exec.return_value = True
+
+        with (
+            patch.object(tab, "_current_preset", return_value=preset),
+            patch("src.ui.TeamManagerTab.MessageBox", return_value=dialog),
+            patch.object(
+                self.manager, "delete_external_impl_and_references", return_value=True
+            ) as delete_external,
+        ):
+            tab.on_delete_preset()
+
+        delete_external.assert_called_once_with("external:team/hero")
+        self.assertFalse(
+            any(item["id"] == preset["id"] for item in self.manager.get_team_presets())
+        )
+
+    def test_team_manager_can_keep_external_code_when_deleting_preset(self):
+        tab = TeamManagerTab(manager=self.manager)
+        preset = self.manager.create_team_preset("external team")
+        preset["slots"][0]["impl_id"] = "external:team/hero"
+        tab.current_preset_id = preset["id"]
+        dialog = MagicMock()
+        dialog.exec.return_value = False
+
+        with (
+            patch.object(tab, "_current_preset", return_value=preset),
+            patch("src.ui.TeamManagerTab.MessageBox", return_value=dialog),
+            patch.object(self.manager, "delete_external_impl_and_references") as delete_external,
+        ):
+            tab.on_delete_preset()
+
+        delete_external.assert_not_called()
+        self.assertFalse(
+            any(item["id"] == preset["id"] for item in self.manager.get_team_presets())
+        )
+
+    def test_team_manager_preset_slot_keeps_implementation_when_character_is_cleared(self):
+        tab = TeamManagerTab(manager=self.manager)
+        combo_id = self.manager.add_combo("combo_auto_select", "skill")
+        char_id = self.manager.create_character("auto_select_char", combo_id)
+        tab.reload_preset_options()
+        tab.on_create_preset()
+        row = tab.preset_rows[0]
+
+        row.char_combo.setCurrentIndex(row.char_combo.findData(char_id))
+
+        self.assertEqual(row.get_data(), (char_id, combo_id))
+
+        row.char_combo.setCurrentIndex(0)
+
+        self.assertEqual(row.get_data(), ("", combo_id))
+        self.assertEqual(row.combo_list.currentIndex(), row.combo_list.findData(combo_id))
+
+    def test_team_manager_preset_slot_allows_an_implementation_without_a_character(self):
+        tab = TeamManagerTab(manager=self.manager)
+        combo_id = self.manager.add_combo("combo_direct", "skill")
+        tab.reload_preset_options()
+        tab.on_create_preset()
+
+        row = tab.preset_rows[0]
+        row.combo_list.setCurrentIndex(row.combo_list.findData(combo_id))
+
+        self.assertEqual(row.get_data(), ("", combo_id))
+        preset = next(
+            preset
+            for preset in self.manager.get_team_presets()
+            if preset["id"] == tab.current_preset_id
+        )
+        self.assertEqual(preset["slots"][0], {"char_id": "", "impl_id": combo_id})
+
+    def test_char_factory_builds_direct_implementation_without_a_character_record(self):
+        combo_id = self.manager.add_combo("combo_direct_factory", "skill")
+
+        char = get_char_by_impl_id(self.task, index=0, impl_id=combo_id)
+
+        self.assertIsInstance(char, CustomChar)
+        self.assertEqual(char.char_id, "")
+        self.assertEqual(char.impl_id, combo_id)
+
+    def test_team_manager_fills_only_empty_preset_slots(self):
+        tab = TeamManagerTab(manager=self.manager)
+        combo_id = self.manager.add_combo("combo_scan_fill", "skill")
+        first_id = self.manager.create_character("first", combo_id)
+        second_id = self.manager.create_character("second", combo_id)
+        tab.reload_preset_options()
+        tab.on_create_preset()
+        tab.preset_rows[0].set_data(first_id, combo_id)
+        tab.on_preset_slot_changed(0)
+        tab.last_scan_results = [
+            TeamScanResult(0, None, 0, 0, second_id, 1.0),
+            TeamScanResult(1, None, 0, 0, second_id, 1.0),
+        ]
+
+        tab.on_fill_from_scan()
+
+        preset = next(
+            preset
+            for preset in self.manager.get_team_presets()
+            if preset["id"] == tab.current_preset_id
+        )
+        self.assertEqual(preset["slots"][0]["char_id"], first_id)
+        self.assertEqual(preset["slots"][1]["char_id"], second_id)
+        self.assertEqual(preset["slots"][1]["impl_id"], combo_id)
 
     def test_builtin_combo_roundtrip(self):
         builtin_id = PREDEFINED_CHARACTER_ID
@@ -380,6 +560,20 @@ class TestCustomChar(TaskTestCase):
                 self.manager.get_impl_name(PREDEFINED_CHARACTER_ID, with_source_prefix=True),
                 "[内置代码] 零",
             )
+
+    @patch("requests.post")
+    def test_google_translate_text_uses_post_request(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.json.return_value = [[["Translated text", "Source text", None, None]]]
+        mock_post.return_value = mock_response
+
+        res = CharManagerTab._google_translate_text("Source text", "en-US")
+        self.assertEqual(res, "Translated text")
+        mock_post.assert_called_once()
+        _, kwargs = mock_post.call_args
+        self.assertIn("data", kwargs)
+        self.assertEqual(kwargs["data"]["q"], "Source text")
+        self.assertEqual(kwargs["data"]["tl"], "en-US")
 
 
 if __name__ == "__main__":

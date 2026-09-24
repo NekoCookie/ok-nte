@@ -1,7 +1,6 @@
 import time
 
 from ok import TaskDisabledException
-from qfluentwidgets import FluentIcon
 
 from src.combat.BaseCombatTask import BaseCombatTask
 from src.Labels import Labels
@@ -52,7 +51,6 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         super().__init__(*args, **kwargs)
         self.name = "九百九十九夜"
         self.description = "挂机刷经验"
-        self.icon = FluentIcon.FLAG
         _locale = self.get_app_locale()
         self.instructions = INST if _locale and "zh" in _locale else EN_INST
         self.locations = [
@@ -312,7 +310,7 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
         self.ensure_main()
         self.open_map()
         if not box:
-            box = self.main_viewport
+            box = self.pos.screen.main_viewport.to_box()
 
         teleports = self.find_feature(Labels.bonfire_teleport, box=box, threshold=threshold)
         if not teleports:
@@ -320,7 +318,8 @@ class DSDFarmTask(DSDFarmExtMixin, NTEOneTimeTask, BaseCombatTask):  # [lw] 插�
 
         self.log_info(f"found map teleports {teleports}")
 
-        teleports.sort(key=lambda tp: tp.center_distance(self.default_box.center))
+        center_box = self.pos.screen.center.to_box()
+        teleports.sort(key=lambda tp: tp.center_distance(center_box))
 
         if len(teleports) >= order:
             teleport = teleports[order - 1]

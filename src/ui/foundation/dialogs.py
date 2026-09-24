@@ -1,12 +1,26 @@
+"""Thread-safe Qt dialog primitives."""
+
 import threading
-import time
 from typing import Any
 
 from ok import Logger, og
 from PySide6.QtCore import QEvent, QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import QApplication, QWidget
+from qfluentwidgets import MessageBoxBase as _MessageBoxBase
+
+from src.events import ConfirmationRequested, communicate
 
 logger = Logger.get_logger(__name__)
+
+
+class MessageBoxBase(_MessageBoxBase):
+    """MessageBoxBase wrapper that delegates tr() to og.app.tr()."""
+
+    def tr(self, sourceText: str, *args, **kwargs) -> str:
+        if not (args or kwargs) and og.app is not None and hasattr(og.app, "tr"):
+            return og.app.tr(sourceText)
+        return super().tr(sourceText, *args, **kwargs)
+
 
 _dialog_dispatcher = None
 _dialog_dispatcher_lock = threading.Lock()
@@ -45,8 +59,8 @@ class _DialogDispatcher(QObject):
 
             dialog.finished.connect(on_finished)
             dialog.open()
-        except Exception as e:
-            logger.error("show dialog failed", e)
+        except Exception as error:
+            logger.error("show dialog failed", error)
             event.set()
 
 
@@ -110,7 +124,6 @@ class _CloseDelayGuard(QObject):
         self.timer.start(1000)
 
     def stop(self, *_):
-        """Remove the application-wide filter once the dialog has finished."""
         self.timer.stop()
         app = QApplication.instance()
         if app is not None:
@@ -166,7 +179,6 @@ def show_dialog_and_wait(
     hide_cancel: bool = True,
     close_delay_seconds: int = 0,
 ) -> int | None:
-    """Show a qfluentwidgets Dialog on the GUI thread and wait until it closes."""
     app = QApplication.instance()
     if app is None or QThread.currentThread() == app.thread():
         return _create_dialog(
@@ -200,41 +212,25 @@ def show_dialog_and_wait(
     return result[0] if result else None
 
 
-def ensure_scan_capture():
-    try:
-        executor = og.executor
-        if getattr(executor, "thread", None) is None or getattr(executor, "paused", False):
-            if not og.app.start_controller.do_start():
-                return og.app.tr("启动失败")
-            return ""
-        og.device_manager.do_refresh(True)
-        return og.app.start_controller.check_device_error() or ""
-    except Exception as e:
-        return str(e).strip() or e.__class__.__name__
+def install_confirmation_handler(parent: QWidget):
+    """Bind project confirmation events to dialogs owned by the main window."""
 
+    def handle_confirmation(request: ConfirmationRequested) -> None:
+        try:
+            accepted = bool(
+                show_dialog_and_wait(
+                    request.title,
+                    request.content,
+                    parent=parent,
+                    copyable=request.copyable,
+                    rich_text=request.rich_text,
+                    hide_cancel=request.hide_cancel,
+                    close_delay_seconds=request.close_delay_seconds or 0,
+                )
+            )
+        except Exception:
+            accepted = False
+        request.resolve(accepted)
 
-def wait_main_window(after_sleep=0):
-    try:
-        ok = getattr(og, "ok", None)
-        if ok is None:
-            return
-        use_gui = ok.config.get("use_gui") and not ok.args.get("headless", False)
-        deadline = time.time() + 60
-        if use_gui:
-            while time.time() < deadline:
-                app = getattr(og, "app", None)
-                main_window = getattr(app, "main_window", None)
-                if main_window is not None and main_window.isVisible():
-                    break
-                time.sleep(1)
-            if after_sleep > 0:
-                time.sleep(after_sleep)
-    except Exception as e:
-        logger.error("wait main_window error", e)
-
-
-def tr_fmt(text_id, **kwargs):
-    t = og.app.tr(text_id)
-    for k, v in kwargs.items():
-        t = t.replace(f"{{{k}}}", str(v))
-    return t
+    communicate.confirmation_requested.connect(handle_confirmation)
+    return handle_confirmation

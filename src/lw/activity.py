@@ -317,8 +317,6 @@ class ActivityController:
     def install_pause_diagnostics(self):
         """Observe framework events synchronously to retain the caller, without patching it."""
         from ok.gui.Communicate import communicate
-        from PySide6.QtCore import Qt
-
         def on_pause(paused):
             if not self.task.config.get(ENABLE, False):
                 return
@@ -333,7 +331,7 @@ class ActivityController:
                 f"活动执行器状态: {'暂停' if paused else '恢复'}, 来源={' <- '.join(callers)}"
             )
 
-        communicate.executor_paused.connect(on_pause, Qt.ConnectionType.DirectConnection)
+        communicate.executor_paused.connect(on_pause)
         self._pause_observer = on_pause
 
     def report(self, message, notify=False):

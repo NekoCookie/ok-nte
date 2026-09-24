@@ -1,0 +1,7 @@
+interface:
+  display_name: "Combat Planner DX Audit"
+  short_description: "Audit combat planner API usability."
+  default_prompt: "Use $combat-planner-dx-audit to audit the ok-nte combat planner for developer experience, public API boundaries, role-authoring ergonomics, and behavior predictability before release."
+
+policy:
+  allow_implicit_invocation: true

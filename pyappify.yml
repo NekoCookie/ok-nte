@@ -1,6 +1,8 @@
 name: "ok-nte"
 uac: true
 icon: "icons/icon.png"
+website: "https://ok-script.com/ok-nte"
+
 profiles:
   - name: "China"
     git_url: "https://cnb.cool/BnanZ0/ok-nte-update.git"
@@ -9,6 +11,7 @@ profiles:
     requires_python: "3.12"
     requirements: "requirements.txt"
     use_pythonw: true
+    pip_args: "--no-deps"
     show_add_defender: true
 
   - name: "Global"

@@ -12,12 +12,14 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.12'
+  PYTHONFAULTHANDLER: '1'
   PYTHONIOENCODING: 'UTF-8'
   PYTHONLEGACYWINDOWSSTDIO: 'UTF-8'
   SIGN_BUILD: 'true'
   SIGN_SETUP: 'false'
-  BUILD_EXE: 'true'
-  USE_RELEASE: 'https://api.github.com/repos/BnanZ0/ok-nte/releases/tags/v1.2.25'
+  # Non-empty reuses an existing release EXE; empty builds a new EXE.
+  USE_RELEASE: 'https://api.github.com/repos/BnanZ0/ok-nte/releases/tags/v1.3.5'
+  SYNC_GITHUB_REPO: 'false'
 
 defaults:
   run:
@@ -52,11 +54,15 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: requirements.txt
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt
+        run: uv pip install --system -r requirements.txt
 
       - name: Prepare release requirements
         env:
@@ -87,8 +93,7 @@ jobs:
           ) | ForEach-Object {
             Remove-Item "Env:\$_" -ErrorAction SilentlyContinue
           }
-
-          python -m unittest discover -s tests -p "*test*.py" --top-level-directory . -v
+          python -X faulthandler -m unittest discover -s tests -p "*test*.py" --top-level-directory . -v 2>&1
 
       - name: Synchronize update repository
         id: sync
@@ -96,6 +101,7 @@ jobs:
         with:
           repos: |
             https://cnb:${{ secrets.CNB_GH }}@cnb.cool/BnanZ0/ok-nte-update.git
+            ${{ env.SYNC_GITHUB_REPO == 'true' && format('https://BnanZ0:{0}@github.com/BnanZ0/ok-nte-update.git', secrets.OK_GH) || '' }}
           sync_list: 'deploy.txt'
           tag: ${{ github.ref_name }}
           gitignore_file: '.update_repo_gitignore'
@@ -103,7 +109,6 @@ jobs:
 
       - name: Check release version
         id: release_version
-        if: env.BUILD_EXE == 'true'
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
@@ -111,27 +116,18 @@ jobs:
           "is_release=$($isRelease.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           Write-Host "Release version: $isRelease"
 
-      - name: Reuse base executable
-        id: reuse_executable
-        if: env.BUILD_EXE == 'true' && steps.release_version.outputs.is_release == 'true' && env.USE_RELEASE != ''
-        uses: ok-oldking/pyappify-action@master
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          use_release: ${{ env.USE_RELEASE }}
-
       - name: Build portable executable
         id: build_executable
-        if: env.BUILD_EXE == 'true' && steps.release_version.outputs.is_release == 'true' && env.USE_RELEASE == ''
+        if: steps.release_version.outputs.is_release == 'true' && env.USE_RELEASE == ''
         uses: ok-oldking/pyappify-action@master
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          build_exe_only: ${{ env.SIGN_BUILD == 'true' }}
+          build_exe_only: true
 
       - name: Upload unsigned EXE artifact
         id: upload_executable
-        if: env.BUILD_EXE == 'true' && steps.release_version.outputs.is_release == 'true' && env.SIGN_BUILD == 'true' && env.USE_RELEASE == ''
+        if: steps.release_version.outputs.is_release == 'true' && env.USE_RELEASE == '' && env.SIGN_BUILD == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: to-sign
@@ -140,8 +136,8 @@ jobs:
 
       - name: Sign EXE
         id: submit_executable_signing
-        if: env.BUILD_EXE == 'true' && steps.release_version.outputs.is_release == 'true' && env.SIGN_BUILD == 'true' && env.USE_RELEASE == ''
-        uses: signpath/github-action-submit-signing-request@v2
+        if: steps.release_version.outputs.is_release == 'true' && env.USE_RELEASE == '' && env.SIGN_BUILD == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '30cc9397-0ebf-4584-8030-12f4b872ecdc'
@@ -152,7 +148,7 @@ jobs:
           wait-for-completion: false
 
       - name: Approve portable executable signing
-        if: env.BUILD_EXE == 'true' && steps.release_version.outputs.is_release == 'true' && env.SIGN_BUILD == 'true' && env.USE_RELEASE == ''
+        if: steps.release_version.outputs.is_release == 'true' && env.USE_RELEASE == '' && env.SIGN_BUILD == 'true'
         env:
           SIGNING_REQUEST_ID: ${{ steps.submit_executable_signing.outputs.signing-request-id }}
           SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -163,7 +159,7 @@ jobs:
           Invoke-RestMethod -Method Post -Uri "$baseUrl/Approve" -Headers $headers -ContentType 'application/json' -Body '{}' -ErrorAction Stop
 
       - name: Download signed EXE
-        if: env.BUILD_EXE == 'true' && steps.release_version.outputs.is_release == 'true' && env.SIGN_BUILD == 'true' && env.USE_RELEASE == ''
+        if: steps.release_version.outputs.is_release == 'true' && env.USE_RELEASE == '' && env.SIGN_BUILD == 'true'
         env:
           SIGNING_REQUEST_ID: ${{ steps.submit_executable_signing.outputs.signing-request-id }}
           SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -194,15 +190,23 @@ jobs:
           Invoke-WebRequest -Uri "$baseUrl/SignedArtifact" -Headers $headers -OutFile $archivePath -ErrorAction Stop
           Expand-Archive -LiteralPath $archivePath -DestinationPath $env:OUTPUT_DIRECTORY -Force
 
+      - name: Build setup executable from release
+        if: steps.release_version.outputs.is_release == 'true' && env.USE_RELEASE != ''
+        uses: ok-oldking/pyappify-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          use_release: ${{ env.USE_RELEASE }}
+
       - name: Build setup executable
-        if: env.BUILD_EXE == 'true' && steps.release_version.outputs.is_release == 'true' && env.SIGN_BUILD == 'true'
+        if: steps.release_version.outputs.is_release == 'true' && env.USE_RELEASE == ''
         uses: ok-oldking/pyappify-action@master
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload unsigned setup executable
         id: upload_setup
-        if: env.BUILD_EXE == 'true' && steps.release_version.outputs.is_release == 'true' && env.SIGN_BUILD == 'true' && env.SIGN_SETUP == 'true'
+        if: steps.release_version.outputs.is_release == 'true' && env.SIGN_SETUP == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: setup-to-sign
@@ -210,8 +214,8 @@ jobs:
           if-no-files-found: error
 
       - name: Sign setup executables
-        if: env.BUILD_EXE == 'true' && steps.release_version.outputs.is_release == 'true' && env.SIGN_BUILD == 'true' && env.SIGN_SETUP == 'true'
-        uses: signpath/github-action-submit-signing-request@v2
+        if: steps.release_version.outputs.is_release == 'true' && env.SIGN_SETUP == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '30cc9397-0ebf-4584-8030-12f4b872ecdc'
@@ -224,7 +228,7 @@ jobs:
           output-artifact-directory: pyappify_dist
 
       - name: Release
-        if: env.BUILD_EXE == 'true' && steps.release_version.outputs.is_release == 'true' && startsWith(github.ref, 'refs/tags/')
+        if: steps.release_version.outputs.is_release == 'true' && startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -247,7 +251,7 @@ jobs:
           files: pyappify_dist/*
 
       - name: Trigger MirrorChyan workflows
-        if: env.BUILD_EXE == 'true' && steps.release_version.outputs.is_release == 'true' && startsWith(github.ref, 'refs/tags/')
+        if: steps.release_version.outputs.is_release == 'true' && startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

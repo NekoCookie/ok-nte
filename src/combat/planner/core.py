@@ -143,7 +143,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
     关键行为:
         - 切人评分与进场执行顺序分离。评分选出的最佳 action 只用于判断目标角色
           是否值得切入；普通切入后仍按角色声明顺序尝试 action。
-        - strict route / entry reaction 才会设置 expected entry 并强制首动。
+        - strict route 和普通 claim 可以设置 expected entry 并优先尝试该动作。
         - `priority_ready` 只用于评分；`can_execute` 是硬限制。
     """
 
@@ -344,6 +344,8 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         """
 
         session = self._entry_session_for(current_char)
+        turn_route = None
+        turn_step = None
 
         while session.steps < self.MAX_ACTIONS_PER_ENTRY:
             if session.steps == 0 and self._should_return_to_requester_before_action(
@@ -357,6 +359,10 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
                 break
 
             action, scheduled = self._next_session_action(session)
+            if not scheduled and self._route_waits_for_turn(current_char):
+                # Capture the step after route advancement, before running normal actions.
+                turn_route = self.state.locked_route
+                turn_step = turn_route.current_step()
             if action is None:
                 if session.steps == 0:
                     if self._should_return_to_requester_before_action(
@@ -402,13 +408,24 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         if (
             not session.successful_action
             and not session.yielded_before_action
-            and self._can_use_field_time_fallback()
+            and self._can_use_field_time_fallback(current_char)
         ):
             context = self.context_for(current_char)
             fallback_result = self._perform_field_time_fallback(current_char, context)
             if fallback_result is not None:
                 session.last_result = fallback_result
 
+        if (
+            turn_route is not None
+            and self.state.locked_route is turn_route
+            and turn_route.current_step() is turn_step
+            and not session.yielded_before_action
+            and self._route_waits_for_turn(current_char)
+            and not self.state.expire_locked_route()
+        ):
+            turn_route.complete_turn(current_char)
+            if turn_route.fulfilled():
+                self.state.fulfill_locked_route()
         return session.last_result
 
     def _ensure_followup_sources(
@@ -582,7 +599,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         if action is not None and action.identity_key() not in excluded_action_names:
             return action
 
-        skipped_actions = self._skip_unavailable_optional_route_steps(context)
+        skipped_actions = self._advance_ready_route_steps(context)
         if skipped_route_actions is not None:
             skipped_route_actions.extend(skipped_actions)
         if self._should_return_to_requester_before_action(char, context):
@@ -626,7 +643,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         try:
             action = next(entry_flow) if result is None else entry_flow.send(result)
         except StopIteration:
-            return None
+            action = None
         published_requests = context._consume_published_requests()
         self._ensure_followup_sources(context.current_char, published_requests)
         self.state.add_requests(published_requests)
@@ -670,8 +687,8 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
     ) -> SwitchDecision:
         """根据当前状态决定是否切人以及切给谁。
 
-        优先级顺序为 strict route、入场/环合请求、游戏环合反应、普通动作评分。
-        只有 strict route 这类硬调度会返回 `SwitchDecision.expected_entry`。
+        优先级依次为已锁定的 strict route, strict claim, 入场/环合请求,
+        游戏环合反应, 普通动作评分。strict claim 只指定切入目标。
         普通评分只决定“谁值得切出来”，不改写目标角色自己的动作声明顺序。
 
         普通动作评分时，每个角色只用自己的最佳 action 参与比较；多个 action 的
@@ -688,8 +705,8 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
             require_intro: 只接受能触发 intro 的目标；通常用于切人过程中重算。
 
         返回:
-            `SwitchDecision`。普通评分下 `expected_entry` 通常为 None；strict route
-            会设置它来保证切入后先执行路线要求动作。
+            `SwitchDecision`。strict route 或普通 claim 可设置 `expected_entry`,
+            使匹配的动作在切入后优先尝试。
         """
 
         plan_cache: dict[int, _PlanSnapshot] = {}
@@ -714,6 +731,11 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         if route_decision is not None:
             self._log_switch_decision(current_char, route_decision)
             return route_decision
+
+        claim_decision = self._strict_claim_decision(current_char, context, has_intro)
+        if claim_decision is not None:
+            self._log_switch_decision(current_char, claim_decision)
+            return claim_decision
 
         entry_request_decision = finalize(
             self._entry_reaction_request_decision(current_char, context, has_intro)
@@ -864,16 +886,16 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
 
     def _should_continue_entry(self, current_char: "BaseChar", result: ActionResult) -> bool:
         if not result.success:
-            return self._can_try_next_action_after_failure()
+            return self._can_try_next_action_after_failure(current_char)
         if self.state.locked_route is not None:
             return self._locked_route_can_continue_on_current(current_char)
         if any(request_blocks_entry_flow(request) for request in self.state.active_requests):
             return False
         return True
 
-    def _can_try_next_action_after_failure(self) -> bool:
+    def _can_try_next_action_after_failure(self, current_char: "BaseChar") -> bool:
         if self.state.locked_route is not None:
-            return False
+            return self._route_waits_for_turn(current_char)
         if any(request_blocks_entry_flow(request) for request in self.state.active_requests):
             return False
         return True
@@ -885,12 +907,10 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
             return True
         return any(request_blocks_entry_flow(request) for request in self.state.active_requests)
 
-    def _can_use_field_time_fallback(self) -> bool:
+    def _can_use_field_time_fallback(self, current_char: "BaseChar") -> bool:
         if self.state.locked_route is not None:
-            return False
-        return not any(
-            request_blocks_entry_flow(request) for request in self.state.active_requests
-        )
+            return self._route_waits_for_turn(current_char)
+        return not any(request_blocks_entry_flow(request) for request in self.state.active_requests)
 
     def _locked_route_can_continue_on_current(self, current_char: "BaseChar") -> bool:
         request = self.state.locked_route
@@ -900,6 +920,13 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         if step is None or step.requires_entry_reaction:
             return False
         return step.matches_char(current_char)
+
+    def _route_waits_for_turn(self, char: "BaseChar") -> bool:
+        request = self.state.locked_route
+        step = request.current_step() if request is not None else None
+        return bool(
+            step is not None and step.switch_step and step.wait_for_turn and step.matches_char(char)
+        )
 
     def _element_reaction_decision(
         self, current_char: "BaseChar", has_intro: bool
@@ -1086,13 +1113,20 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
             return request
         return None
 
-    def _skip_unavailable_optional_route_steps(
+    def _advance_ready_route_steps(
         self,
         context: CombatContext,
     ) -> list[ActionIntent]:
+        """完成已满足的到场步骤, 并跳过不可用的可选动作步骤。"""
+
         skipped_actions: list[ActionIntent] = []
         request = self._strict_route_request(context)
         while request is not None:
+            if self._can_switch_to(context.current_char):
+                context._state.complete_route_arrival_steps(context.current_char)
+                request = self._strict_route_request(context)
+                if request is None:
+                    return skipped_actions
             step = request.current_step()
             if step is None or not step.optional:
                 return skipped_actions
@@ -1162,6 +1196,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         step = request.current_step()
         if (
             step is None
+            or step.switch_step
             or step.requires_entry_reaction
             or step.requires_switch
             or not step.matches_char(char)
@@ -1190,7 +1225,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
     def _strict_route_decision(
         self, current_char: "BaseChar", context: CombatContext, has_intro: bool
     ) -> SwitchDecision | None:
-        self._skip_unavailable_optional_route_steps(context)
+        self._advance_ready_route_steps(context)
         request = self._strict_route_request(context)
         if request is None:
             return None
@@ -1209,6 +1244,14 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
 
         target = self._strict_route_target(context, step)
         if target is not None:
+            if step.switch_step:
+                return SwitchDecision(
+                    target=target,
+                    reason=f"strict route switch: {request.reason} / {step.reason}",
+                    priority=999999,
+                    has_intro=has_intro,
+                    expected_entry=None,
+                )
             if step.requires_entry_reaction:
                 if not has_intro:
                     return SwitchDecision(
@@ -1324,7 +1367,39 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         claims = [claim for claim in self._claims_for(char, context) if claim.matches_char(char)]
         if not claims:
             return None
-        return max(claims, key=lambda claim: FIELD_CLAIM_SCORES.get(claim.level, 0))
+        return max(
+            claims,
+            key=lambda claim: (
+                claim.level == FieldClaimLevel.STRICT,
+                FIELD_CLAIM_SCORES.get(claim.level, 0),
+            ),
+        )
+
+    def _strict_claim_decision(
+        self, current_char: "BaseChar", context: CombatContext, has_intro: bool
+    ) -> SwitchDecision | None:
+        candidates = []
+        for char in self.state.chars:
+            if char == current_char or not self._can_switch_to(char):
+                continue
+            claim = self._best_field_claim_for(char, context)
+            if claim is None or claim.level != FieldClaimLevel.STRICT:
+                continue
+            score, _, _, breakdown, _ = self._score_char(char, context, current_char=False)
+            candidates.append((score, -char.last_perform, -char.index, char, claim, breakdown))
+
+        if not candidates:
+            return None
+        _, _, _, target, claim, breakdown = max(candidates)
+        return SwitchDecision(
+            target=target,
+            reason=f"strict field claim: {claim.reason}",
+            priority=999999,
+            has_intro=has_intro,
+            expected_entry=None,
+            score_breakdown=breakdown.format(),
+            strict=True,
+        )
 
     def _base_action_score(
         self,

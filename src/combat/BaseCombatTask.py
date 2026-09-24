@@ -11,7 +11,7 @@ from ok import Box, Logger, safe_get
 
 from src import text_white_color
 from src.char.BaseChar import BaseChar, Element
-from src.char.core.CharFactory import get_char_by_id, get_char_by_pos
+from src.char.core.CharFactory import get_char_by_id, get_char_by_impl_id, get_char_by_pos
 from src.char.custom.CustomCharManager import CustomCharManager
 from src.combat.CombatCheck import CombatCheck
 from src.combat.planner import CombatPlanner
@@ -309,7 +309,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             self.freeze_durations.clear()
             self.freeze_durations.extend(records)
 
-    def time_elapsed_accounting_for_freeze(self, start, intro_motion_freeze=False):
+    def time_elapsed_accounting_for_freeze(self, start, intro_motion_freeze=False) -> float:
         """计算扣除冻结时间后经过的时间。
 
         Args:
@@ -441,12 +441,11 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
         free_intro=False,
         require_intro=False,
     ):
-        decision = self.combat_planner.decide_switch(
+        return self.combat_planner.decide_switch(
             current_char,
             free_intro=free_intro,
             require_intro=require_intro,
         )
-        return decision.target, decision.has_intro
 
     def _wait_switch_in_guard(
         self,
@@ -568,13 +567,18 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
                     and not self.lw_is_committing_to_ready_support(switch_to)  # [lw]
                 ):
                     intro_replanned = True
-                    new_switch_to, new_has_intro = self._decide_switch_to(
+                    new_decision = self._decide_switch_to(
                         current_char,
                         free_intro,
                         require_intro=True,
                     )
+                    new_switch_to = new_decision.target
+                    new_has_intro = new_decision.has_intro
                     if new_has_intro and new_switch_to != current_char:
-                        if not self.combat_planner.has_strict_route(current_char):
+                        if not (
+                            new_decision.strict
+                            or self.combat_planner.has_strict_route(current_char)
+                        ):
                             self._wait_switch_in_guard(current_char, new_switch_to, new_has_intro)
                         switch_to = new_switch_to
                         has_intro = new_has_intro
@@ -686,7 +690,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             return
 
         strict_route_active = self.combat_planner.has_strict_route(current_char)
-        if not strict_route_active:
+        if not (getattr(decision, "strict", False) or strict_route_active):
             self._wait_switch_in_guard(current_char, switch_to, has_intro)
             current_char.wait_switch_cd()
 
@@ -974,12 +978,17 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
                     fixed_impl_id = ""
                 else:
                     fixed_char_name = char_info["char_name"]
-                    self.logger.info(
-                        f"Using fixed char {index}: {fixed_char_name} {fixed_impl_id}"
-                    )
+                    # A preset can pin a character without pinning its combo. In that
+                    # case keep using the character's current global implementation.
+                    if not fixed_impl_id:
+                        fixed_impl_id = char_info["impl_id"]
+                    self.logger.info(f"Using fixed char {index}: {fixed_char_name} {fixed_impl_id}")
                     return get_char_by_id(
                         self, index, fixed_char_id, confidence=1, impl_id=fixed_impl_id
                     )
+            if fixed_impl_id:
+                self.logger.info(f"Using fixed implementation {index}: {fixed_impl_id}")
+                return get_char_by_impl_id(self, index, fixed_impl_id, confidence=1)
 
         box_scaled = self.get_char_box(index).scale(1.1, 1.1)
 

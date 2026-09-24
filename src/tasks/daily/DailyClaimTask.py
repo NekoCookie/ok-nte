@@ -1,5 +1,4 @@
 from ok import CannotFindException, TaskDisabledException, find_color_rectangles
-from qfluentwidgets import FluentIcon
 
 from src import text_white_color
 from src.Labels import Labels
@@ -18,7 +17,6 @@ class DailyClaimTask(DailyClaimExtMixin, NTEOneTimeTask, BaseNTETask):  # [lw]
         super().__init__(*args, **kwargs)
         self.name = "日常领取"
         self.description = "领取每日邮件和奖励"
-        self.icon = FluentIcon.MAIL
         self.visible = False
         self.default_config.update(
             {
@@ -56,7 +54,7 @@ class DailyClaimTask(DailyClaimExtMixin, NTEOneTimeTask, BaseNTETask):  # [lw]
     def open_mail_panel(self):
         def action():
             self.openESCpanel()
-            self.operate_click(0.8707, 0.8736)
+            self.operate_click(*self.pos.panels.esc.mail)
             self.sleep(0.5)
             return self.wait_panel(Labels.mail_panel)
 
@@ -77,7 +75,7 @@ class DailyClaimTask(DailyClaimExtMixin, NTEOneTimeTask, BaseNTETask):  # [lw]
     def open_activity_panel(self):
         def action():
             self.openF1panel()
-            self.operate_click(0.0551, 0.3833)
+            self.operate_click(*self.pos.panels.f1.activity)
             self.sleep(0.5)
             return self.wait_panel(Labels.f1_activity_panel)
 

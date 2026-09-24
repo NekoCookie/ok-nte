@@ -1,5 +1,4 @@
 from ok import TaskDisabledException
-from qfluentwidgets import FluentIcon
 
 from src.combat.BaseCombatTask import BaseCombatTask
 from src.Labels import Labels
@@ -9,7 +8,7 @@ from src.utils.i18n_format import register_i18n_format
 
 
 class AnomalyTask(NTEOneTimeTask, BaseCombatTask):
-    NAME = "异象界域"
+    TASK_NAME = "异象界域"
 
     # --- 配置项键名 ---
     CONF_TASK_TYPE = "任务类型"
@@ -89,9 +88,8 @@ class AnomalyTask(NTEOneTimeTask, BaseCombatTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.name = self.NAME
+        self.name = self.TASK_NAME
         self.description = "自动进行异象界域任务"
-        self.icon = FluentIcon.FLAG
         self._outer_config = None
         self.setup_config(self)
 
@@ -218,11 +216,17 @@ class AnomalyTask(NTEOneTimeTask, BaseCombatTask):
 
         # 共同操作 2
         self.log_info("正在传送至目标地点")
-        btns = self.find_confirms(self.box_of_screen(0.925, 0.190, 0.982, 0.760))
+        btns = self.wait_until(
+            lambda: self.find_confirms(self.box_of_screen(0.925, 0.190, 0.982, 0.760)), time_out=10
+        )
+        if not btns:
+            self.log_warning("未找到副本按钮, 退出任务", notify=True)
+            return False
+
         btn = min(btns, key=lambda x: x.y)
         self.operate_click(btn)
         self.click_traval_button()
-        self.wait_in_team()
+        self.wait_in_team(time_out=300)
 
         stamina_units = stamina // self.TASK_COST
         if stamina_target is not None:

@@ -5,7 +5,7 @@ import os
 from ok import Box, ConfigOption
 
 from src import GAME_EXE
-from src.audio_routing import create_background_audio_routing_config_option
+from src.audio.routing import create_background_audio_routing_config_option
 from src.interaction.NTEInteraction import NTEInteraction
 from src.process_feature import process_feature
 
@@ -73,6 +73,9 @@ def blur_area(width, height):
 
 config = {
     "custom_tasks": True,  # enable creating and editing custom tasks
+    "gui": {
+        "type": "qt",
+    },
     "debug": False,  # Optional, default: False
     "use_gui": True,  # 目前只支持True
     "config_folder": "configs",  # 最好不要修改
@@ -97,13 +100,6 @@ config = {
                 "use_openvino": True,
             },
         },
-        # "bg_onnx_ocr": {
-        #     "lib": "onnxocr",
-        #     "auto_simplify": True,
-        #     "params": {
-        #         "use_openvino": True,
-        #     },
-        # },
     },
     "windows": {  # Windows游戏请填写此设置
         "exe": GAME_EXE,
@@ -142,12 +138,21 @@ config = {
         "default": {
             "github": "https://github.com/BnanZ0/ok-nte",
             "discord": "https://discord.gg/vVyCatEBgA",
+            "download": "https://ok-script.com/ok-nte",
+            "sponsor": "https://github.com/BnanZ0/ok-nte/blob/main/SPONSOR.md",
+            "share": "Download OK-NTE https://ok-script.com/ok-nte",
+            "faq": "https://ok-script.com/ok-nte",
+        },
+        "zh_CN": {
+            "github": "https://github.com/BnanZ0/ok-nte",
+            "discord": "https://discord.gg/vVyCatEBgA",
+            "download": "https://ok-script.com/ok-nte",
             "sponsor": "https://cnb.cool/BnanZ0/ok-nte-update/-/blob/main/SPONSOR.md",
-            "share": "Download from https://github.com/BnanZ0/ok-nte",
-            "qq_group": "https://qm.qq.com/q/bIiSLoUTVS",
-            "faq": "https://github.com/BnanZ0/ok-nte",
+            "share": "下载 OK-NTE https://ok-script.com/ok-nte",
+            "faq": "https://ok-script.com/ok-nte",
+            "qq_group": "https://qm.qq.com/q/ZJaIaEb5iE",
             "qq_channel": "https://pd.qq.com/s/djmm6l44y",
-        }
+        },
     },
     "about": """
         <p style="color:red;">
@@ -197,7 +202,6 @@ config = {
         ["src.tasks.RhythmTask", "RhythmTask"],
         ["src.tasks.OwnerSelectionTask", "OwnerSelectionTask"],
         ["src.tasks.AutoHeistTask", "AutoHeistTask"],
-        # ["src.tasks.DarkTask", "DarkTask"],
         ["src.tasks.BagelAITools", "BagelAITools"],
         ["src.tasks.WhirlwindTask", "WhirlwindTask"],
         ["src.tasks.DSDFarmTask", "DSDFarmTask"],
@@ -206,6 +210,7 @@ config = {
         ["src.tasks.AbyssTask", "AbyssTask"],  # [lw] 轨外之境自动挑战
         # 测试相关
         ["src.tasks.CombatDetectionTestTask", "CombatDetectionTestTask"],
+        ["src.tasks.DebugCharTask", "DebugCharTask"],
         ["ok", "DiagnosisTask"],
         # 日常相关
         ["src.tasks.daily.DailyClaimTask", "DailyClaimTask"],
@@ -214,8 +219,6 @@ config = {
         ["src.tasks.daily.FountainTask", "FountainTask"],
         ["src.tasks.daily.FurnitureTask", "FurnitureTask"],
         ["src.tasks.daily.CinemaDateTask", "CinemaDateTask"],
-        # ["src.tasks.custom.TeamScannerTask", "TeamScannerTask"],
-        # ["src.tasks.DebugCharTask", "DebugCharTask"],
     ],
     "trigger_tasks": [  # 不断执行的触发式任务
         ["src.tasks.trigger.RequiemCombatConfigTask", "RequiemCombatConfigTask"],  # [lw]
@@ -236,8 +239,8 @@ config = {
     ],
     "scene": ["src.scene.NTEScene", "NTEScene"],
     "update_pyappify": {
-        "to_version": "1.1.11",
-        "zip_url": "https://github.com/BnanZ0/ok-nte/releases/download/v1.2.25/ok-nte-win32.zip",
-        "sha256": "1ac3e1d566c7b8de670187e8d230992d3204c4f9b13187b0dc5b65a86ef1eb3d",
+        "to_version": "1.2.3",
+        "zip_url": "https://github.com/BnanZ0/ok-nte/releases/download/v1.3.5/ok-nte-win32.zip",
+        "sha256": "9e8c7ec1e1ab8af7824dd6ee1a5bdc8ec7c01d1b1007270ff8dec19fe9c14980",
     },
 }

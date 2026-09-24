@@ -1,4 +1,4 @@
-﻿import inspect
+import inspect
 import re
 import threading
 import time
@@ -20,7 +20,7 @@ from src import text_black_color
 from src.Labels import Labels
 from src.lw.nte_task_ext import NTETaskExtMixin  # [lw]
 from src.scene.NTEScene import NTEScene
-from src.scene.ScreenPosition import ScreenPosition
+from src.scene.PositionMap import PositionMap
 from src.tasks.mixin.CharUIMixin import CharUIMixin
 from src.tasks.mixin.MovementMixin import MovementMixin
 from src.tasks.mixin.OgMixin import OgMixin
@@ -61,7 +61,7 @@ class BaseNTETask(
         self.key_config = self.get_global_config("Game Hotkey Config")
         self.monthly_card_config = self.get_global_config("Monthly Card Config")
         self.sound_config = self.get_global_config("Sound Trigger Config")
-        self.default_box = ScreenPosition(self)
+        self.pos = PositionMap(self)
         self._init_char_ui_state()
         self.next_monthly_card_start = 0
         self._last_interval_action_time = {}
@@ -139,10 +139,6 @@ class BaseNTETask(
     @property
     def openvino_available(self):
         return getattr(og.my_app, "openvino_available", None)
-
-    @property
-    def main_viewport(self):
-        return self.box_of_screen(0.0984, 0.1042, 0.8961, 0.8944, name="main_viewport")
 
     # fmt: off
     def click(self, x: int | Box | List[Box] = -1, y=-1, move_back=None, name=None,
@@ -755,7 +751,7 @@ class BaseNTETask(
 
         def action():
             self.openESCpanel()
-            self.operate_click(0.9305, 0.8729)
+            self.operate_click(*self.pos.panels.esc.back_to_login)
             self.sleep(0.5)
             return self.find_confirm(box=box)
 
@@ -768,7 +764,7 @@ class BaseNTETask(
         # now = time.time()
         result = self.find_one(
             Labels.treasure,
-            box=self.main_viewport,
+            box=self.pos.screen.main_viewport.to_box(),
             threshold=0.7,
             use_gray_scale=True,
         )
@@ -895,7 +891,7 @@ class BaseNTETask(
         raise_if_not_found=True,
     ):
         if range is None:
-            box = self.main_viewport
+            box = self.pos.screen.main_viewport.to_box()
         elif isinstance(range, Box):
             box = range
         else:
@@ -931,7 +927,7 @@ class BaseNTETask(
 
     def find_confirms(self, box=None, threshold=0.7) -> list[Box]:
         if not isinstance(box, Box):
-            box = self.main_viewport
+            box = self.pos.screen.main_viewport.to_box()
         match_feature: list[list[Box]] = []
         for feature_name in [Labels.confirm_btn_1, Labels.confirm_btn_2]:
             features = self.find_feature(
@@ -965,7 +961,7 @@ class BaseNTETask(
         box = self.box_of_screen(0.785, 0.022, 0.814, 0.076, name="stamina_icon")
         self.wait_until(
             lambda: self.find_one(Labels.stamina_icon, box=box),
-            pre_action=lambda: self.operate_click(0.0563, 0.4924, interval=0.5),
+            pre_action=lambda: self.operate_click(*self.pos.panels.f1.domain, interval=0.5),
             settle_time=0.5,
             time_out=10,
         )
@@ -1042,8 +1038,7 @@ class BaseNTETask(
     ):
         return not self.run_and_check_changed(
             action=lambda: self.operate(
-                lambda: self.scroll(x, y, count=count),
-                block=True,
+                lambda: self.scroll(x, y, count=count), block=True, restore_cursor=False
             ),
             snap_box=snap_box,
             check_box=check_box,
@@ -1106,13 +1101,11 @@ interac_pink_color = {
     "b": (119, 133),
 }
 
-
 exit_white_color = {
     "r": (226, 246),
     "g": (226, 246),
     "b": (227, 247),
 }
-
 
 char_health_color = {
     "r": (160, 210),

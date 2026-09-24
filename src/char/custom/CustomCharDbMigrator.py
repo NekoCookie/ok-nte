@@ -10,6 +10,8 @@ class MigrationContext:
     get_builtin_prefix: Callable[[], str]
     iter_builtin_impl_items: Callable[[], Iterable[tuple[str, str]]]
     generate_combo_id: Callable[[set[str] | None], str]
+    get_external_impl_ids_by_class_name: Callable[[str], Iterable[str]] = lambda _class_name: ()
+    is_registered_impl: Callable[[str], bool] | None = None
 
 
 @dataclass
@@ -60,6 +62,10 @@ class CustomCharDbMigrator:
 
         db, diagnostics = self._migrate_combo_syntax_to_current(db)
         self._migrate_impl_ids(db)
+        if source_version < 8:
+            diagnostics.extend(self._migrate_external_impl_ids(db))
+        if source_version < 9:
+            self._migrate_fixed_team_to_presets(db)
         return MigrationResult(db=db, modified=True, needs_backup=True, diagnostics=diagnostics)
 
     def _migrate_impl_ids(self, db: dict) -> None:
@@ -70,14 +76,115 @@ class CustomCharDbMigrator:
         characters = db.get("characters", {})
         if isinstance(characters, dict):
             for record in characters.values():
+                if isinstance(record, dict) and "combo_id" in record:
+                    record["impl_id"] = impl_id(record.pop("combo_id"))
+
+        fixed_team = db.get("fixed_team", {})
+        if isinstance(fixed_team, dict) and isinstance(fixed_team.get("slots"), list):
+            for slot in fixed_team["slots"]:
+                if isinstance(slot, dict) and "combo_id" in slot:
+                    slot["impl_id"] = impl_id(slot.pop("combo_id"))
+
+        presets = db.get("team_presets", [])
+        if isinstance(presets, list):
+            for preset in presets:
+                if not isinstance(preset, dict) or not isinstance(preset.get("slots"), list):
+                    continue
+                for slot in preset["slots"]:
+                    if isinstance(slot, dict) and "combo_id" in slot:
+                        slot["impl_id"] = impl_id(slot.pop("combo_id"))
+
+    def _migrate_external_impl_ids(self, db: dict) -> list[str]:
+        diagnostics = []
+
+        def migrate(record: dict) -> None:
+            impl_id = self._as_text(record.get("impl_id", "")).strip()
+            if not impl_id.startswith("external:"):
+                return
+            class_name = impl_id.removeprefix("external:")
+            matching_impl_ids = list(self._context.get_external_impl_ids_by_class_name(class_name))
+            if len(matching_impl_ids) == 1:
+                record["impl_id"] = matching_impl_ids[0]
+            else:
+                reason = "ambiguous" if matching_impl_ids else "not found"
+                diagnostics.append(
+                    f"External character implementation '{impl_id}' could not be migrated: {reason}"
+                )
+
+        characters = db.get("characters", {})
+        if isinstance(characters, dict):
+            for record in characters.values():
                 if isinstance(record, dict):
-                    record["impl_id"] = impl_id(record.pop("combo_id", ""))
+                    migrate(record)
 
         fixed_team = db.get("fixed_team", {})
         if isinstance(fixed_team, dict) and isinstance(fixed_team.get("slots"), list):
             for slot in fixed_team["slots"]:
                 if isinstance(slot, dict):
-                    slot["impl_id"] = impl_id(slot.pop("combo_id", ""))
+                    migrate(slot)
+
+        presets = db.get("team_presets", [])
+        if isinstance(presets, list):
+            for preset in presets:
+                if not isinstance(preset, dict) or not isinstance(preset.get("slots"), list):
+                    continue
+                for slot in preset["slots"]:
+                    if isinstance(slot, dict):
+                        migrate(slot)
+        return diagnostics
+
+    def _migrate_fixed_team_to_presets(self, db: dict) -> None:
+        """Move the old singleton fixed team into the preset collection once."""
+        raw_fixed_team = db.pop("fixed_team", {})
+        presets = db.get("team_presets", [])
+        if not isinstance(presets, list):
+            presets = []
+
+        if not isinstance(raw_fixed_team, dict):
+            db["team_presets"] = presets
+            return
+
+        raw_slots = raw_fixed_team.get("slots", [])
+        if not isinstance(raw_slots, list):
+            db["team_presets"] = presets
+            return
+
+        slots = []
+        has_character = False
+        for index in range(4):
+            raw_slot = (
+                raw_slots[index]
+                if index < len(raw_slots) and isinstance(raw_slots[index], dict)
+                else {}
+            )
+            char_id = self._as_text(raw_slot.get("char_id", "")).strip()
+            impl_id = self._as_text(raw_slot.get("impl_id", "")).strip()
+            if not char_id:
+                impl_id = ""
+            else:
+                has_character = True
+            slots.append({"char_id": char_id, "impl_id": impl_id})
+
+        if has_character:
+            existing_ids = {
+                self._as_text(preset.get("id", "")).strip()
+                for preset in presets
+                if isinstance(preset, dict)
+            }
+            preset_id = "preset_fixed_team"
+            suffix = 2
+            while preset_id in existing_ids:
+                preset_id = f"preset_fixed_team_{suffix}"
+                suffix += 1
+            presets.append(
+                {
+                    "id": preset_id,
+                    "name": "固定队伍",
+                    "slots": slots,
+                    "is_fixed": bool(raw_fixed_team.get("enabled", False)),
+                }
+            )
+        db["team_presets"] = presets
 
     @staticmethod
     def _as_text(value) -> str:

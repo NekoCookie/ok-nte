@@ -1,6 +1,8 @@
 # Combat Planner 开发指南
 
-> **提示**：角色的具体代码实现可在 [`src/char`](../../src/char) 目录中找到。
+> **提示**：角色的具体代码实现可在 [`src/char`](../../../src/char) 目录中找到，也可查看
+> [GitHub](https://github.com/BnanZ0/ok-nte/tree/main/src/char) 或
+> [CNB](https://cnb.cool/BnanZ0/ok-nte-update/-/tree/main/src/char) 上的代码目录。
 
 Planner 是队伍大脑。角色只声明一个 `CombatPlan`：
 
@@ -11,7 +13,7 @@ Planner 是队伍大脑。角色只声明一个 `CombatPlan`：
 公开导入入口固定使用：
 
 ```python
-from src.combat.planner import ActionSlot, CombatContext, FieldClaim, Planner, RoleProfile
+from src.combat.planner import ActionSlot, CombatContext, ExpectedEntry, FieldClaim, Planner, RoleProfile
 ```
 
 `src.combat.planner` 只导出正式开发 API。角色代码不要直接导入
@@ -91,6 +93,8 @@ def combat_plan(self, context):
 - 不要在创建 plan 时调用 `context.request_route()`、`reserve_actions()` 或
   `request_tags()`；这些一次性请求应在 action execute 中发布，或在 entry flow
   收到成功 result 后发布。
+- entry flow 发布的请求会在下一次 `yield` 或流程结束时收集；收到 result 后发布请求并直接
+  `return` 也会生效。
 - `actions` 是评分和协作匹配目录；`entry` 是普通入场执行流程。
 - `claims` 可以传多个独立入场理由；它们不会叠加分数，planner 只取当前匹配角色的最高优先级 claim。
 - strict route、expected entry、active request 的硬调度优先于普通 entry flow。
@@ -148,8 +152,7 @@ flow 外预查询完整 action 时，使用 `context.is_action_allowed(self, act
 - `ARC_ACTION`：弧盘动作，评分为 0。
 - `SUPPORT`：辅助/治疗/增益类动作。
 - `TEAM_BUFF`：为全队提供增益的关键动作。仅在该增益应优先于主 DPS 终结技施放时使用。
-- `COORDINATION`：发布协作路线或窗口的动作。
-- `COORDINATION_FINISHER`：协作完成后的收尾动作。
+- `HIGH_PRIORITY`：显著提高动作的切人评分。用于少数特别值得优先尝试的动作；它不会改变角色上场后的动作执行顺序。
 - `FIELD_TIME`：planner 内建站场动作，角色不应自己声明。
 - `LEGACY_COMBO`：旧出招表动作。
 - `DEFAULT_ACTION`：低价值兜底入口。
@@ -157,14 +160,6 @@ flow 外预查询完整 action 时，使用 `context.is_action_allowed(self, act
 切人评分不会累加同一角色所有 action；planner 只挑该角色当前最高分的 ready
 action 代表该角色参赛。tag 不控制普通入场流程；普通入场由 `CombatPlan.entry`
 控制。
-
-`SwitchDecision.scoring_action_slot` 记录该普通切人评分所选 action 的槽位，只用于
-LW 可选的补充 `ExpectedEntry` 策略；它不等同于 `expected_entry`，也不改变目标角色
-原有的 entry flow 顺序。
-
-环合资源属于当前角色与其实际环合目标的配对，不能因为当前角色环合已满就传播给任意
-切人目标。planner 会在最终选定目标后确认 `has_intro`；只有目标正是当前环合反应目标时，
-该次切人才能作为环合入场。优先级提权、路线或普通评分切向其他目标时均为普通入场。
 
 ## ActionSlot
 
@@ -184,7 +179,6 @@ LW 可选的补充 `ExpectedEntry` 策略；它不等同于 `expected_entry`，�
 
 ```python
 FollowupStep.for_action(zero, ActionSlot.SKILL)
-FollowupStep.for_switch(zero)
 ActionReservation.for_action(nanally, ActionSlot.SKILL)
 context.is_slot_available(self, ActionSlot.SKILL)
 ```
@@ -274,7 +268,8 @@ self.planner_action(
 
 ## FieldClaim
 
-`FieldClaim` 表达“我应该被切进来”，不是动作。它只抬高目标角色的普通入场评分；
+`FieldClaim` 表达“我应该被切进来”，不是动作。`low`、`normal`、`high` 和
+`critical` 抬高普通入场评分；`strict` 在下一次切人决策时直接选定该角色。
 角色切入后仍由 planner 从 `actions`、strict route/request 或 `entry` 中选择动作。
 
 ```python
@@ -290,25 +285,35 @@ def combat_plan(self, context):
     return self.plan(self.click_ultimate_action(), claims=claims)
 ```
 
+需要在限时窗口内回场时，可在 `combat_plan()` 中声明 strict claim：
+
+```python
+def combat_plan(self, context):
+    ultimate = self.click_ultimate_action()
+    claims = []
+    if self.should_return_now():
+        claims.append(
+            FieldClaim.strict(
+                reason="ultimate window ending",
+            )
+        )
+    return self.plan(ultimate, claims=claims)
+```
+
+planner 每次切人决策都会重新读取候选角色的 claim。已锁定的 strict route 优先；
+之后 strict claim 优先于环合反应、active request 和普通评分。多个角色同时声明
+strict claim 时，planner 用它们的普通评分及最近行动时间决定目标。strict claim
+只在当前角色的动作结束后生效，不会中断动作；切人时跳过 `SwitchInGuard` 和
+`wait_switch_cd()` 等待。strict claim 只要求切入, 不设置 `expected_entry`。
+切入后角色按自己的普通 `entry` 流程执行动作。
+
 使用建议：
 
 - 只是 Q/E 可用，不需要 FieldClaim；action 本身会参与评分。
-- 需要“之后抢回场”时用 FieldClaim。
-- 抢回场后需要优先做某动作时，加 `expected_entry`。
+- 需要“之后抢回场”时用普通 FieldClaim；必须在下一次切人决策中回场时用 `FieldClaim.strict()`。
+- `FieldClaim.critical()` 仍是普通评分档位，不会强制切人。
+- 普通 claim 抢回场后需要优先做某动作时, 加 `expected_entry`。
 - 多个 FieldClaim 适合表达多个独立机制入口；planner 不累加 claim 分，只选择最高等级的匹配 claim。
-
-安魂曲配置的“入场提前执行技能大招”开启时, 普通入场仍立即执行角色声明的原 entry flow;
-不会根据切人评分或 Q 就绪状态额外制造 `ExpectedEntry`。拥有环合入场的角色先执行 `1.0s`
-原环合等待, 再调用公开的 `CombatPlanner.perform_entry_lead_action(char)`。显式登记的
-`ExpectedEntry` 仍然优先; 否则该调用推进角色真实 entry flow, 跳过原流程本来就会跳过的失败
-Q/E, 并在第一个成功 Q/E 后暂停。planner 保存同一个 entry session, 随后的
-`perform_current_char()` 从暂停处继续, 不会重新运行 generator 的前置副作用。因此 `E -> Q`
-和 `Q -> E` 角色都保持各自声明顺序。关闭配置时, 环合保留 RU 原有的完整普攻窗口。所有提前
-Q/E 仍调用角色标准 action, 切人代码不直接发键。
-
-LW 角色可选实现 `lw_can_switch_in()`，在短暂的游戏机制窗口返回 `False`。planner 会把该角色
-从所有切人候选中排除，不发送角色数字键，也不会把暂时不可切入误判为死亡。该钩子只用于已确认
-的本地窗口，例如安魂曲真技能确认后的离场时间；不能用不稳定的头像明暗识别取代动作成功判定。
 
 ## combat_policies
 
@@ -345,8 +350,30 @@ def combat_plan(self, context):
 
 常用 API：
 
-- `context.request_route(...)`：固定顺序协作路线。`FollowupStep.for_action()` 要求目标完成指定动作;
-  `FollowupStep.for_switch()` 只锁定切入目标, 在实际切到该角色时完成, 不强制目标动作。
+- `context.request_route(...)`：固定顺序协作路线。
+
+`FollowupStep.for_switch(target, wait_for_turn=True)` 默认切入后等待目标正常执行完本轮:
+
+```python
+context.request_route([
+    FollowupStep.for_switch(a),
+    FollowupStep.for_action(b, ActionSlot.ULTIMATE),
+])
+```
+
+这里 A 按自己的正常 entry flow 执行完本轮后, 才推进到 B 的终结技。
+A 已在场时也会执行本轮, 不直接跳过。它不指定首动, 不要求入场反应,
+也不绕过动作许可或 reservation。本轮结束沿用正常流程的结束条件和动作数上限;
+无动作或全部失败时仍可尝试正常站场回退, 不要求某个技能成功才完成步骤。
+异常中断不会算作完成; route 过期或被替换后不会再推进旧步骤。
+
+若只要求切入, 使用 `FollowupStep.for_switch(a, wait_for_turn=False)`。
+该模式切入成功或目标已在场时立即完成步骤。单步 route 结束后恢复正常流程;
+多步 route 会立即推进, **不等待 A 正常流程结束, 也不保证 A 执行任何动作**。
+
+两种模式均继承 strict route 的调度优先级和生命周期。新 route 会替换已有 route,
+因此它不是单纯的高优先级 `request_switch()`; 普通独立切人诉求仍使用后者。
+
 - `context.request_switch(...)`：请求下一次普通调度切给某角色。
 - `context.request_role(...)`：请求下一次普通调度切给某个队伍定位的角色；多个
   匹配角色时按普通切人评分选择。它不指定动作，也不打断当前 entry flow。

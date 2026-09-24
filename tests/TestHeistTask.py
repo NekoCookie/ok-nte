@@ -20,6 +20,22 @@ class _Listener:
 
 
 class TestHeistTask(unittest.TestCase):
+    def test_get_vk_codes_always_returns_three_slots(self):
+        task = object.__new__(HeistTask)
+
+        vk_codes = [
+            task._get_vk_codes(None),
+            task._get_vk_codes("shift"),
+            task._get_vk_codes("lshift"),
+            task._get_vk_codes("f1"),
+            task._get_vk_codes("f"),
+            task._get_vk_codes("invalid"),
+        ]
+
+        self.assertTrue(all(len(codes) == HeistTask.VK_CODE_SLOT_COUNT for codes in vk_codes))
+        self.assertEqual(task._get_valid_vk_codes("shift"), HeistTask.KEY_MAP["shift"])
+        self.assertEqual(task._get_valid_vk_codes("f1"), (win32con.VK_F1,))
+
     def test_shift_release_immediately_ends_quick_run_interception(self):
         task = object.__new__(HeistTask)
         task.physical_keys_pressed = {win32con.VK_LSHIFT}
@@ -35,14 +51,14 @@ class TestHeistTask(unittest.TestCase):
         task._quick_run_time = 1
         task._quick_run_step = 1
 
-        task._win32_filter(win32con.WM_KEYUP, _KeyboardEvent(win32con.VK_LSHIFT))
+        self.assertFalse(task._win32_filter(win32con.WM_KEYUP, _KeyboardEvent(win32con.VK_LSHIFT)))
 
         self.assertEqual(task.physical_keys_pressed, set())
         self.assertNotIn(win32con.VK_LSHIFT, task.suppressed_keys)
         self.assertFalse(task._quick_running)
         self.assertEqual(task.listener.suppressed_event_count, 1)
 
-        task._win32_filter(win32con.WM_KEYDOWN, _KeyboardEvent(win32con.VK_LSHIFT))
+        self.assertTrue(task._win32_filter(win32con.WM_KEYDOWN, _KeyboardEvent(win32con.VK_LSHIFT)))
 
         self.assertEqual(task.listener.suppressed_event_count, 1)
 

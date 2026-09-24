@@ -91,7 +91,7 @@ jobs:
 
       - name: pyappify build-exe-only
         id: build-exe-only
-        uses: ok-oldking/pyappify-action@91cb0dfeb63d297bc260f2d7efc1a16304fba724
+        uses: ok-oldking/pyappify-action@c5cc8fe5c9bd5c732969018694a2645474c48b7e
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -106,7 +106,7 @@ jobs:
           if-no-files-found: error
 
       - name: Sign EXE
-        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '30cc9397-0ebf-4584-8030-12f4b872ecdc'
@@ -127,7 +127,7 @@ jobs:
 
       - name: pyappify build-setup-exe
         id: build-setup-exe
-        uses: ok-oldking/pyappify-action@91cb0dfeb63d297bc260f2d7efc1a16304fba724
+        uses: ok-oldking/pyappify-action@c5cc8fe5c9bd5c732969018694a2645474c48b7e
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -140,7 +140,7 @@ jobs:
           if-no-files-found: error
 
       - name: Sign setup EXEs
-        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '30cc9397-0ebf-4584-8030-12f4b872ecdc'

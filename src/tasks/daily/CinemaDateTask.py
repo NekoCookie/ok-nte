@@ -2,7 +2,6 @@ import re
 import time
 
 from ok import Box, TaskDisabledException
-from qfluentwidgets import FluentIcon
 
 from src.Labels import Labels
 from src.tasks.BaseNTETask import BaseNTETask
@@ -16,7 +15,6 @@ class CinemaDateTask(NTEOneTimeTask, BaseNTETask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = "影院约会"
-        self.icon = FluentIcon.SHOPPING_CART
         self.group_name = "日常/周常"
         self.visible = False
 
@@ -75,7 +73,7 @@ class CinemaDateTask(NTEOneTimeTask, BaseNTETask):
         self.operate_click(0.862, 0.780)
         self.sleep(0.5)
         self.click_traval_button()
-        self.ensure_main(esc=False, time_out=60)
+        self.ensure_main(esc=False, time_out=300)
 
     def _go_to_front_desk(self):
         self.send_key_down("w")

@@ -17,9 +17,9 @@ class HeistPathA(HeistPath):
         if idx == -1:
             self.lg1_wp5_avoid_combat_01()
         elif idx == 0:
-            self.lg1_wp5_avoid_combat_02()
+            self.lg1_wp5_avoid_combat_01()
         elif idx == 1:
-            self.lg1_wp5_avoid_combat_03()
+            self.lg1_wp5_avoid_combat_02()
         elif idx == 2:
             self.lg1_wp5_avoid_combat_g_then_shift()
         self.wait_team_ui_settle()
@@ -444,8 +444,8 @@ class HeistPathA(HeistPath):
         self.send_key_up("w")
         self.sleep(0.31)
 
-    def lg1_wp5_avoid_combat_01(self):
-        self.log_round_info("LG1 WP5避战路线1")
+    def lg1_wp5_avoid_combat_00(self):
+        self.log_round_info("LG1 WP5避战路线0")
         self.send_key_down("w")
         self.sleep(2.02)
         self.send_key_up("w")
@@ -474,8 +474,8 @@ class HeistPathA(HeistPath):
         self.sleep(1.00)
         self.wait_and_interact(direction="w")
 
-    def lg1_wp5_avoid_combat_02(self):
-        self.log_round_info("LG1 WP5避战路线2")
+    def lg1_wp5_avoid_combat_01(self):
+        self.log_round_info("LG1 WP5避战路线1")
         self.send_key_down("s")
         self.sleep(1.50)
         self.send_key_up("s")
@@ -503,8 +503,8 @@ class HeistPathA(HeistPath):
         self.sleep(0.5)
         self.lg1_wp5_avoid_combat_02()
 
-    def lg1_wp5_avoid_combat_03(self):
-        self.log_round_info("LG1 WP5避战路线3")
+    def lg1_wp5_avoid_combat_02(self):
+        self.log_round_info("LG1 WP5避战路线2")
         self.switch_to_avoider(check_switched=True)
         self.sleep(0.5)
         self.perform_avoidance_action()
@@ -521,6 +521,29 @@ class HeistPathA(HeistPath):
         self.sleep(0.2)
         self.perform_avoidance_action()
         self.sleep(3.2)
+        self.switch_to_runner(check_switched=True)
+        self.sleep(0.5)
+        self.wait_and_interact(is_lock=True)
+        self.sleep(0.11)
+        self.send_key_down("w")
+        self.sleep(1.00)
+        self.wait_and_interact(direction="w")
+
+    def lg1_wp5_avoid_combat_03(self):
+        self.log_round_info("LG1 WP5避战路线3")
+        self.switch_to_avoider(check_switched=True)
+        self.sleep(0.50)
+        self.perform_avoidance_action()
+        self.sleep(0.10)
+        self.send_key_down("w")
+        self.sleep(0.11)
+
+        deadline = time.time() + 3.5
+        while time.time() < deadline:
+            self.send_key("lshift")
+            self.sleep(0.51)
+
+        self.send_key_up("w")
         self.switch_to_runner(check_switched=True)
         self.sleep(0.5)
         self.wait_and_interact(is_lock=True)

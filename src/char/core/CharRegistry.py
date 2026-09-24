@@ -1,6 +1,8 @@
 from dataclasses import dataclass
-from importlib import import_module
-from importlib.util import module_from_spec, spec_from_file_location
+from hashlib import sha256
+from importlib import import_module, invalidate_caches
+from importlib.machinery import ModuleSpec
+from importlib.util import cache_from_source, module_from_spec, spec_from_file_location
 from pathlib import Path
 from sys import modules
 from threading import RLock
@@ -20,9 +22,13 @@ class CharImplementation:
     en_name: str
     cn_name: str
     element: Element
+    external_folder_name: str = ""
 
     def display_name(self, locale_name: str = "") -> str:
-        return self.cn_name if locale_name == "zh_CN" else self.en_name
+        char_name = self.cn_name if locale_name == "zh_CN" else self.en_name
+        return (
+            f"{self.external_folder_name} - {char_name}" if self.external_folder_name else char_name
+        )
 
 
 class CharRegistry:
@@ -34,6 +40,7 @@ class CharRegistry:
         self._builtin_scanned = False
         self._external_scanned = False
         self._external_dir = external_dir
+        self._external_packages: dict[str, Path] = {}
 
     @staticmethod
     def _builtin_dir() -> Path:
@@ -98,14 +105,51 @@ class CharRegistry:
                 self._scan_external()
 
     def _scan_external(self) -> None:
+        for name in tuple(modules):
+            if name.partition(".")[0] in self._external_packages:
+                modules.pop(name, None)
+        self._external_packages.clear()
+        invalidate_caches()
         try:
-            external_paths = sorted(self._get_external_dir().glob("*.py"))
+            external_paths = self._get_external_paths()
+            # Clear source caches before any import, including later method-local imports.
+            for source in self._get_external_dir().rglob("*.py"):
+                Path(cache_from_source(str(source))).unlink(missing_ok=True)
         except OSError as error:
             logger.warning(f"Failed to scan external character modules: {error.__class__.__name__}")
             external_paths = []
         for path in external_paths:
+            package_name = self._external_package_name(path.parent)
+            if package_name not in self._external_packages:
+                spec = ModuleSpec(package_name, loader=None, is_package=True)
+                spec.submodule_search_locations = [str(path.parent.resolve())]
+                modules[package_name] = module_from_spec(spec)
+                self._external_packages[package_name] = path.parent.resolve()
+        for path in external_paths:
             self._register_external_module(path)
         self._external_scanned = True
+
+    @staticmethod
+    def _external_package_name(directory: Path) -> str:
+        suffix = sha256(str(directory.resolve()).casefold().encode("utf-8")).hexdigest()[:16]
+        return f"ok_nte_external_{suffix}"
+
+    @classmethod
+    def _external_module_name(cls, path: Path) -> str:
+        stem = (
+            path.stem if path.stem.isidentifier() else sha256(path.name.encode("utf-8")).hexdigest()
+        )
+        return f"{cls._external_package_name(path.parent)}.{stem}"
+
+    def _get_external_paths(self) -> list[Path]:
+        external_dir = self._get_external_dir()
+        if not external_dir.is_dir():
+            return []
+        paths = list(external_dir.glob("*.py"))
+        for directory in external_dir.iterdir():
+            if directory.is_dir() and not directory.name.startswith("_"):
+                paths.extend(directory.glob("*.py"))
+        return sorted(paths, key=lambda path: path.relative_to(external_dir).as_posix().lower())
 
     def _get_external_dir(self) -> Path:
         if self._external_dir is not None:
@@ -113,6 +157,17 @@ class CharRegistry:
         from src.char.custom.CustomCharManager import EXTERNAL_CHARS_DIR
 
         return Path(EXTERNAL_CHARS_DIR)
+
+    def get_external_impl_ids_by_class_name(self, class_name: str) -> list[str]:
+        """Return every external implementation declared with this class name."""
+        class_name = str(class_name or "").lower()
+        self.ensure_scanned()
+        with self._lock:
+            return [
+                entry.impl_id
+                for entry in self._entries.values()
+                if entry.source == "external" and entry.char_cls.__name__.lower() == class_name
+            ]
 
     def _register_builtin_module(self, path: Path) -> None:
         if path.stem in {"BaseChar", "Support", "__init__"}:
@@ -147,14 +202,21 @@ class CharRegistry:
     def _register_external_module(self, path: Path) -> None:
         if path.stem.startswith("_"):
             return
-        module_name = f"ok_nte_external_{path.stem.lower()}"
+        external_dir = self._get_external_dir()
+        relative_path = path.relative_to(external_dir)
+        relative_stem = relative_path.with_suffix("").as_posix()
+        module_name = self._external_module_name(path)
         try:
-            spec = spec_from_file_location(module_name, path)
-            if spec is None or spec.loader is None:
-                raise ImportError("no module loader")
-            module = module_from_spec(spec)
-            modules[module_name] = module
-            spec.loader.exec_module(module)
+            if path.stem.isidentifier():
+                module = import_module(module_name)
+            else:
+                # Keep existing character filenames that cannot be imported as identifiers.
+                spec = spec_from_file_location(module_name, path)
+                if spec is None or spec.loader is None:
+                    raise ImportError("no module loader")
+                module = module_from_spec(spec)
+                modules[module_name] = module
+                spec.loader.exec_module(module)
         except Exception as error:
             modules.pop(module_name, None)
             logger.warning(
@@ -178,7 +240,7 @@ class CharRegistry:
             return
 
         char_cls = candidates[0]
-        impl_id = f"external:{char_cls.__name__.lower()}"
+        impl_id = f"external:{relative_stem.lower()}"
         if impl_id in self._entries:
             logger.warning(f"Duplicate external character implementation {impl_id} in {path.name}")
             return
@@ -189,6 +251,9 @@ class CharRegistry:
             en_name=char_cls.en_name,
             cn_name=char_cls.cn_name,
             element=char_cls.element,
+            external_folder_name=relative_path.parent.name
+            if relative_path.parent != Path(".")
+            else "",
         )
 
 

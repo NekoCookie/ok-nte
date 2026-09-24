@@ -1,7 +1,6 @@
 import time
 
 from ok import TaskDisabledException
-from qfluentwidgets import FluentIcon
 
 from src.combat.BaseCombatTask import BaseCombatTask
 from src.Labels import Labels
@@ -26,7 +25,6 @@ class WhirlwindTask(NTEOneTimeTask, BaseCombatTask):
         super().__init__(*args, **kwargs)
         self.name = "自动小旋风"
         self.description = "可交互「小旋风」下按开始"
-        self.icon = FluentIcon.FLAG
         self.default_config.update(
             {
                 self.CONFIG_DIFF_OPTION: 1,
@@ -118,7 +116,9 @@ class WhirlwindTask(NTEOneTimeTask, BaseCombatTask):
 
     def find_dialog_history(self):
         return self.find_one(
-            Labels.dialog_history, threshold=0.8, box=self.default_box.dialog_icon_box
+            Labels.dialog_history,
+            threshold=0.8,
+            box=self.pos.screen.dialog_icon.to_box(),
         )
 
     def start_combat(self):

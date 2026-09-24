@@ -1,8 +1,6 @@
-
 import cv2
 import numpy as np
 from ok import TaskDisabledException
-from qfluentwidgets import FluentIcon
 
 from src.combat.BaseCombatTask import BaseCombatTask
 from src.Labels import Labels
@@ -60,7 +58,6 @@ class AnomalyHunter(NTEOneTimeTask, BaseCombatTask):
         super().__init__(*args, **kwargs)
         self.name = "异象追猎"
         self.description = "自动进行异象追猎任务"
-        self.icon = FluentIcon.FLAG
         self._outer_config = None
         self.setup_config(self)
 
@@ -205,7 +202,7 @@ class AnomalyHunter(NTEOneTimeTask, BaseCombatTask):
         y = y_start + page_idx * self.HUNTER_TRAVEL_Y_STEP
         self.operate_click(self.HUNTER_TRAVEL_X, y)
         self.click_traval_button()
-        self.wait_in_team_and_world()
+        self.wait_in_team(time_out=300)
 
     def turn_to_next_hunter_page(self):
         self.log_info("异象追猎目标位于下一页，执行翻页")
@@ -278,7 +275,7 @@ class AnomalyHunter(NTEOneTimeTask, BaseCombatTask):
                 if result := self.find_one(
                     feature_name=feature_name,
                     template=template,
-                    box=self.main_viewport,
+                    box=self.pos.screen.main_viewport.to_box(),
                     threshold=self.BOSS_TREASURE_THRESHOLD,
                     frame_processor=lambda frame: cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY),
                 ):
@@ -303,7 +300,7 @@ class AnomalyHunter(NTEOneTimeTask, BaseCombatTask):
 
     def is_claim_btn_ready(self):
         return self.find_confirm(
-            box=self.main_viewport,
+            box=self.pos.screen.main_viewport.to_box(),
             threshold=0.7,
         )
 

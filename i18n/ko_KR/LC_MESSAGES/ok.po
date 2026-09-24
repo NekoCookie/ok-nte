@@ -9,9 +9,6 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-msgid "<b style=\"color: #0078d7;\">角色</b> 和 <b style=\"color: #0078d7;\">{combo}</b> 支持输入并创建，也支持选择已有项。"
-msgstr "<b style=\"color: #0078d7;\">캐릭터</b> 및 <b style=\"color: #0078d7;\">{combo}</b>는 직접 입력하여 생성하거나 기존 항목을 선택할 수 있습니다."
-
 msgid "Arc Key"
 msgstr "아크 키"
 
@@ -20,18 +17,6 @@ msgstr "월정액 카드 확인"
 
 msgid "Check for monthly card to avoid interruption of tasks"
 msgstr "작업 중단을 피하기 위해 월정액 카드를 확인합니다"
-
-msgid "F10"
-msgstr "F10"
-
-msgid "F11"
-msgstr "F11"
-
-msgid "F12"
-msgstr "F12"
-
-msgid "F9"
-msgstr "F9"
 
 msgid "Game Hotkey Config"
 msgstr "게임 단축키 설정"
@@ -69,36 +54,17 @@ msgstr "{combo}: {} 바인딩 성공"
 msgid "{combo}语法错误"
 msgstr "{combo} 구문 오류"
 
-msgid "{fixed_team}已保存"
-msgstr "{fixed_team} 저장됨"
-
-msgid "{fixed_team}已停用"
-msgstr "{fixed_team} 비활성화됨"
-
-msgid "{fixed_team}已清空"
-msgstr "{fixed_team} 초기화됨"
-
 msgid "{} 号位"
 msgstr "{} 번 슬롯"
 
 msgid "任务跳过对话"
 msgstr "대화 건너뛰기 작업"
 
-msgid ""
-"供非中/英语用户自定义传送文字, 逗号分隔\n"
-"例: Teleport, 传送"
-msgstr ""
-"비중국어/영어 사용자를 위한 사용자 지정 텔포 텍스트, 쉼표로 구분\n"
-"예: Teleport, 传送"
-
 msgid "保存成功"
 msgstr "저장 성공"
 
 msgid "停用"
 msgstr "비활성화"
-
-msgid "先扫描并关联特征或手动填写"
-msgstr "먼저 스캔하여 특징을 연동하거나 수동으로 입력하세요"
 
 msgid "出招表"
 msgstr "콤보 목록"
@@ -133,8 +99,8 @@ msgstr "특징 추가"
 msgid "匹配文字"
 msgstr "텍스트 매칭"
 
-msgid "受《异环》UI的特殊性影响, 部分场景下存在识别稳定性波动"
-msgstr "《Neverness-to-Everness》 UI의 특수성으로 인해 일부 장면에서 인식 안정성이 변동될 수 있습니다"
+msgid "适用于大世界、轨外之境、999夜等各类场景与副本"
+msgstr "오픈 월드, 궤외지경, 999 Nights 등 다양한 장면과 던전에 적용"
 
 msgid "可用指令"
 msgstr "사용 가능한 명령"
@@ -151,9 +117,6 @@ msgstr "지도에서 자동 순간이동 클릭"
 msgid "填入扫描"
 msgstr "스캔 결과 입력"
 
-msgid "这是个用于向数据库关联或添加 <b style=\"color: #0078d7;\">角色特征</b> 的工具面板。<br>点击 <b style=\"color: #0078d7;\">{scan_team}</b> 后点击 <b style=\"color: #0078d7;\">关联或添加</b> 特征，自动战斗时就会识别对应的角色。<br><b style=\"color: #d83b01;\">💡 注意：</b>此面板 <b style=\"color: #d83b01;\">不会</b> 在进入战斗或更换阵容时实时自动刷新或同步显示, 因为这是工具面板。<br>如果不想管理 <b style=\"color: #0078d7;\">角色特征</b>，可以直接使用 <b style=\"color: #0078d7;\">{fixed_team}</b> 功能。"
-msgstr "이것은 데이터베이스에 <b style=\"color: #0078d7;\">캐릭터 특징</b>을 연결하거나 추가하기 위한 도구 패널입니다.<br><b style=\"color: #0078d7;\">{scan_team}</b>을 클릭한 후 특징의 <b style=\"color: #0078d7;\">연결 또는 추가</b>를 클릭하면, 자동 전투 시 해당 캐릭터를 인식하게 됩니다.<br><b style=\"color: #d83b01;\">💡 주의:</b> 이 패널은 도구 패널이므로 전투에 진입하거나 진형을 변경할 때 실시간으로 자동 새로고침되거나 동기화되어 표시되지 <b style=\"color: #d83b01;\">않습니다</b>.<br><b style=\"color: #0078d7;\">캐릭터 특징</b>을 관리하고 싶지 않다면 <b style=\"color: #0078d7;\">{fixed_team}</b> 기능을 직접 사용할 수 있습니다."
-
 msgid "完成每日活跃度"
 msgstr "일일 활성도 완료"
 
@@ -169,45 +132,17 @@ msgstr "데이터 가져오기"
 msgid "导出数据"
 msgstr "데이터 내보내기"
 
-msgid "已保存 {}/4"
-msgstr "저장됨 {}/4"
-
-msgid "已启用 {}/4"
-msgstr "활성화됨 {}/4"
-
-msgid "已启用{fixed_team}"
-msgstr "{fixed_team} 활성화됨"
-
-msgid "已填入 {}"
-msgstr "{} 입력됨"
-
-msgid "已填入扫描结果"
-msgstr "스캔 결과 입력됨"
-
 msgid "已导入 {} 个文件"
 msgstr "{}개 파일 가져옴"
 
-msgid "已恢复自动识别"
-msgstr "자동 인식 복구됨"
-
 msgid "已成功删除角色: {} 以及关联的特征图"
 msgstr "캐릭터: {} 및 관련 특징 맵을 성공적으로 삭제했습니다"
-
-msgid "已清空槽位"
-msgstr "슬롯 초기화됨"
 
 msgid "已解除 {} 的{combo}绑定"
 msgstr "{}의 {combo} 바인딩 해제됨"
 
 msgid "应用更改"
 msgstr "변경 사항 적용"
-
-msgid ""
-"当前未绑定任何{combo}。\n"
-"遇到此角色将默认使用基础通用脚本(BaseChar)。"
-msgstr ""
-"현재 연결된 {combo}가 없습니다.\n"
-"이 캐릭터는 기본 공용 스크립트(BaseChar)를 사용합니다."
 
 msgid "循环次数"
 msgstr "반복 횟수"
@@ -233,12 +168,6 @@ msgstr "화면 없음"
 msgid "日常任务"
 msgstr "일일 임무"
 
-msgid "暂不可用"
-msgstr "일시적으로 사용 불가"
-
-msgid "更新"
-msgstr "업데이트"
-
 msgid "未启用"
 msgstr "비활성화됨"
 
@@ -251,24 +180,11 @@ msgstr "특징을 가져오지 못했습니다"
 msgid "关联特征"
 msgstr "특징 연결"
 
-msgid ""
-"此为 Python 脚本，不可在此修改。\n"
-"请在对应的源文件中直接修改代码。"
-msgstr ""
-"이 Python 스크립트는 여기서 수정할 수 없습니다.\n"
-"해당 소스 파일에서 코드를 직접 수정하십시오."
-
-msgid "没有可用扫描结果"
-msgstr "사용 가능한 스캔 결과 없음"
+msgid "此为 Python 脚本, 不可在此修改.\n请在对应的源文件中直接修改代码."
+msgstr "이것은 Python 스크립트이므로 여기서 수정할 수 없습니다.\n해당 소스 파일에서 직접 코드를 수정해 주세요."
 
 msgid "没有找到匹配的指令。"
 msgstr "일치하는 명령을 찾을 수 없습니다."
-
-msgid "清空"
-msgstr "초기화"
-
-msgid "点击上方按钮扫描..."
-msgstr "위의 버튼을 클릭하여 스캔하세요..."
 
 msgid "点击时将短暂控制物理鼠标"
 msgstr "클릭 시 실제 마우스를 잠시 제어합니다"
@@ -300,18 +216,6 @@ msgstr "자동 대상"
 msgid "自动钓鱼"
 msgstr "자동 낚시"
 
-msgid "自动捕鱼"
-msgstr "자동 물고기 잡기"
-
-msgid "自动点击捕鱼场景中的彩色鱼"
-msgstr "포획 장면의 색깔 물고기를 자동으로 클릭"
-
-msgid "捕鱼单轮超时"
-msgstr "물고기 포획 라운드 시간 초과"
-
-msgid "单轮捕鱼最长运行时间, 超时后结束本轮"
-msgstr "한 라운드의 최대 시간; 시간 초과 시 라운드 종료"
-
 msgid "角色中心"
 msgstr "캐릭 센터"
 
@@ -336,8 +240,8 @@ msgstr "스토리 건너뛰기"
 msgid "运行一次测试"
 msgstr "테스트 1회 실행"
 
-msgid "下拉选择，或直接输入名称以创建新{combo}"
-msgstr "드롭다운에서 선택하거나 이름을 직접 입력하여 새 {combo} 생성"
+msgid "下拉选择, 或直接输入名称以创建新{combo}"
+msgstr "드롭다운에서 선택하거나, 이름을 입력하여 새 {combo}를 생성하세요"
 
 msgid "重命名失败"
 msgstr "이름 변경 실패"
@@ -361,11 +265,8 @@ msgstr "팀 인원이 2명 미만입니다"
 msgid "队伍管理"
 msgstr "팀 관리"
 
-msgid "使用ESC"
-msgstr "ESC 사용"
-
-msgid "关闭时仅在中键选中敌人且画面识别到 'Lv' 文字时开启战斗"
-msgstr "비활성화 시 중간 클릭으로 적을 선택하고 화면에서 'Lv' 텍스트가 인식될 때만 전투를 시작합니다"
+msgid "关闭时仅在中键选中敌人且画面识别到关键特征时开启战斗"
+msgstr "비활성화 시 마우스 중간 버튼으로 적을 선택하고 화면에서 주요 특징이 감지될 때만 전투를 시작합니다"
 
 msgid ""
 "开启后优先通过 ESC 键关闭成功界面，避免后台抢占鼠标。\n"
@@ -403,9 +304,6 @@ msgstr "모든 공격 회피"
 
 msgid "Dodge all attacks without performing counter attacks"
 msgstr "반격을 수행하지 않고 모든 공격을 회피합니다"
-
-msgid "不支持从OK启动游戏"
-msgstr "OK에서 게임을 시작하는 것은 지원되지 않습니다"
 
 msgid "任务完成后自动切换至下一个项目"
 msgstr "작업 완료 후 자동으로 다음 항목으로 전환"
@@ -506,9 +404,6 @@ msgstr "곡당 제한 시간(초)"
 msgid "异环鼓组音游自动打击与重试"
 msgstr "NTE 리듬 게임 자동 연주 및 재시도"
 
-msgid "打歌次数, 0=无限循环"
-msgstr "연주 횟수, 0=무한"
-
 msgid "自动音游"
 msgstr "자동 리듬 게임"
 
@@ -579,9 +474,6 @@ msgstr "연결된 캐릭터 이름 입력 또는 선택"
 msgid "输入或选择绑定的{combo} (可选)"
 msgstr "연결된 {combo} 입력 또는 선택(선택)"
 
-msgid "循环次数(0为无限次)"
-msgstr "반복 횟수(0은 무제한)"
-
 msgid "清空已记录的操作"
 msgstr "기록된 작업 지우기"
 
@@ -611,21 +503,6 @@ msgstr "※ 목록에 직접 입력하여 생성할 수 있습니다"
 
 msgid "输入或选择角色"
 msgstr "캐릭터를 입력하거나 선택"
-
-msgid "自动战斗任务不可用"
-msgstr "자동 전투 작업을 사용할 수 없습니다"
-
-msgid "<span style=\"color: #2ecc71;\">● 自动识别：已启用</span>"
-msgstr "<span style=\"color: #2ecc71;\">● 자동 인식: 활성화됨</span>"
-
-msgid "<span style=\"color: #95a5a6;\">○ 自动识别：仅空槽启用</span>"
-msgstr "<span style=\"color: #95a5a6;\">○ 자동 인식: 빈 슬롯만 활성화</span>"
-
-msgid "<span style=\"color: #2ecc71;\">● {fixed_team}：已启用 ({count}/4)</span>"
-msgstr "<span style=\"color: #2ecc71;\">● {fixed_team}: 활성화됨 ({count}/4)</span>"
-
-msgid "<span style=\"color: #95a5a6;\">○ {fixed_team}：已停用</span>"
-msgstr "<span style=\"color: #95a5a6;\">○ {fixed_team}: 비활성화됨</span>"
 
 msgid "启动失败"
 msgstr "시작하지 못했습니다"
@@ -843,23 +720,14 @@ msgstr "모델 API Key"
 msgid "模型调用地址"
 msgstr "모델 API 주소"
 
-msgid "次数"
-msgstr "횟수"
-
 msgid "游戏语言"
 msgstr "게임 언어"
 
 msgid "请选择游戏所设置的语言"
 msgstr "게임 내 설정된 언어를 선택하세요"
 
-msgid "留言"
-msgstr "댓글"
-
 msgid "自动发帖"
 msgstr "자동 게시물 작성"
-
-msgid "自动呗果"
-msgstr "베이글(Bagel) 자동 실행"
 
 msgid "自动回帖"
 msgstr "자동 댓글"
@@ -963,8 +831,8 @@ msgstr "아노말리 가구"
 msgid "每2小时重新登入"
 msgstr "2시간마다 재로그인"
 
-msgid "除了选择内建存在的<b style=\"color: #0078d7;\">{combo}</b>外，您也可以自己输入名称来建立自己的<b style=\"color: #0078d7;\">{combo}</b>。"
-msgstr "내장된 <b style=\"color: #0078d7;\">{combo}</b>를 선택하는 것 외에도, 이름을 입력하여 자신만의 <b style=\"color: #0078d7;\">{combo}</b>를 만들 수도 있습니다."
+msgid "除了选择内建存在的<b style=\"color: #0078d7;\">{combo}</b>外,您也可以自己输入名称来建立自己的<b style=\"color: #0078d7;\">{combo}</b>."
+msgstr "기본 내장된 <b style=\"color: #0078d7;\">{combo}</b>를 선택하는 것 외에도, 이름을 입력하여 나만의 <b style=\"color: #0078d7;\">{combo}</b>를 만들 수 있습니다."
 
 msgid "九百九十九夜"
 msgstr "구백구십구야"
@@ -1133,23 +1001,6 @@ msgstr "사용 가능한 게임 화면이 없음"
 
 msgid "请先捕获、选择礼物并启用至少一个角色。"
 msgstr "먼저 캡처하고, 선물을 선택한 후 최소 한 명의 캐릭터를 활성화하세요."
-msgid "▸ 虚拟手柄共存测试(展开)"
-msgstr "▸ 가상 게임패드 공존 테스트(펼치기)"
-
-msgid "启用虚拟手柄A键脉冲"
-msgstr "가상 게임패드 A 버튼 펄스 활성화"
-
-msgid "虚拟手柄A键间隔(s)"
-msgstr "가상 게임패드 A 버튼 간격(초)"
-
-msgid "▸ 分组折叠: 展开实体手柄与虚拟手柄共存测试"
-msgstr "▸ 그룹: 실제/가상 게임패드 공존 테스트 펼치기"
-
-msgid "开=虚拟Xbox手柄每隔数秒按一次A；不接管、不隐藏实体手柄"
-msgstr "켜짐 = 가상 Xbox 컨트롤러가 몇 초마다 A를 누르며 실제 게임패드를 제어하거나 숨기지 않습니다"
-
-msgid "虚拟手柄两次A键测试脉冲之间的秒数"
-msgstr "가상 게임패드 A 버튼 테스트 펄스 사이의 초"
 
 msgid "使用录制功能"
 msgstr "기록 기능 사용"
@@ -1263,9 +1114,6 @@ msgstr "[외장 코드]"
 msgid "打开外置代码目录"
 msgstr "외부 코드 폴더 열기"
 
-msgid "手动添加或修改 Python 代码后, 需点击 [{refresh}] 按钮以生效。<br>关于编写角色出招表的指南, 请参考 <a href='{doc_url}'>文档</a>。"
-msgstr "Python 코드를 수동으로 추가하거나 수정한 후에는 [{refresh}] 버튼을 클릭해야 적용됩니다.<br>캐릭터 콤보표 작성 가이드는 <a href='{doc_url}'>문서</a>를 참조하세요."
-
 msgid "日常领取"
 msgstr "일일 수령"
 
@@ -1302,18 +1150,6 @@ msgstr "모두 접기"
 msgid "全部展开"
 msgstr "모두 펼치기"
 
-msgid "重置配置"
-msgstr "설정 리셋"
-
-msgid "重试失败项"
-msgstr "실패한 항목 다시 시도"
-
-msgid "自动捉迷藏"
-msgstr "자동 숨바꼭질"
-
-msgid "徊影憧憧活动自动挂机: 自动点击开始匹配, 对局结束自动开始下一局"
-msgstr "「徊影憧憧」 이벤트 자동 진행: 자동으로 매칭을 시작하고, 대전이 끝나면 다음 라운드를 시작합니다."
-
 msgid "排球之星"
 msgstr "배구의 별"
 
@@ -1326,137 +1162,311 @@ msgstr "G키 탭"
 msgid "挑战玛门"
 msgstr "마몬 도전"
 
-msgid "▸ 安魂曲残虹合轴(展开)"
-msgstr "▸ 안혼곡-잔홍 합축(펼치기)"
-
-msgid "合轴触发键"
-msgstr "합축 실행 키"
-
-msgid "安魂曲切换键"
-msgstr "안혼곡 전환 키"
-
-msgid "残虹切换键"
-msgstr "잔홍 전환 키"
-
-msgid "安魂曲普攻间隔(s)"
-msgstr "안혼곡 일반 공격 간격(s)"
-
-msgid "安魂曲普攻时长(s)"
-msgstr "안혼곡 일반 공격 시간(s)"
-
-msgid "残虹长按普攻时长(s)"
-msgstr "잔홍 일반 공격 길게 누르기 시간(s)"
-
-msgid "残虹接平A延迟(s)"
-msgstr "잔홍 후속 일반 공격 지연(s)"
-
-msgid "▸ 分组折叠: 展开安魂曲主C与残虹主C的合轴触发键和时序"
-msgstr "▸ 그룹: 안혼곡 메인 DPS와 잔홍 메인 DPS 합축 키 및 타이밍 펼치기"
-
-msgid "按一下开始重复合轴测试, 再按一下停止; 默认8"
-msgstr "한 번 누르면 합축 테스트 반복 시작, 다시 누르면 중지; 기본값 8"
-
-msgid "安魂曲在队伍中的数字切换键; 默认1"
-msgstr "팀에서 안혼곡을 전환하는 숫자 키; 기본값 1"
-
-msgid "残虹在队伍中的数字切换键; 默认2"
-msgstr "팀에서 잔홍을 전환하는 숫자 키; 기본값 2"
-
-msgid "安魂曲合轴阶段每次普攻的间隔秒数, 最低按0.02s执行"
-msgstr "합축 중 안혼곡 일반 공격 간격, 최소 0.02초"
-
-msgid "安魂曲持续普攻这么久后切到残虹"
-msgstr "안혼곡이 일반 공격 후 잔홍으로 전환하기까지의 시간"
-
-msgid "残虹合轴阶段长按普攻的持续秒数"
-msgstr "합축 중 잔홍이 일반 공격을 길게 누르는 시간"
-
-msgid "残虹松开长按后等待这么久再接一下平A, 然后切回安魂曲"
-msgstr "잔홍이 길게 누르기를 놓은 뒤 이만큼 기다리고 일반 공격 1회 후 안혼곡으로 전환"
-
-msgid "切到残虹后等待(s)"
-msgstr "잔홍 전환 후 대기(s)"
-
-msgid "按下残虹切换键后等待这么久再长按普攻"
-msgstr "잔홍 전환 키를 누른 뒤 이만큼 기다리고 일반 공격을 길게 누름"
-
-msgid "残虹普攻时长(s)"
-msgstr "잔홍 일반 공격 시간(s)"
-
-msgid "安魂曲和残虹合轴阶段共用的普攻间隔秒数, 最低按0.02s执行"
-msgstr "합축 중 안혼곡과 잔홍이 공유하는 일반 공격 간격, 최소 0.02초"
-
-msgid "残虹长按结束后按共享间隔持续普攻这么久, 然后切回安魂曲"
-msgstr "잔홍의 길게 누르기 공격 후 공유 간격으로 이 시간 동안 일반 공격을 반복하고 안혼곡으로 전환"
-
-msgid "实战启用合轴"
-msgstr "실전 합축 활성화"
-
-msgid "开=两个主C模板同队时自动进入实战合轴; 关=仅保留按键测试"
-msgstr "켜기=두 메인 DPS 템플릿이 같은 팀일 때 실전 합축 자동 사용; 끄기=단축키 테스트만 유지"
-
-msgid "辅助技能就绪是否切人"
-msgstr "지원 스킬 준비 시 교대"
-
-msgid "▸ 分组折叠: 展开辅助技能切人以及 Q/E 资源提权开关"
-msgstr "▸ 접기 그룹: 지원 스킬 교대 및 Q/E 자원 우선 설정"
-
-msgid "开=辅助 E 推算就绪时允许主动切人; 关=不因辅助 E 就绪切人"
-msgstr "켜기=지원 E의 추정 재사용 대기시간이 끝나면 능동 교대 허용; 끄기=지원 E 준비만으로 교대하지 않음"
-
-msgid "开=允许切人时, 辅助 E 就绪会在环合前抢占; 关=仅按普通评分切人"
-msgstr "켜기=교대 허용 시 준비된 지원 E가 연계 반응보다 우선; 끄기=일반 점수로만 교대"
-
 msgid "自动闯关"
-msgstr "자동 스테이지 진행"
+msgstr "자동 스테이지 도전"
 
-msgid "发球等待时间"
-msgstr "서브 대기 시간"
+msgid "{} 个空槽位"
+msgstr "{}개 빈 슬롯"
 
-msgid "抛球后等待多久再按发球键, 可设置0.5到5.0秒, 默认2.5秒. 运行中修改会在下一次发球时生效"
-msgstr "토스 후 서브 키를 누르기까지 기다리는 시간입니다. 0.5초에서 5.0초까지 설정할 수 있고 기본값은 2.5초입니다. 실행 중 변경하면 다음 서브부터 적용됩니다"
+msgid "固定"
+msgstr "고정"
 
-msgid "发球等待时间必须在0.5到5.0秒之间"
-msgstr "서브 대기 시간은 0.5초에서 5.0초 사이여야 합니다"
+msgid "已从列表移除"
+msgstr "목록에서 제거됨"
 
-msgid "仅按键测试: 按下残虹切换键后等待这么久再长按普攻; 实战由切人识别和环合结算"
-msgstr "키 입력 테스트 전용: 잔홍 전환 키를 누른 뒤 일반 공격을 길게 누르기 전까지의 대기 시간; 실전에서는 전환 인식과 입장 처리를 사용"
+msgid "已删除"
+msgstr "삭제됨"
 
-msgid "残虹声音闪避后普攻时长(s)"
-msgstr "잔홍 소리 회피 후 일반 공격 시간(s)"
+msgid "已填入"
+msgstr "입력됨"
 
-msgid "残虹合轴被声音闪避打断后, 按共享间隔持续普攻这么久, 然后从重击重新开始"
-msgstr "잔홍 합축이 소리 회피로 중단된 뒤, 공용 간격으로 이 시간 동안 일반 공격을 하고 강공격부터 다시 시작합니다"
+msgid "已应用"
+msgstr "적용됨"
 
-msgid "开=所有LW角色模板不放E/Q; G和合轴不受影响(测手感/闪避用); 刷本记得关"
-msgstr "켜기: 모든 LW 캐릭터 템플릿이 E/Q를 사용하지 않음; G와 합축에는 영향 없음(평타/회피 테스트용); 일반 전투에서는 끄세요"
+msgid "已更新 {} 位角色的出招表"
+msgstr "{}명 캐릭터의 스킬 콤보가 업데이트되었습니다"
 
-msgid "通用环合普攻时长(s)"
-msgstr "공통 연계 입장 일반 공격 시간(s)"
+msgid "应用方案"
+msgstr "프리셋 적용"
 
-msgid "环合切人后的通用普攻时长, 默认1.5s且每0.1s普攻一次; 开启实战合轴的残虹主C改用自身静默等待"
-msgstr "연계 입장으로 교체한 뒤 일반 캐릭터가 일반 공격을 하는 시간입니다. 기본값은 1.5초이고 0.1초마다 일반 공격합니다. 실전 합축을 켠 잔홍 메인 DPS는 자체 무입력 대기를 사용합니다"
+msgid "扫描失败"
+msgstr "스캔 실패"
 
-msgid "残虹环合静默等待(s)"
-msgstr "잔홍 연계 입장 무입력 대기(s)"
+msgid "搜索方案"
+msgstr "프리셋 검색"
 
-msgid "实战合轴中, 残虹通过环合切入后静默等待这么久, 不进行普攻输入, 再从重击开始; 默认1.5s"
-msgstr "실전 합축 중 잔홍이 연계 입장으로 들어오면 일반 공격을 입력하지 않고 이 시간만큼 대기한 뒤 강공격부터 시작합니다. 기본값: 1.5초"
+msgid "新建方案"
+msgstr "새 프리셋"
 
-msgid "残虹强化E打断合轴"
-msgstr "잔홍 강화 E로 합축 중단"
+msgid "方案中不能重复选择角色"
+msgstr "프리셋에서 중복된 캐릭터를 선택할 수 없습니다"
 
-msgid "开=合轴中识别到残虹黄色强化E时中断当前动作, 成功释放后请求切人; 关=忽略强化E"
-msgstr "켜기: 합축 중 잔홍의 노란 강화 E를 인식하면 현재 동작을 중단하고 성공적으로 사용한 뒤 교체를 요청합니다. 끄기: 강화 E를 무시합니다"
+msgid "方案列表"
+msgstr "프리셋 목록"
 
-msgid "安魂曲免费技能后普攻时长(s)"
-msgstr "안혼곡 무료 스킬 후 일반 공격 시간(s)"
+msgid "方案名称重复或内容无效"
+msgstr "프리셋 이름이 중복되었거나 내용이 잘못되었습니다"
 
-msgid "实战合轴中, 安魂曲释放免费技能后按0.1秒间隔普攻这么久; 辅助大招待开时正常切辅助, 否则请求切残虹"
-msgstr "실전 합축에서 안혼곡이 무료 스킬을 사용한 뒤 0.1초 간격으로 이 시간만큼 일반 공격합니다. 보조 궁극기가 대기 중이면 일반적으로 보조에게 교체하고, 그렇지 않으면 잔홍 교체를 요청합니다"
+msgid "无法保存"
+msgstr "저장할 수 없음"
 
-msgid "开局残虹黄E后切辅助"
-msgstr "전투 시작 잔홍 황색 E 후 보조 교체"
+msgid "无法填入"
+msgstr "입력할 수 없음"
 
-msgid "开=开局先切残虹释放黄色强化E, 随后立刻切回原开局流程选中的辅助; 关=不插入该步骤"
-msgstr "켜기: 전투 시작 시 잔홍으로 교체해 노란 강화 E를 사용한 뒤, 일반 시작 흐름에서 선택된 보조로 즉시 돌아갑니다. 끄기: 이 단계를 넣지 않습니다"
+msgid "没有可填入的角色"
+msgstr "입력할 수 있는 캐릭터가 없습니다"
+
+msgid "等待扫描..."
+msgstr "스캔 대기 중..."
+
+msgid "输入或选择出招表"
+msgstr "스킬 콤보 입력 또는 선택"
+
+msgid "队伍方案"
+msgstr "파티 프리셋"
+
+msgid "队伍识别"
+msgstr "파티 인식"
+
+msgid "提示"
+msgstr "안내"
+
+msgid "<p><b style=\"color: #d83b01;\">注意：</b>此面板 <b style=\"color: #d83b01;\">不会</b> 在进入战斗或更换阵容时实时自动刷新或同步显示。<br>这是个用于向数据库关联或添加 <b style=\"color: #0078d7;\">角色特征</b> 的工具面板。<br>点击 <b style=\"color: #0078d7;\">{scan_team}</b> 后点击 <b style=\"color: #0078d7;\">关联或添加</b> 特征, 自动战斗时就会识别对应的角色。<br>如果不想管理 <b style=\"color: #0078d7;\">角色特征</b>, 可以直接使用 <b style=\"color: #0078d7;\">{fixed_team}</b> 功能。</p>"
+msgstr "<p><b style=\"color: #d83b01;\">주의:</b> 이 패널은 전투 진입이나 파티 변경 시 실시간으로 자동 새로고침되거나 동기화되지 않습니다.<br>데이터베이스에 <b style=\"color: #0078d7;\">캐릭터 특징</b>을 연결하거나 추가하는 도구 패널입니다.<br><b style=\"color: #0078d7;\">{scan_team}</b>을 클릭한 후 특징을 <b style=\"color: #0078d7;\">연결 또는 추가</b>하면 자동 전투 시 해당 캐릭터를 인식합니다.<br><b style=\"color: #0078d7;\">캐릭터 특징</b>을 관리하지 않으려면 <b style=\"color: #0078d7;\">{fixed_team}</b> 기능을 직접 사용할 수 있습니다.</p>"
+
+msgid "<p>用于配置并保存常用的 4 人队伍阵容与出招表, 修改后立即生效。<br>点击 <b style=\"color: #0078d7;\">{apply_preset}</b> 可一键更新应用方案中各角色的出招表 (未选择出招表则保持原配置不变)。<br>开启 <b style=\"color: #0078d7;\">{fixed_preset}</b> 后自动战斗将直接采用此阵容, 无需等待特征识别 (未录入特征的角色亦可直接战斗)。<br>点击 <b style=\"color: #0078d7;\">{fill_scan}</b> 可将上方特征扫描识别出的队伍角色快速填入当前方案。</p>"
+msgstr "<p>자주 사용하는 4인 파티 구성 및 스킬 콤보를 설정하고 저장하며, 수정 즉시 적용됩니다.<br><b style=\"color: #0078d7;\">{apply_preset}</b> 클릭 시 이 프리셋의 각 캐릭터 스킬 콤보를 일괄 적용합니다(콤보를 선택하지 않은 경우 기존 구성 유지).<br><b style=\"color: #0078d7;\">{fixed_preset}</b> 활성화 시 특징 인식을 기다리지 않고 이 파티 구성을 자동 전투에 바로 적용합니다(특징이 등록되지 않은 캐릭터도 즉시 전투 가능).<br><b style=\"color: #0078d7;\">{fill_scan}</b> 클릭 시 위 특징 스캔에서 인식된 파티 캐릭터를 현재 프리셋에 빠르게 입력합니다.</p>"
+
+msgid "OpenVINO 单次推理超时，已自动关闭目标检测；重启程序后会重新尝试启用。"
+msgstr "OpenVINO 단일 추론이 시간 초과되어 대상 감지가 자동으로 비활성화되었습니다. 프로그램 재시작 후 다시 활성화를 시도합니다."
+
+msgid "管理"
+msgstr "관리"
+
+msgid "批量删除"
+msgstr "일괄 삭제"
+
+msgid "当前未绑定任何{combo}.\n遇到此角色将默认使用基础通用脚本(BaseChar)."
+msgstr "현재 바인딩된 {combo}가 없습니다.\n이 캐릭터를 만날 경우 기본 공용 스크립트(BaseChar)가 사용됩니다."
+
+msgid "显示内置"
+msgstr "내장 표시"
+
+msgid "复制为外置"
+msgstr "외부로 복사"
+
+msgid "复制成功"
+msgstr "복사 성공"
+
+msgid "复制失败"
+msgstr "복사 실패"
+
+msgid "已成功创建外置代码: {}"
+msgstr "외부 코드가 생성되었습니다: {}"
+
+msgid "复制为外置代码"
+msgstr "외부 코드로 복사"
+
+msgid "目录"
+msgstr "디렉터리"
+
+msgid "脚本文件名 (.py)"
+msgstr "스크립트 파일명 (.py)"
+
+msgid "将在 external_chars/ 目录下生成独立的 Python 脚本供您编辑与调试."
+msgstr "편집 및 디버깅을 위해 external_chars/ 디렉터리에 독립적인 Python 스크립트가 생성됩니다."
+
+msgid "无法读取 Python 脚本."
+msgstr "Python 스크립트를 읽을 수 없습니다."
+
+msgid "外置代码应用失败"
+msgstr "외부 코드 적용 실패"
+
+msgid "已应用外置代码: {}"
+msgstr "외부 코드가 적용되었습니다: {}"
+
+msgid "手动添加或修改 Python 代码后, 需点击 [{refresh}] 以生效. 关于编写角色出招表的指南, 请参考 <a href='{doc_url}'>文档</a>."
+msgstr "Python 코드를 수동으로 추가하거나 수정한 후에는 [{refresh}] 버튼을 눌러 적용해야 합니다. 캐릭터 스킬 콤보 작성 가이드는 <a href='{doc_url}'>문서</a>를 참조하세요."
+
+msgid "角色"
+msgstr "캐릭터"
+
+msgid "指令"
+msgstr "명령어"
+
+msgid "请先应用外置代码更改后再运行测试."
+msgstr "테스트를 실행하기 전에 외부 코드 변경 사항을 먼저 적용해 주세요."
+
+msgid "角色工具任务未注册"
+msgstr "캐릭터 도구 작업이 등록되지 않았습니다"
+
+msgid "角色工具任务不可用"
+msgstr "캐릭터 도구 작업을 사용할 수 없습니다"
+
+msgid "询问AI"
+msgstr "AI에게 질문"
+
+msgid "AI提示模版已复制。请粘贴到AI聊天机器人中。"
+msgstr "AI 프롬프트 템플릿이 복사되었습니다. AI 챗봇에 붙여넣으세요."
+
+msgid "{SOURCE}\n\n我想实现: \n\n请修改上面完整的 {class_name} 角色自动化代码。\n\n只返回整个文件完整修改后的 Python 代码，不要返回补丁或解释。\n保持类名为 {class_name}。保留仍然需要的 import。\n\n在思考辅助方法、任务 API、状态、切人、冷却和战斗流程时, 请参考: \nBaseChar 角色基类: {BASE_CHAR_URL}\nCombat Planner 开发指南: {COMBAT_PLANNER_URL}"
+msgstr "{SOURCE}\n\n구현하려는 내용: \n\n위의 완전한 {class_name} 캐릭터 자동화 코드를 수정해 주세요.\n\n패치나 설명 없이 전체 파일의 완전히 수정된 Python 코드만 반환해 주세요.\n클래스 이름은 {class_name}로 유지하고, 필요한 import를 유지해 주세요.\n\n보조 메서드, 작업 API, 상태, 캐릭터 교체, 쿨다운 및 전투 흐름을 고려할 때 다음을 참고하세요: \nBaseChar 캐릭터 기본 클래스: {BASE_CHAR_URL}\nCombat Planner 개발 가이드: {COMBAT_PLANNER_URL}"
+
+msgid "OK"
+msgstr "확인"
+
+msgid "设置"
+msgstr "설정"
+
+msgid "上传"
+msgstr "업로드"
+
+msgid "作者"
+msgstr "작성자"
+
+msgid "全部作者"
+msgstr "모든 작성자"
+
+msgid "全部角色"
+msgstr "모든 캐릭터"
+
+msgid "内置"
+msgstr "내장"
+
+msgid "刷新"
+msgstr "새로 고침"
+
+msgid "加载失败: {}"
+msgstr "로드 실패: {}"
+
+msgid "取消"
+msgstr "취소"
+
+msgid "外置"
+msgstr "외부"
+
+msgid "外置代码目录"
+msgstr "외부 코드 디렉터리"
+
+msgid "外置代码目录名称无效"
+msgstr "외부 코드 디렉터리 이름이 올바르지 않습니다"
+
+msgid "外置代码目录“{}”已存在, 请修改目录名称后重试。"
+msgstr "외부 코드 디렉터리 \"{}\"이(가) 이미 있습니다. 이름을 변경한 후 다시 시도하세요."
+
+msgid "大小"
+msgstr "크기"
+
+msgid "导入"
+msgstr "가져오기"
+
+msgid "导入完成"
+msgstr "가져오기 완료"
+
+msgid "导出"
+msgstr "내보내기"
+
+msgid "导出完成"
+msgstr "내보내기 완료"
+
+msgid "导出社区方案"
+msgstr "커뮤니티 프리셋 내보내기"
+
+msgid "导出队伍"
+msgstr "팀 내보내기"
+
+msgid "工坊"
+msgstr "워크숍"
+
+msgid "工坊会显示来自公开仓库的 ZIP 方案."
+msgstr "워크숍에는 공개 저장소의 ZIP 프리셋이 표시됩니다."
+
+msgid "已创建方案: {}"
+msgstr "프리셋이 생성되었습니다: {}"
+
+msgid "已加载 {} 个方案"
+msgstr "{}개의 프리셋을 불러왔습니다"
+
+msgid "当前方案没有可导出的出招表."
+msgstr "현재 프리셋에는 내보낼 콤보표가 없습니다."
+
+msgid "成员"
+msgstr "멤버"
+
+msgid "描述"
+msgstr "설명"
+
+msgid "搜索名称, 说明, 作者或角色"
+msgstr "이름, 설명, 작성자 또는 캐릭터 검색"
+
+msgid "操作失败"
+msgstr "작업 실패"
+
+msgid "方案说明"
+msgstr "프리셋 설명"
+
+msgid "无法导出"
+msgstr "내보낼 수 없음"
+
+msgid "更新时间"
+msgstr "업데이트 시간"
+
+msgid "本地方案名称"
+msgstr "로컬 프리셋 이름"
+
+msgid "正在加载工坊..."
+msgstr "워크숍 로드 중..."
+
+msgid "没有说明."
+msgstr "설명 없음."
+
+msgid "版本"
+msgstr "버전"
+
+msgid "社区方案"
+msgstr "커뮤니티 프리셋"
+
+msgid "社区方案含外置代码; 导入后会以本软件权限运行, 请仅导入可信来源."
+msgstr "커뮤니티 프리셋에는 외부 코드가 포함될 수 있습니다. 가져온 후 이 소프트웨어의 권한으로 실행되므로 신뢰할 수 있는 출처에서만 가져오세요."
+
+msgid "角色阵容"
+msgstr "팀 구성"
+
+msgid "调整筛选条件或稍后刷新工坊."
+msgstr "필터 조건을 조정하거나 나중에 워크숍을 새로 고치세요."
+
+msgid "返回"
+msgstr "돌아가기"
+
+msgid "选择一个方案"
+msgstr "프리셋 선택"
+
+msgid "队伍配置"
+msgstr "팀 구성"
+
+msgid "不是该角色?"
+msgstr "다른 캐릭터인가요?"
+
+msgid "删除方案"
+msgstr "프리셋 삭제"
+
+msgid "检测到该方案包含外置代码，是否同时删除对应的代码文件?"
+msgstr "해당 프리셋에 외부 코드가 포함되어 있습니다. 해당 코드 파일도 함께 삭제하시겠습니까?"
+
+msgid "全部删除"
+msgstr "모두 삭제"
+
+msgid "仅删除方案"
+msgstr "프리셋만 삭제"
+
+msgid "方案已删除"
+msgstr "프리셋이 삭제되었습니다"
+
+msgid "部分外置代码删除失败: {}"
+msgstr "일부 외부 코드 삭제 실패: {}"
+
+msgid "启用开战优先级"
+msgstr "전투 시작 우선순위 활성화"
+
+msgid "关闭时不按角色执行开战首切"
+msgstr "비활성화 시 캐릭터에 따른 전투 시작 초기 전환을 수행하지 않습니다"

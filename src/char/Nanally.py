@@ -12,7 +12,7 @@ from src.lw.nanally_ext import NanallyExtMixin  # [lw]
 
 class Nanally(NanallyExtMixin, BaseChar):  # [lw]
     cn_name = "娜娜莉"
-    element = BaseChar.Element.GREEN
+    element = BaseChar.ElementType.GREEN
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

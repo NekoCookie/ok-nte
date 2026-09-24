@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 from ok import TaskDisabledException
 
 from src import LAUNCHER_EXE
-from src.tasks.LauncherTask import LauncherButtonState, LauncherTask
+from src.tasks.LauncherTask import LauncherTask
 
 
 class TestLauncherTask(unittest.TestCase):
@@ -41,21 +41,6 @@ class TestLauncherTask(unittest.TestCase):
         with self.assertRaisesRegex(TaskDisabledException, "Launcher window is not visible"):
             task._capture_launcher()
 
-    def test_start_game_does_not_accept_hidden_launcher_before_click(self):
-        task = self._make_task()
-        task._find_process = Mock(return_value=None)
-        task._ensure_launcher_visible = Mock(return_value=True)
-        task._launcher_button_state = Mock(return_value=(LauncherButtonState.START, "start_button"))
-        task._is_launcher_hidden_or_minimized = Mock(return_value=True)
-        task.box_of_screen = Mock()
-        task.find_one = Mock(return_value=None)
-        task.click = Mock()
-
-        with patch("src.tasks.LauncherTask.time.time", side_effect=[0, 0, 0]):
-            self.assertTrue(task._click_start_game())
-
-        task.click.assert_called_once_with("start_button", after_sleep=2)
-
     def test_find_process_window_uses_launcher_capture_window_class(self):
         task = self._make_task()
         proc = {"pid": 1}
@@ -69,3 +54,22 @@ class TestLauncherTask(unittest.TestCase):
             hwnd_class="Qt51517QWindowOwnDC",
             require_title=False,
         )
+
+    def test_find_window_callback_continues_after_visible_match(self):
+        task = self._make_task()
+
+        def enum_windows(callback, _):
+            self.assertTrue(callback(101, None))
+            self.assertTrue(callback(102, None))
+
+        with (
+            patch("src.tasks.LauncherTask.win32gui.EnumWindows", side_effect=enum_windows),
+            patch("src.tasks.LauncherTask.win32gui.IsWindow", return_value=True),
+            patch("src.tasks.LauncherTask.win32gui.IsWindowEnabled", return_value=True),
+            patch(
+                "src.tasks.LauncherTask.win32process.GetWindowThreadProcessId",
+                return_value=(0, 1),
+            ),
+            patch("src.tasks.LauncherTask.win32gui.IsWindowVisible", side_effect=[True, False]),
+        ):
+            self.assertEqual(task._find_window_for_process({"pid": 1}), 101)

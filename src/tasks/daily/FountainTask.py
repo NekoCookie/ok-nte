@@ -2,7 +2,6 @@ import re
 import time
 
 from ok import TaskDisabledException
-from qfluentwidgets import FluentIcon
 
 from src.Labels import Labels
 from src.tasks.BaseNTETask import BaseNTETask, interac_pink_color
@@ -18,13 +17,10 @@ class FountainTask(NTEOneTimeTask, BaseNTETask):
     DOMAIN_ENTRY_POS = (0.668, 0.150)
     DOMAIN_CONFIRM_POS = (0.917, 0.335)
     PHONE_BOOTH_BOX = (0.300, 0.420, 0.400, 0.545)
-    BOOKSHOP_LOGO_BOX = (0.092, 0.170, 0.113, 0.206)
-    BOOKSHOP_LOGO_SECOND_BOX = (0.080, 0.180, 0.096, 0.210)
     ICECAR_LIGHT_BOX = (0.650, 0.350, 0.885, 0.600)
     FOUNTAIN_SIGN_COUNT_BOX = (0.695, 0.492, 0.771, 0.650)
     FOUNTAIN_SIGN_BTN_BOX = (0.655, 0.570, 0.790, 0.645)
-    BOOKSHOP_LOGO_TIMEOUT = 15
-    ICECAR_LIGHT_TIMEOUT = 40
+    BOOKSHOP_ICON_TIMEOUT = 15
     INTERAC_TIMEOUT = 30
     SIGN_SKIP_TIMEOUT = 20
     TASK_TIMEOUT = 180
@@ -35,9 +31,6 @@ class FountainTask(NTEOneTimeTask, BaseNTETask):
         super().__init__(*args, **kwargs)
         self._check_confirm_timer = 0
         self.name = "喷泉签到"
-        self.icon = FluentIcon.SYNC
-        self.group_name = "日常/周常"
-        self.group_icon = FluentIcon.CALENDAR
         self.visible = False
         self.default_config.update({self.CONF_SIGN_MODE: self.SIGN_MODE_SIGN})
         self.config_type.update(
@@ -109,33 +102,37 @@ class FountainTask(NTEOneTimeTask, BaseNTETask):
         self.operate_click(*self.DOMAIN_ENTRY_POS, after_sleep=1)
         self.operate_click(*self.DOMAIN_CONFIRM_POS, after_sleep=2)
         self.click_traval_button()
-        self.wait_in_team(time_out=30, settle_time=0.25)
+        self.wait_in_team(time_out=300, settle_time=0.25)
         self.sleep(0.5)
         box = self.box_of_screen(*self.PHONE_BOOTH_BOX, name="fountain_phone_booth")
         self.click_map_teleport(box)
-        self.wait_in_team(time_out=30, settle_time=0.25)
+        self.wait_in_team(time_out=300, settle_time=0.25)
         self.sleep(1)
 
     def run_to_fountain(self):
-        self.middle_click(after_sleep=1)
+        self.sleep(0.2)
+        self.repeat_mid_click()
         try:
             self.send_key_down("a", after_sleep=0.4)
             self.send_key("lshift", after_sleep=0.4)
             self.wait_until(
-                self.find_bookshop_logo,
-                time_out=self.BOOKSHOP_LOGO_TIMEOUT,
+                lambda: self.find_bookshop_icon(
+                    box=self.box_of_screen(0.0930, 0.1720, 0.1066, 0.1986, hcenter=True)
+                ),
+                time_out=self.BOOKSHOP_ICON_TIMEOUT,
                 raise_if_not_found=True,
             )
-            self.sleep(1)
         finally:
             self.send_key_up("a")
-
-        self.middle_click(after_sleep=1)
+        self.sleep(0.2)
+        self.repeat_mid_click()
         try:
             self.send_key_down("a", after_sleep=0.2)
             self.wait_until(
-                self.find_second_bookshop_logo,
-                time_out=self.BOOKSHOP_LOGO_TIMEOUT,
+                lambda: self.find_bookshop_icon(
+                    box=self.box_of_screen(0.080, 0.180, 0.096, 0.210, hcenter=True)
+                ),
+                time_out=self.BOOKSHOP_ICON_TIMEOUT,
                 raise_if_not_found=True,
             )
         finally:
@@ -144,17 +141,20 @@ class FountainTask(NTEOneTimeTask, BaseNTETask):
         try:
             self.send_key_down("w", after_sleep=0.4)
             self.send_key("lshift", after_sleep=0.4)
-            self.sleep(17)
+            self.sleep(5)
             self.wait_until(
-                self.find_icecar_light,
-                time_out=self.ICECAR_LIGHT_TIMEOUT,
+                lambda: self.find_bookshop_icon(
+                    box=self.box_of_screen(0.048, 0.051, 0.063, 0.080, hcenter=True)
+                ),
+                time_out=40,
                 raise_if_not_found=True,
             )
         finally:
             self.send_key_up("w")
 
-        self.send_key("d", down_time=0.5, after_sleep=0.2)
-        self.middle_click(after_sleep=1)
+        self.send_key("d", down_time=0.4)
+        self.sleep(0.2)
+        self.repeat_mid_click()
 
         def find_sign():
             ret = self.find_interac() and self.ocr(
@@ -163,11 +163,38 @@ class FountainTask(NTEOneTimeTask, BaseNTETask):
             return bool(ret)
 
         try:
-            self.send_key_down("w", after_sleep=0.4)
-            self.sleep(4)
-            self.send_key("d", down_time=0.5)
-            self.sleep(5)
-            self.send_key("lshift", after_sleep=1)
+            self.send_key_down("w", after_sleep=0.2)
+            self.send_key("lshift", after_sleep=0.2)
+            self.wait_until(
+                lambda: self.find_fountain_icon(
+                    box=self.box_of_screen(0.059, 0.168, 0.075, 0.199, hcenter=True)
+                ),
+                time_out=40,
+                raise_if_not_found=True,
+            )
+        finally:
+            self.send_key_up("w")
+
+        self.sleep(0.1)
+
+        try:
+            self.send_key_down("a", after_sleep=0.2)
+            self.send_key("lshift", after_sleep=0.2)
+            self.wait_until(
+                lambda: self.find_fountain_icon(
+                    box=self.box_of_screen(0.048, 0.144, 0.064, 0.172, hcenter=True)
+                ),
+                time_out=10,
+                raise_if_not_found=True,
+            )
+        finally:
+            self.send_key_up("a")
+
+        self.sleep(0.1)
+
+        try:
+            self.send_key_down("w", after_sleep=0.2)
+            self.send_key("lshift", after_sleep=0.2)
             self.wait_until(
                 find_sign,
                 time_out=self.INTERAC_TIMEOUT,
@@ -175,7 +202,6 @@ class FountainTask(NTEOneTimeTask, BaseNTETask):
             )
         finally:
             self.send_key_up("w")
-        self.sleep(1)
 
         def action():
             if find_sign():
@@ -185,17 +211,16 @@ class FountainTask(NTEOneTimeTask, BaseNTETask):
 
         self.retry_on_action(action=action, attempt=5, raise_if_failed=True)
 
-    def find_bookshop_logo(self):
-        box = self.box_of_screen(*self.BOOKSHOP_LOGO_BOX, name="bookshop_logo_area")
-        return self.find_one(Labels.bookshop_logo, box=box)
+    def repeat_mid_click(self):
+        self.middle_click(after_sleep=0.2)
+        self.middle_click(after_sleep=0.2)
+        self.middle_click(after_sleep=1)
 
-    def find_second_bookshop_logo(self):
-        box = self.box_of_screen(*self.BOOKSHOP_LOGO_SECOND_BOX, name="bookshop_logo_second_area")
-        return self.find_one(Labels.bookshop_logo, box=box)
+    def find_bookshop_icon(self, box):
+        return self.find_one(Labels.bookshop_icon, box=box)
 
-    def find_icecar_light(self):
-        box = self.box_of_screen(*self.ICECAR_LIGHT_BOX, name="icecar_light_area")
-        return self.find_one(Labels.icecar_lights, box=box, threshold=0.75)
+    def find_fountain_icon(self, box):
+        return self.find_one(Labels.fountain_icon, box=box)
 
     def fountain_sign_in(self, sign_mode):
         sign_count, _ = self.read_fountain_sign_count()
