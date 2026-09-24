@@ -12,6 +12,7 @@ from src.char.Zankou import Zankou
 from src.combat.planner import ActionSlot
 from src.lw.requiem_zankou_axis import (
     CoordinatedAxisSettings,
+    OPENING_GOLD_SKILL_MAX_PLAIN_ROUNDS,
     REQUIEM_IMPL_ID,
     RequiemZankouAxisTester,
     ZANKOU_MAIN_DPS_IMPL_ID,
@@ -202,6 +203,7 @@ class FakeOpeningTask:
                 )
             ),
         )
+        self.reaction_target = reaction_target
         self.is_boss = mock.MagicMock(return_value=True)
         self.switches = []
         self.switch_attack_options = []
@@ -214,6 +216,15 @@ class FakeOpeningTask:
 
     def get_current_char(self, raise_exception=False):
         return self._current_char
+
+    def find_element_reaction_target(self, _source_char):
+        return self.reaction_target
+
+    def last_dodge_time(self):
+        return self.zankou._last_dodge_time
+
+    def last_sound_dodge_outcome(self):
+        return self.zankou._last_dodge_outcome
 
     def find_one(self, feature):
         return feature == Labels.zankou_skill_gold and self.zankou._gold_skill_ready
@@ -611,6 +622,293 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [(zankou, requiem, False, "lw opening zankou gold skill return")],
         )
         self.assertEqual([event for event in zankou.events if event[0] == "hold"], [("hold", 1.8)])
+
+    def test_opening_gold_skill_switches_to_ring_target_before_opening_target(self):
+        config_task = make_config_task(
+            **{RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: True}
+        )
+        requiem = FakeCombatChar(config_task)
+        requiem.impl_id = REQUIEM_IMPL_ID
+        zankou = FakeCombatChar(config_task, gold_skill_times=(1.0,), cycle_full=True)
+        zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
+        support = FakeCombatChar(config_task)
+        ring_char = FakeCombatChar(config_task)
+        task = FakeOpeningTask(
+            config_task,
+            requiem,
+            zankou,
+            support,
+            reaction_target=ring_char,
+        )
+        task.chars.append(ring_char)
+        ring_char.task = task
+
+        self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        self.assertEqual(
+            task.switches,
+            [
+                (requiem, zankou, False, "lw opening zankou gold skill"),
+                (zankou, ring_char, True, "lw opening zankou gold skill ring"),
+                (ring_char, support, False, "lw opening zankou gold skill return"),
+            ],
+        )
+        self.assertEqual(
+            [event for event in ring_char.events if event[0] in {"intro_freeze", "intro_wait"}],
+            [("intro_freeze", 1.25), ("intro_wait", 1.25, True)],
+        )
+        self.assertFalse(ring_char.has_intro)
+        self.assertEqual(task.switch_attack_options, [False, False, False])
+
+    def test_opening_gold_skill_switches_once_when_ring_target_is_opening_target(self):
+        config_task = make_config_task(
+            **{RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: True}
+        )
+        requiem = FakeCombatChar(config_task)
+        requiem.impl_id = REQUIEM_IMPL_ID
+        zankou = FakeCombatChar(config_task, gold_skill_times=(1.0,), cycle_full=True)
+        zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
+        support = FakeCombatChar(config_task)
+        task = FakeOpeningTask(
+            config_task,
+            requiem,
+            zankou,
+            support,
+            reaction_target=support,
+        )
+
+        self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        self.assertEqual(
+            task.switches,
+            [
+                (requiem, zankou, False, "lw opening zankou gold skill"),
+                (zankou, support, True, "lw opening zankou gold skill return"),
+            ],
+        )
+        # The opening target keeps its intro for its own first perform.
+        self.assertFalse(any(event[0] == "intro_wait" for event in support.events))
+        self.assertTrue(support.has_intro)
+
+    def test_opening_gold_skill_current_zankou_ring_switch_replaces_partner_fallback(self):
+        config_task = make_config_task(
+            **{RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: True}
+        )
+        zankou = FakeCombatChar(config_task, gold_skill_times=(1.0,), cycle_full=True)
+        zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
+        requiem = FakeCombatChar(config_task)
+        requiem.impl_id = REQUIEM_IMPL_ID
+        ring_char = FakeCombatChar(config_task)
+        task = FakeOpeningTask(
+            config_task,
+            zankou,
+            zankou,
+            zankou,
+            reaction_target=ring_char,
+            handoff_target=zankou,
+        )
+        task.chars = [zankou, requiem, ring_char]
+        ring_char.task = task
+
+        self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        self.assertEqual(
+            task.switches,
+            [(zankou, ring_char, True, "lw opening zankou gold skill ring")],
+        )
+
+    def _opening_task(self, **zankou_options):
+        config_task = make_config_task(
+            **{RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: True}
+        )
+        requiem = FakeCombatChar(config_task)
+        requiem.impl_id = REQUIEM_IMPL_ID
+        zankou = FakeCombatChar(config_task, **zankou_options)
+        zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
+        support = FakeCombatChar(config_task)
+        return FakeOpeningTask(config_task, requiem, zankou, support), zankou, support
+
+    def test_opening_gold_skill_releases_lit_gold_skill_right_after_dodge(self):
+        task, zankou, support = self._opening_task(
+            dodge_times=(1.0,),
+            dodge_results=(False,),
+            gold_skill_times=(1.5,),
+        )
+
+        self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        self.assertEqual([event for event in zankou.events if event[0] == "hold"], [("hold", 1.8)])
+        self.assertEqual(
+            [event[2] for event in zankou.events if event[0] == "gold_skill"],
+            ["zankou_opening_post_dodge_gold_skill"],
+        )
+        self.assertIs(task.switches[-1][1], support)
+
+    def test_opening_gold_skill_restarts_heavy_when_dodge_leaves_gold_skill_unlit(self):
+        task, zankou, support = self._opening_task(
+            dodge_times=(1.0,),
+            dodge_results=(False,),
+            gold_skill_times=(2.5,),
+        )
+
+        self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        self.assertEqual(
+            [event for event in zankou.events if event[0] == "hold"],
+            [("hold", 1.8), ("hold", 1.8)],
+        )
+        self.assertEqual(
+            [event[2] for event in zankou.events if event[0] == "gold_skill"],
+            ["zankou_opening_gold_skill"],
+        )
+        self.assertIs(task.switches[-1][1], support)
+
+    def test_opening_gold_skill_dodges_do_not_consume_plain_retry_budget(self):
+        task, zankou, _support = self._opening_task(
+            dodge_times=(1.0, 3.0, 5.0, 7.0),
+            dodge_results=(False, False, False, False),
+            gold_skill_times=(9.0,),
+        )
+
+        self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        self.assertEqual(len([event for event in zankou.events if event[0] == "hold"]), 5)
+        self.assertEqual(
+            [event[2] for event in zankou.events if event[0] == "gold_skill"],
+            ["zankou_opening_gold_skill"],
+        )
+
+    @staticmethod
+    def _dodge_on_first_gold_input(zankou):
+        send_skill_key = zankou.send_skill_key
+        injected = []
+
+        def send_with_dodge(**kwargs):
+            result = send_skill_key(**kwargs)
+            if not injected:
+                injected.append(True)
+                zankou._last_dodge_time = zankou.clock + 0.001
+                zankou._last_dodge_outcome = SimpleNamespace(
+                    perfect_dodge=False,
+                    result="普通闪避",
+                    anchor_monotonic=zankou._last_dodge_time,
+                )
+            return result
+
+        zankou.send_skill_key = send_with_dodge
+
+    def test_opening_gold_skill_dodge_during_confirmation_restarts_heavy(self):
+        task, zankou, support = self._opening_task(gold_skill_times=(1.0, 2.5))
+        self._dodge_on_first_gold_input(zankou)
+
+        self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        self.assertEqual(
+            [event for event in zankou.events if event[0] == "hold"],
+            [("hold", 1.8), ("hold", 1.8)],
+        )
+        self.assertEqual(
+            [event[2] for event in zankou.events if event[0] == "gold_skill"],
+            ["zankou_opening_gold_skill", "zankou_opening_gold_skill"],
+        )
+        self.assertIs(task.switches[-1][1], support)
+
+    def test_opening_gold_skill_dodge_during_confirmation_resends_relit_gold_skill(self):
+        task, zankou, support = self._opening_task(gold_skill_times=(1.0, 2.0))
+        self._dodge_on_first_gold_input(zankou)
+
+        self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        self.assertEqual([event for event in zankou.events if event[0] == "hold"], [("hold", 1.8)])
+        self.assertEqual(
+            [event[2] for event in zankou.events if event[0] == "gold_skill"],
+            ["zankou_opening_gold_skill", "zankou_opening_post_dodge_gold_skill"],
+        )
+        self.assertIs(task.switches[-1][1], support)
+
+    @staticmethod
+    def _break_bar_after_gold_inputs(zankou, breaking_input):
+        """Model a boss break bar that collapses only after the given yellow E input."""
+
+        def ratio(_frame):
+            inputs = [event for event in zankou.events if event[0] == "gold_skill"]
+            return 0.02 if len(inputs) >= breaking_input else 0.86
+
+        return mock.patch("src.lw.requiem_zankou_axis.break_bar_ratio", side_effect=ratio)
+
+    def test_boss_opening_trusts_emptied_break_bar_despite_dodge(self):
+        task, zankou, support = self._opening_task(gold_skill_times=(1.0,))
+        self._dodge_on_first_gold_input(zankou)
+
+        with self._break_bar_after_gold_inputs(zankou, breaking_input=1):
+            self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        self.assertEqual([event for event in zankou.events if event[0] == "hold"], [("hold", 1.8)])
+        self.assertEqual(
+            [event[2] for event in zankou.events if event[0] == "gold_skill"],
+            ["zankou_opening_gold_skill"],
+        )
+        self.assertIs(task.switches[-1][1], support)
+
+    def test_boss_opening_retries_when_template_vanishes_but_bar_is_not_emptied(self):
+        task, zankou, support = self._opening_task(gold_skill_times=(1.0, 2.5))
+
+        with self._break_bar_after_gold_inputs(zankou, breaking_input=2):
+            self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        self.assertEqual(
+            [event for event in zankou.events if event[0] == "hold"],
+            [("hold", 1.8), ("hold", 1.8)],
+        )
+        self.assertEqual(
+            [event[2] for event in zankou.events if event[0] == "gold_skill"],
+            ["zankou_opening_gold_skill", "zankou_opening_gold_skill"],
+        )
+        self.assertIs(task.switches[-1][1], support)
+
+    def test_boss_opening_late_break_cuts_following_heavy_within_poll_interval(self):
+        task, zankou, support = self._opening_task(gold_skill_times=(1.0,))
+        task.mouse_down = zankou._mouse_down
+        task.mouse_up = zankou._mouse_up
+        break_at = 2.3
+
+        def ratio(_frame):
+            return 0.02 if zankou.clock >= break_at else 0.86
+
+        with mock.patch("src.lw.requiem_zankou_axis.break_bar_ratio", side_effect=ratio):
+            self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        holds = [event for event in zankou.events if event[0] == "hold"]
+        self.assertEqual(len(holds), 2)
+        self.assertAlmostEqual(holds[0][1], 1.8)
+        gold_inputs = [event for event in zankou.events if event[0] == "gold_skill"]
+        self.assertEqual(len(gold_inputs), 1)
+        # The second heavy is released within one poll interval of the break.
+        self.assertLess(zankou.clock - break_at, 0.1 + 1e-9)
+        self.assertLess(holds[1][1], 1.0)
+        self.assertIs(task.switches[-1][1], support)
+
+    def test_non_boss_opening_keeps_template_confirmation(self):
+        task, zankou, _support = self._opening_task(gold_skill_times=(1.0,))
+        task.is_boss.return_value = False
+
+        with mock.patch("src.lw.requiem_zankou_axis.break_bar_ratio") as read_bar:
+            self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        read_bar.assert_not_called()
+        self.assertEqual([event for event in zankou.events if event[0] == "hold"], [("hold", 1.8)])
+
+    def test_opening_gold_skill_gives_up_after_bounded_plain_heavy_rounds(self):
+        task, zankou, support = self._opening_task()
+
+        self.assertTrue(run_zankou_opening_gold_skill(task))
+
+        self.assertEqual(
+            len([event for event in zankou.events if event[0] == "hold"]),
+            OPENING_GOLD_SKILL_MAX_PLAIN_ROUNDS,
+        )
+        self.assertFalse(any(event[0] == "gold_skill" for event in zankou.events))
+        self.assertIs(task.switches[-1][1], support)
 
     def test_opening_gold_skill_can_skip_non_boss_battles(self):
         config_task = make_config_task(
