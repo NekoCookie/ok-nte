@@ -675,7 +675,8 @@ class FollowupStep:
             reason=reason or f"{target} switch followup",
             target_indices={target.index},
             switch_step=True,
-            requires_switch=True,
+            # [lw] Explicit non-waiting routes retain the legacy immediate-entry behavior.
+            requires_switch=not wait_for_turn,
             wait_for_turn=wait_for_turn,
         )
 

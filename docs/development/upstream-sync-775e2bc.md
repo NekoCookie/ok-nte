@@ -13,9 +13,9 @@ verified.
 | Merge base `B` | `7eee27f1b971e163e5aa20a051044bfd3d2d53fd` |
 | Local parent `L` | `2088fd047aab6bbb545b9903dea76e6b013fc836` |
 | Upstream parent `U` | `775e2bcfd7d54ea7d65576fd5a19abec2106db01` |
-| Merge result `M` | `<pending>` |
+| Merge result `M` | `8479c315106d7c4bfecc0bd08ca4d77b347562b2` |
 | Audit command | `.\\.venv\\Scripts\\python.exe tools\\audit_merge_provenance.py <M>` |
-| Audit result | `<pending>` |
+| Audit result | `101` local-only paths preserved; 3 local-only paths modified by explicit merge decisions; 0 local changes lost; 12 upstream removals from the merge base; 60 paths changed on both sides |
 | Sync status | `open` |
 
 The upstream range includes scene coordinate mapping and new panel position
@@ -51,16 +51,16 @@ baseline rather than retaining duplicate old paths.
 
 | ID | Changed path | RU baseline retained | LW behavior re-expressed | Why no duplicate path remains | Commit | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| I-01 | `<pending>` | `<pending>` | `<pending>` | `<pending>` | `<pending>` | open |
+| I-01 | `src/scene`, task/UI, planner, character, runtime, and resource paths | Current `PositionMap`/`PanelPosition`, task/UI module layout, planner/action lifecycle, character registry, runtime services, and `ok-script>=2.0.4` | Reconnected LW hooks in `src/lw`, preserved LW combat/daily/gift/globals behavior, and made Requiem's fixed handoff explicitly non-waiting while retaining RU `for_switch()` wait semantics | No old RU implementation or A/B path restored; the three local-only modified files are documented merge decisions | `8479c315106d7c4bfecc0bd08ca4d77b347562b2` | done |
 
 ## Verification evidence
 
 | ID | Behavior rows | Command or scenario | Evidence | Result | Status |
 | --- | --- | --- | --- | --- | --- |
-| V-01 | B-01 to B-07 | Focused tests for changed scene, gift, abyss, task, planner, character, sound, and resource paths | `<pending>` | `<pending>` | open |
-| V-02 | B-01 to B-07 | `.\\.venv\\Scripts\\python.exe -m unittest discover -s tests -p "*.py"` | `<pending>` | `<pending>` | open |
-| V-03 | B-01 to B-07 | `git diff --check`, changed-file `py_compile`, stale API scan, provenance audit | `<pending>` | `<pending>` | open |
-| V-04 | B-01, B-02, B-03, B-05 | De-identified real-window smoke scenarios | `<pending>` | `<pending>` | open |
+| V-01 | B-04, B-05, B-07 | `.\\.venv\\Scripts\\python.exe -m unittest tests.TestCharImplDb tests.TestCombatPlanner tests.TestRequiemZankouAxis tests.TestSwitchNextDispatch` | 190 tests passed | pass |
+| V-02 | B-01 to B-07 | `.\\.venv\\Scripts\\python.exe -m unittest discover -s tests -p "*.py" -q` | 1015 tests passed in 25.069s | pass |
+| V-03 | B-01 to B-07 | `.\\.venv\\Scripts\\python.exe -m compileall -q src tests`; `git -c core.whitespace=cr-at-eol diff --check`; provenance audit for `M` | All commands passed; audit classified local merge decisions and upstream removals | pass |
+| V-04 | B-01, B-02, B-03, B-05 | De-identified real-window smoke scenarios | Not run in this environment; requires the updated game UI and manual interaction | open |
 
 ## Closure gate
 

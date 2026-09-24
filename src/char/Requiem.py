@@ -948,6 +948,7 @@ class Requiem(MainDps):
                 FollowupStep.for_switch(
                     target,
                     reason=f"requiem real skill fixed switch to slot {target.index + 1}",
+                    wait_for_turn=False,
                 )
             ],
             reason=f"requiem real skill handoff to slot {target.index + 1}",

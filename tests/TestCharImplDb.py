@@ -206,7 +206,7 @@ class TestCharImplDb(unittest.TestCase):
             encoding="utf-8",
         )
 
-        entry = CharRegistry(external_dir=external_dir).get("external:futurehero")
+        entry = CharRegistry(external_dir=external_dir).get("external:hero")
 
         self.assertIsNotNone(entry)
         self.assertEqual(entry.source, "external")
@@ -232,7 +232,7 @@ class TestCharImplDb(unittest.TestCase):
         registry.rescan_external()
 
         self.assertIs(registry.get("builtin:zero"), builtin_entry)
-        self.assertIsNotNone(registry.get("external:futurehero"))
+        self.assertIsNotNone(registry.get("external:hero"))
 
 
 if __name__ == "__main__":

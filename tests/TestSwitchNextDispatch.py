@@ -18,10 +18,8 @@ class TestSwitchNextDispatch(unittest.TestCase):
         task.combat_planner.decide_switch.return_value = decision
         current = mock.MagicMock()
 
-        self.assertEqual(
-            task._decide_switch_to(current, free_intro=True, require_intro=True),
-            ("target", True),
-        )
+        result = task._decide_switch_to(current, free_intro=True, require_intro=True)
+        self.assertIs(result, decision)
         task.combat_planner.decide_switch.assert_called_once_with(
             current,
             free_intro=True,

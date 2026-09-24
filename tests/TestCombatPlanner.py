@@ -1971,7 +1971,7 @@ class TestCombatPlanner(unittest.TestCase):
             planner,
             source,
             lambda context: context.request_route(
-                [FollowupStep.for_switch(target, reason="fixed target")],
+                [FollowupStep.for_switch(target, reason="fixed target", wait_for_turn=False)],
                 reason="fixed switch route",
             ),
         )
