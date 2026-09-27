@@ -53,6 +53,28 @@ baseline rather than retaining duplicate old paths.
 | --- | --- | --- | --- | --- | --- | --- |
 | I-01 | `src/scene`, task/UI, planner, character, runtime, and resource paths | Current `PositionMap`/`PanelPosition`, task/UI module layout, planner/action lifecycle, character registry, runtime services, and `ok-script>=2.0.4` | Reconnected LW hooks in `src/lw`, preserved LW combat/daily/gift/globals behavior, and made Requiem's fixed handoff explicitly non-waiting while retaining RU `for_switch()` wait semantics | No old RU implementation or A/B path restored; the three local-only modified files are documented merge decisions | `8479c315106d7c4bfecc0bd08ca4d77b347562b2` | done |
 
+## Post-merge defects
+
+Found by a post-merge review on 2026-09-27 using real combat logs, a signature
+compatibility scan of RU methods changed by LW, a scan for RU class members
+removed upstream but still referenced, and a scan for upstream hunks reverted
+by `M`. These rows supersede the I-01 claim that no old RU path remained.
+
+| ID | Rows | Defect | Root cause | Fix on current RU base | Regression | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| D-01 | B-05, C-05 | OpenVINO runtime services never started; daily routine hung in `openvino_clear_cache()` | `Globals` inherited `QObject` without initializing it; the ok-script 2 Qt event dispatcher silently drops callbacks owned by invalid QObjects | `Globals` no longer inherits `QObject`, matching RU | `TestGlobalsRuntimeStart` | fixed |
+| D-02 | B-05, C-04 | `AutoCombatTask` stopped with `TypeError` at combat start whenever the LW opening declined | LW had added `lw_opening_checked` to RU `switch_to_combat_start_char()`; upstream then added a no-argument `AutoCombatTask` override | RU signature restored; `begin_combat_session()` alone gates the one-shot LW opening | `TestUseUltimateConfig.test_combat_start_reaches_auto_combat_start_priority_override` | fixed |
+| D-03 | B-05, C-03 | Duplicate strict-route switch path | LW `requires_switch` was kept beside RU `switch_step` with `wait_for_turn=False`, which already completes on arrival | LW field, `wants_switch()` and all duplicate branches removed; Requiem uses RU `for_switch(..., wait_for_turn=False)` | `TestRequiemZankouAxis`, planner suite | fixed |
+| D-04 | B-05 | Upstream Nanally delay removal (`ad49604`) lost | Merge kept the base entry flow in that hunk | RU entry restored; LW ultimate-landing hooks retained | None beyond RU parity; covered by V-04 real combat | fixed |
+| D-05 | B-05, C-04 | Unmarked compatibility fallbacks in RU code (`Zankou` mouse hold, `switch_next_char` strict flag, coffee entry) | Added during the merge to keep incomplete test fakes passing; the coffee fallback coordinate targeted the restock button | RU code restored; test fakes completed with the current contract | `TestZankou`, `TestCombatStartSupport`, `TestDailyCoffee` | fixed |
+| D-06 | B-01, B-07, C-01 | `lw_find_confirm()` without a box and the 999 volcano bonfire search raised `AttributeError` | RU removed `BaseNTETask.main_viewport`; two LW callers were not migrated | LW callers use `self.pos.screen.main_viewport.to_box()` | `test_find_confirm` | fixed |
+| D-07 | B-07 | Heist path 1 ran the wrong WP5 route for "no avoider" and the G strategy | Upstream renumbered routes (`f32d585`); the merged dispatch and LW G route kept old numbers | Dispatch uses current numbering; LW G route reuses the current Shift route `_01` | `TestHeistPathA.test_run_path_maps_each_avoider_strategy_to_its_route` | fixed |
+
+Reviewed and intentionally kept: LW gift entry OCR instead of the RU coordinate,
+LW volleyball rally/position logic superseding upstream `dcacb83`, and task icons
+on LW-owned tasks. Pre-existing, not merge-caused: boss fights retarget for up to
+3 seconds when the boss bar briefly disappears, which can void an ultimate.
+
 ## Verification evidence
 
 | ID | Behavior rows | Command or scenario | Evidence | Result | Status |
@@ -61,6 +83,7 @@ baseline rather than retaining duplicate old paths.
 | V-02 | B-01 to B-07 | `.\\.venv\\Scripts\\python.exe -m unittest discover -s tests -p "*.py" -q` | 1015 tests passed in 25.069s | pass |
 | V-03 | B-01 to B-07 | `.\\.venv\\Scripts\\python.exe -m compileall -q src tests`; `git -c core.whitespace=cr-at-eol diff --check`; provenance audit for `M` | All commands passed; audit classified local merge decisions and upstream removals | pass |
 | V-04 | B-01, B-02, B-03, B-05 | De-identified real-window smoke scenarios | Not run in this environment; requires the updated game UI and manual interaction | open |
+| V-05 | D-01 to D-07 | Full suite, `compileall`, and `git diff --check` after the post-merge fixes | 1017 tests passed; new regressions for D-01, D-02, D-06 and D-07 failed before their fixes | pass |
 
 ## Closure gate
 
