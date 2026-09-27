@@ -3,7 +3,6 @@ import re
 import cv2
 import numpy as np
 from ok import CannotFindException, TaskDisabledException
-from qfluentwidgets import FluentIcon
 
 from src.gifts.GiftManager import GiftManager
 from src.gifts.layout import GIFT_LAYOUT

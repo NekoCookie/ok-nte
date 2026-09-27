@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 from ok import CannotFindException
 
+from src.scene.PositionMap import PositionMap
 from src.tasks.DailyTask import DailyTask
 
 
@@ -10,6 +11,7 @@ class TestDailyCoffee(unittest.TestCase):
     def _task(self, config=None):
         task = object.__new__(DailyTask)
         task.config = config or {}
+        task.pos = PositionMap(task)
         task.clicks = []
         task.wait_until_calls = []
         task.info_messages = []
@@ -44,6 +46,7 @@ class TestDailyCoffee(unittest.TestCase):
         self.assertTrue(DailyTask.claim_coffee(task))
 
         click_positions = [(x, y) for x, y, _ in task.clicks]
+        self.assertEqual(click_positions[0], tuple(task.pos.panels.f5.coffee))
         self.assertIn((0.188, 0.877), click_positions)
         self.assertIn((0.115, 0.53), click_positions)
         self.assertIn((0.34, 0.785), click_positions)

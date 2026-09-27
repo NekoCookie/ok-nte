@@ -437,13 +437,7 @@ class DailyTask(DailyTaskExtMixin, NTEOneTimeTask, BaseNTETask):  # [lw]
 
         def action():
             self.openF5panel()
-            coffee_position = getattr(
-                getattr(getattr(self, "pos", None), "panels", None),
-                "f5",
-                None,
-            )
-            coffee_position = getattr(coffee_position, "coffee", (0.115, 0.53))
-            self.operate_click(*coffee_position)
+            self.operate_click(*self.pos.panels.f5.coffee)
             self.sleep(0.5)
             return self.wait_panel(Labels.f5_coffee_panel)
 
