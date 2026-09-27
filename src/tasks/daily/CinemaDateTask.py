@@ -154,11 +154,9 @@ class CinemaDateTask(NTEOneTimeTask, BaseNTETask):
                     break
 
             if not target_box:
-                self.log_info(f"未找到 {target} 尝试使用顶部可选目标")
-                for _ in range(page):
-                    target_box = self._top_selectable_target()
-                    if target_box or self.scroll_and_is_end(0.8391, 0.5333, 19, snap_box):
-                        break
+                # [lw] A named target must never fall back to dating another character.
+                self.log_info(f"未找到可约会的 {target}, 本次不约会")
+                return False
 
         if not target_box:
             self.log_info("未找到任何可选目标，结束任务")
