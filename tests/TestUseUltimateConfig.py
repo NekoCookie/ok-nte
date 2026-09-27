@@ -86,7 +86,29 @@ class TestUseUltimateConfig(unittest.TestCase):
 
         self.assertTrue(t._in_combat)
         t.load_chars.assert_called_once_with(force_full_scan=True)
-        t.switch_to_combat_start_char.assert_called_once_with(lw_opening_checked=True)
+        t.switch_to_combat_start_char.assert_called_once_with()
+
+    def test_combat_start_reaches_auto_combat_start_priority_override(self):
+        # The real override must accept the call made by begin_combat_session.
+        for enabled in (True, False):
+            with self.subTest(enabled=enabled):
+                t = AutoCombatTask.__new__(AutoCombatTask)
+                t.config = {AutoCombatTask.CONF_COMBAT_START_PRIORITY: enabled}
+                t.combat_session = None
+                t.lw_prepare_combat_start = mock.MagicMock(return_value=False)
+                t.click = mock.MagicMock()
+                current = mock.MagicMock()
+                t.get_current_char = mock.MagicMock(return_value=current)
+                t.combat_planner = mock.MagicMock()
+                t.combat_planner.decide_combat_start_char.return_value.target = current
+
+                session = t.begin_combat_session()
+
+                self.assertIs(session.start_char, current)
+                self.assertEqual(
+                    t.combat_planner.decide_combat_start_char.called,
+                    enabled,
+                )
 
     def test_action_error_still_runs_combat_cleanup(self):
         t = make_run_task(True)

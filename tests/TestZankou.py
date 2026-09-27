@@ -6,21 +6,29 @@ from src.combat.planner import Planner
 
 
 class _SkillProbe:
-    def __init__(self, feature):
+    def __init__(self, feature, clock):
         self.feature = feature
         self.seen = []
+        self.mouse_events = []
+        self._clock = clock
 
     def find_one(self, feature):
         self.seen.append(feature)
         return feature == self.feature
 
+    def mouse_down(self):
+        self.mouse_events.append("down")
+        self._clock[0] = 11.0
+
+    def mouse_up(self):
+        self.mouse_events.append("up")
+
 
 def _make_char(feature):
     char = object.__new__(Zankou)
-    char.task = _SkillProbe(feature)
     clock = [0.0]
+    char.task = _SkillProbe(feature, clock)
     sleeps = []
-    heavy_attacks = []
     skill_clicks = []
 
     char.now = lambda: clock[0]
@@ -29,38 +37,33 @@ def _make_char(feature):
         sleeps.append(duration)
         clock[0] += duration
 
-    def heavy_attack(duration=0.6):
-        heavy_attacks.append(duration)
-        clock[0] = 11.0
-
     char.sleep = sleep
-    char.heavy_attack = heavy_attack
     char.click_skill = lambda: skill_clicks.append(True) or True
     char.find_ult_purple = lambda: False
-    return char, sleeps, heavy_attacks, skill_clicks
+    return char, sleeps, skill_clicks
 
 
 class TestZankou(unittest.TestCase):
-    def test_gold_skill_keeps_polling_with_half_second_heavy_attack(self):
-        char, sleeps, heavy_attacks, skill_clicks = _make_char(Labels.zankou_skill_gold)
+    def test_gold_skill_charges_heavy_and_always_releases_the_mouse(self):
+        char, sleeps, skill_clicks = _make_char(Labels.zankou_skill_gold)
 
         result = char.perform_skill_combo()
 
         self.assertTrue(result)
         self.assertEqual(skill_clicks, [True])
-        self.assertEqual(heavy_attacks, [0.5])
+        self.assertEqual(char.task.mouse_events, ["down", "up"])
         self.assertIn(0.1, sleeps)
         self.assertNotIn(2, sleeps)
 
     def test_purple_skill_waits_two_seconds_and_finishes_combo(self):
-        char, sleeps, heavy_attacks, skill_clicks = _make_char(Labels.zankou_skill_purple)
+        char, sleeps, skill_clicks = _make_char(Labels.zankou_skill_purple)
 
         result = char.perform_skill_combo()
 
         self.assertTrue(result)
         self.assertEqual(skill_clicks, [True])
         self.assertEqual(sleeps, [2])
-        self.assertEqual(heavy_attacks, [])
+        self.assertEqual(char.task.mouse_events, [])
 
     def test_plan_uses_current_combo_action_name_and_main_dps_role(self):
         char = object.__new__(Zankou)

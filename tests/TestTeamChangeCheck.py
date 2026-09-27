@@ -216,7 +216,7 @@ class TestRosterReloadRecognition(unittest.TestCase):
         t._commit_loaded_chars.assert_called_once_with([observed], 0)
         t.load_chars.assert_not_called()
         t.load_chars_element.assert_not_called()
-        t.switch_to_combat_start_char.assert_called_once_with(lw_opening_checked=True)
+        t.switch_to_combat_start_char.assert_called_once_with()
 
 
 def make_reload_task():

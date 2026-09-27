@@ -186,6 +186,7 @@ class TestCombatStartDispatch(unittest.TestCase):
             has_intro=False,
             expected_entry=None,
             reason="target skill ready",
+            strict=False,
         )
         task.combat_planner = mock.MagicMock()
         task.combat_planner.decide_switch.return_value = decision
@@ -212,6 +213,7 @@ class TestCombatStartDispatch(unittest.TestCase):
             expected_entry=expected_entry,
             reason="strict route to zankou",
             scoring_action_slot=ActionSlot.ULTIMATE,
+            strict=False,
         )
         task.combat_planner = mock.MagicMock()
         task.combat_planner.decide_switch.return_value = decision
@@ -253,17 +255,7 @@ class TestCombatStartDispatch(unittest.TestCase):
         task.begin_combat_session()
 
         task.click.assert_called_once_with(after_sleep=0.25)
-        task.switch_to_combat_start_char.assert_called_once_with(lw_opening_checked=True)
-
-    def test_completed_lw_opening_skips_the_regular_start_decision(self):
-        task = BaseCombatTask.__new__(BaseCombatTask)
-        task.lw_prepare_combat_start = mock.MagicMock(return_value=True)
-        task.combat_planner = mock.MagicMock()
-
-        task.switch_to_combat_start_char()
-
-        task.lw_prepare_combat_start.assert_called_once_with()
-        task.combat_planner.decide_combat_start_char.assert_not_called()
+        task.switch_to_combat_start_char.assert_called_once_with()
 
     def test_settles_lw_resources_before_asking_planner(self):
         calls = []
@@ -281,8 +273,13 @@ class TestCombatStartDispatch(unittest.TestCase):
         task.combat_planner.decide_combat_start_char.side_effect = lambda _: (
             calls.append("decide") or decision
         )
+        task.combat_session = None
+        task.click = mock.MagicMock()
 
-        task.switch_to_combat_start_char()
+        with mock.patch(
+            "src.lw.requiem_zankou_axis.run_zankou_opening_gold_skill", return_value=False
+        ):
+            task.begin_combat_session()
 
         self.assertEqual(calls, ["settle", "decide"])
         self.assertFalse(task.in_animation)

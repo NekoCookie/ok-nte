@@ -95,8 +95,8 @@ class _RouteRequest(_RequestLifetime):
         step = self.current_step()
         if (
             step is None
-            or not (step.switch_step or step.requires_switch)
-            or (step.switch_step and step.wait_for_turn)
+            or not step.switch_step
+            or step.wait_for_turn
             or not step.matches_char(target_char)
         ):
             return False
@@ -121,6 +121,7 @@ class _RouteRequest(_RequestLifetime):
             return False
         self._progress += 1
         return True
+
 
 @dataclass(slots=True)
 class _ReservationRequest(_RequestLifetime):

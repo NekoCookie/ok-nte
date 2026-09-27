@@ -134,7 +134,6 @@ class CombatState:
         if self.locked_route is None:
             return
 
-        # [lw] A strict pure-switch step is consumed by the confirmed target entry.
         step = self.locked_route.current_step()
         if self.locked_route.complete_step(char, result):
             result_name = _display_result_name(result)
@@ -187,7 +186,9 @@ class CombatState:
         while self.locked_route is not None:
             if not self.locked_route.complete_switch(target_char):
                 return
-            logger.info(f"strict route completed switch to {target_char}: {self.locked_route.reason}")
+            logger.info(  # [lw]
+                f"strict route completed switch to {target_char}: {self.locked_route.reason}"
+            )
             if self.locked_route.fulfilled():
                 self.fulfill_locked_route()
 

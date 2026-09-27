@@ -656,7 +656,6 @@ class FollowupStep:
     target_indices: set[int] = field(default_factory=set)
     target_names: set[str] = field(default_factory=set)
     requires_entry_reaction: bool = False
-    requires_switch: bool = False  # [lw] Complete a strict route on target entry.
     optional: bool = False
 
     switch_step: bool = False
@@ -675,8 +674,6 @@ class FollowupStep:
             reason=reason or f"{target} switch followup",
             target_indices={target.index},
             switch_step=True,
-            # [lw] Explicit non-waiting routes retain the legacy immediate-entry behavior.
-            requires_switch=not wait_for_turn,
             wait_for_turn=wait_for_turn,
         )
 
@@ -732,7 +729,7 @@ class FollowupStep:
     def wants(self, char: "BaseChar", action: ActionIntent | ActionResult) -> bool:
         """判断某角色动作是否满足此步骤。"""
 
-        if self.switch_step or self.requires_entry_reaction or self.requires_switch:
+        if self.switch_step or self.requires_entry_reaction:
             return False
         if not self.matches_char(char):
             return False
@@ -750,11 +747,6 @@ class FollowupStep:
         if not self.requires_entry_reaction:
             return False
         return self.matches_char(target_char)
-
-    def wants_switch(self, target_char: "BaseChar") -> bool:
-        """Return whether an actual switch to the target completes this step."""
-
-        return self.requires_switch and self.matches_char(target_char)
 
 
 @dataclass(slots=True)

@@ -59,19 +59,14 @@ class Zankou(BaseChar):
 
             self.sleep(0.1)
 
-            mouse_down = getattr(self.task, "mouse_down", None)
-            mouse_up = getattr(self.task, "mouse_up", None)
-            if not callable(mouse_down) or not callable(mouse_up):
-                self.heavy_attack(duration=0.5)
-                break
             try:
-                mouse_down()
+                self.task.mouse_down()
                 for _ in range(5):
                     if self.find_zankou_skill() or self.find_ult_purple():
                         break
                     self.sleep(0.1)
             finally:
-                mouse_up()
+                self.task.mouse_up()
 
         return clicked_skill
 

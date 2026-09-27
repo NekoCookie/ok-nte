@@ -19,7 +19,6 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         self.name = "自动战斗"
         self.description = "受《异环》UI的特殊性影响, 部分场景下存在识别稳定性波动"
         self.icon = FluentIcon.CALORIES
-        self.last_is_click = False
         self.default_config.update(
             {
                 self.CONF_AUTO_TARGET: True,

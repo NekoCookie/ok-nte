@@ -1000,7 +1000,8 @@ class TestRequiemZankouAxis(unittest.TestCase):
 
         steps = context.request_route.call_args.args[0]
         self.assertEqual(len(steps), 1)
-        self.assertTrue(steps[0].requires_switch)
+        self.assertTrue(steps[0].switch_step)
+        self.assertFalse(steps[0].wait_for_turn)
         self.assertEqual(steps[0].target_indices, {2})
         self.assertFalse(requiem.lw_can_switch_in())
 

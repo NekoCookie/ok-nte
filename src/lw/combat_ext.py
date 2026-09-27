@@ -1021,14 +1021,14 @@ class CombatExtMixin(_TaskProxy):
     def _reload_combat_team(self, change: TeamRosterChange | None = None) -> bool:
         if change is not None and self._commit_signature_roster_change(change):
             self._in_combat = True
-            self.switch_to_combat_start_char(lw_opening_checked=True)
+            self.switch_to_combat_start_char()
             return True
 
         if self.load_chars(force_full_scan=True):
             self._in_combat = True
             # [lw] Team reload resumes the existing combat session. One-shot opening
             # actions, such as Zankou yellow E, must not run a second time.
-            self.switch_to_combat_start_char(lw_opening_checked=True)
+            self.switch_to_combat_start_char()
             return True
 
         if self.chars and self.get_current_char() is not None:

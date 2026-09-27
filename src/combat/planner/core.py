@@ -1130,7 +1130,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
             step = request.current_step()
             if step is None or not step.optional:
                 return skipped_actions
-            if step.requires_entry_reaction or step.requires_switch:
+            if step.requires_entry_reaction:
                 if self._route_step_blocked_by_dead_target(context, step):
                     logger.info(
                         f"strict route skips optional dead target step: "
@@ -1176,7 +1176,7 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
         step = request.current_step()
         if step is None:
             return None
-        if step.requires_entry_reaction or step.requires_switch:
+        if step.requires_entry_reaction:
             return None
         for action in actions:
             if not step.wants(char, action):
@@ -1198,7 +1198,6 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
             step is None
             or step.switch_step
             or step.requires_entry_reaction
-            or step.requires_switch
             or not step.matches_char(char)
         ):
             return None
@@ -1265,15 +1264,6 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
                 return SwitchDecision(
                     target=target,
                     reason=f"strict route entry reaction: {request.reason} / {step.reason}",
-                    priority=999999,
-                    has_intro=has_intro,
-                    expected_entry=None,
-                )
-            if step.requires_switch:
-                # [lw] Keep the configured target through confirmation without forcing an action.
-                return SwitchDecision(
-                    target=target,
-                    reason=f"strict route switch: {request.reason} / {step.reason}",
                     priority=999999,
                     has_intro=has_intro,
                     expected_entry=None,

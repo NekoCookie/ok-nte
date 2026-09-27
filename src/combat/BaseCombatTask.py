@@ -136,7 +136,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             session.combat_start = time.time()
             if not self.lw_prepare_combat_start():  # [lw] Run the input-sensitive opening first.
                 self.click(after_sleep=0.25)
-                self.switch_to_combat_start_char(lw_opening_checked=True)
+                self.switch_to_combat_start_char()
             session.start_char = self.get_current_char(raise_exception=False)
             logger.info(f"combat session started, start char: {session.start_char}")
         return session
@@ -689,13 +689,12 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             )
             return
 
-        strict_route_active = self.combat_planner.has_strict_route(current_char)
-        if not (getattr(decision, "strict", False) or strict_route_active):
+        strict_route_active = self.combat_planner.has_strict_route(current_char)  # [lw]
+        if not (decision.strict or strict_route_active):
             self._wait_switch_in_guard(current_char, switch_to, has_intro)
             current_char.wait_switch_cd()
 
-        expected_entry = decision.expected_entry
-        self.combat_planner.expect_entry_action(switch_to, expected_entry)
+        self.combat_planner.expect_entry_action(switch_to, decision.expected_entry)
         self._switch_to_char(
             switch_to,
             current_char=current_char,
@@ -745,9 +744,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
             f"switch_other_char on_combat_end {current_char.index} switch end"
         )
 
-    def switch_to_combat_start_char(self, lw_opening_checked=False):
-        if not lw_opening_checked and self.lw_prepare_combat_start():  # [lw] Optional opening is complete.
-            return
+    def switch_to_combat_start_char(self):
         if not self.combat_session.switch_enabled:
             logger.info("combat start switch disabled by task policy")
             return
