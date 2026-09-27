@@ -2,8 +2,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 
-from ok import Logger, get_path_relative_to_exe
-from PySide6.QtCore import QObject
+from ok import Logger
 from src.lw.globals_ext import GlobalsExtMixin  # [lw]
 
 from src.events import communicate
@@ -12,7 +11,7 @@ from src.runtime.services import RuntimeServices
 logger = Logger.get_logger(__name__)
 
 
-class Globals(GlobalsExtMixin, QObject):  # [lw]
+class Globals(GlobalsExtMixin):  # [lw]
     def __init__(self, exit_event):
         self._thread_pool_executor_max_workers = 0
         self.thread_pool_executor = None
