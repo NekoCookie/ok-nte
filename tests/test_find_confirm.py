@@ -10,7 +10,9 @@ from src.tasks.BaseNTETask import BaseNTETask
 class TestFindConfirm(unittest.TestCase):
     def test_lw_confirm_forwards_the_current_mask_contract_to_each_template_search(self):
         task = object.__new__(NTETaskExtMixin)
-        task.main_viewport = object()
+        viewport = object()
+        task.pos = mock.Mock()
+        task.pos.screen.main_viewport.to_box.return_value = viewport
         task.find_feature = mock.Mock(return_value=[])
         mask_function = object()
 
@@ -19,6 +21,7 @@ class TestFindConfirm(unittest.TestCase):
         self.assertEqual(task.find_feature.call_count, 2)
         for call in task.find_feature.call_args_list:
             self.assertIs(call.kwargs["mask_function"], mask_function)
+            self.assertIs(call.kwargs["box"], viewport)
 
     def test_current_wait_click_confirm_clicks_the_detected_confirmation(self):
         task = object.__new__(BaseNTETask)

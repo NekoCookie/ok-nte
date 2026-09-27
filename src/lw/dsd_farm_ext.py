@@ -183,7 +183,7 @@ class DSDFarmExtMixin(_TaskProxy):
         def find_volcano_bonfire():
             teleports = self.find_feature(
                 Labels.bonfire_teleport,
-                box=self.main_viewport,
+                box=self.pos.screen.main_viewport.to_box(),
                 threshold=threshold,
             )
             return self._lw_select_volcano_bonfire(teleports) if teleports else None

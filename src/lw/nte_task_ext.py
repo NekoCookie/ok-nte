@@ -49,7 +49,7 @@ class NTETaskExtMixin(_TaskProxy):
 
     def lw_find_confirm(self, box=None, threshold=0.7, mask_function=None):
         if not isinstance(box, Box):
-            box = self.main_viewport
+            box = self.pos.screen.main_viewport.to_box()
         candidates = []
         # 确认/取消可能是同一款式(如全白), 每个模板要收集多个匹配而非单个最佳,
         # 否则真确认键根本进不了候选
