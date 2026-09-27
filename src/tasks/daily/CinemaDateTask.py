@@ -121,9 +121,11 @@ class CinemaDateTask(NTEOneTimeTask, BaseNTETask):
                 self.operate_click(0.715, 0.543, interval=1)
 
         if not self.wait_until(in_panel, pre_action=action, time_out=20):
+            self.log_warning("未能打开约会邀请面板")  # [lw] Reason for the daily failure details.
             return False
 
         if not self.wait_until(self._find_selectable_target, time_out=20):
+            self.log_warning("约会名单中没有可选角色")  # [lw] Reason for the daily failure details.
             return False
         self.sleep(0.5)
         return True
@@ -155,7 +157,7 @@ class CinemaDateTask(NTEOneTimeTask, BaseNTETask):
 
             if not target_box:
                 # [lw] A named target must never fall back to dating another character.
-                self.log_info(f"未找到可约会的 {target}, 本次不约会")
+                self.log_warning(f"未找到可约会的 {target}, 本次不约会")
                 return False
 
         if not target_box:

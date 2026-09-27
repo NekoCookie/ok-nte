@@ -318,6 +318,7 @@ class AnomalyHunter(NTEOneTimeTask, BaseCombatTask):
             if self.walk_until_combat(run=True, delay=1):
                 self.combat_once(retarget_turn=False)
             else:
+                self.log_warning("未能进入BOSS战斗")  # [lw] Reason for the daily failure details.
                 return False
 
         self.log_info("调用领取BOSS宝箱模块")

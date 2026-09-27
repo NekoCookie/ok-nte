@@ -370,6 +370,7 @@ class DailyRoutineTask(DailyRoutineExtMixin, NTEOneTimeTask, BaseNTETask):
             with self._active_task_context(task_id, task):
                 if self.lw_is_retrying_task(task_id):  # [lw] Child tasks may retry only their failed subitems.
                     self.lw_prepare_task_retry(task)
+                self.lw_begin_task_failure_capture(task)  # [lw]
                 result = task.do_run()
                 entry = self.entries_by_id()[task_id]
                 if result and entry.daily_config and (shift_id := getattr(task, "shift_id", None)):

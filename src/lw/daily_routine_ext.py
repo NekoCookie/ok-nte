@@ -13,6 +13,10 @@ class DailyRoutineAccountResult:
     failure_details: tuple[tuple[str, tuple[str, ...]], ...]
 
 
+# Task messages that explain a failed child run, most specific first.
+_FAILURE_MESSAGE_KEYS = (("Error", ""), ("Warning", ""), ("Log", "最后日志: "))
+
+
 class DailyRoutineExtMixin:
     """[lw] Account-aware summaries and targeted retries for the daily routine."""
 
@@ -102,12 +106,9 @@ class DailyRoutineExtMixin:
             lines.append(f"账号: {result.account_name}")
             details_by_task = dict(result.failure_details)
             for task_id in result.failed:
-                lines.append(f"任务: {self._task_display_name(task_id)}")
                 details = details_by_task.get(task_id, ())
-                if details:
-                    lines.extend(f"  {detail}" for detail in details)
-                else:
-                    lines.append("  任务返回失败, 未记录更具体原因")
+                reason = "; ".join(details) if details else "任务返回失败, 未记录更具体原因"
+                lines.append(f"{self._task_display_name(task_id)}: {reason}")
 
         return "\n".join(lines) or "当前没有失败项"
 
@@ -145,6 +146,14 @@ class DailyRoutineExtMixin:
         if callable(prepare_retry):
             prepare_retry()
 
+    def lw_begin_task_failure_capture(self, task):
+        """Forget messages from an earlier run so a failure cites only this run."""
+
+        info = getattr(task, "info", None)
+        if isinstance(info, dict):
+            for key, _prefix in _FAILURE_MESSAGE_KEYS:
+                info.pop(key, None)
+
     def lw_record_task_failure(self, task_id, task, error=None):
         task_details = getattr(task, "failure_details", ())
         details = list(task_details) if isinstance(task_details, (list, tuple)) else []
@@ -152,8 +161,23 @@ class DailyRoutineExtMixin:
             error_name = type(error).__name__
             error_text = str(error).strip()
             details.append(f"{error_name}: {error_text}" if error_text else error_name)
+        if not details:
+            details.extend(self._lw_logged_failure_reason(task))
         if details:
             self.task_failure_details[task_id] = details
+
+    @staticmethod
+    def _lw_logged_failure_reason(task):
+        """Use the child's latest error, warning or log message when it gave no details."""
+
+        info = getattr(task, "info", None)
+        if not isinstance(info, dict):
+            return []
+        for key, prefix in _FAILURE_MESSAGE_KEYS:
+            message = str(info.get(key) or "").strip()
+            if message:
+                return [f"{prefix}{message}"]
+        return []
 
     def lw_task_result_display_name(self, task_id, display_name):
         details = self.task_failure_details.get(task_id, ())

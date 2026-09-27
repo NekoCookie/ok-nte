@@ -13,6 +13,7 @@ def make_task(ocr_result):
     task._top_selectable_target = mock.MagicMock(return_value=mock.MagicMock())
     task.wait_click_confirm = mock.MagicMock(return_value=True)
     task.log_info = mock.MagicMock()
+    task.log_warning = mock.MagicMock()
     return task
 
 
@@ -24,6 +25,7 @@ class TestCinemaDateTarget(unittest.TestCase):
 
         task._top_selectable_target.assert_not_called()
         task.wait_click_confirm.assert_not_called()
+        self.assertIn("黑羽", task.log_warning.call_args.args[0])
 
     def test_empty_target_still_dates_the_top_selectable_character(self):
         task = make_task(ocr_result=[])

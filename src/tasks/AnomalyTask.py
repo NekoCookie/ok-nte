@@ -303,6 +303,7 @@ class AnomalyTask(NTEOneTimeTask, BaseCombatTask):
         self.rotate_and_find_treasure()
         claims = self.retry_on_action(action)
         if not claims:
+            self.log_warning("未找到奖励宝箱或领取按钮")  # [lw] Reason for the daily failure details.
             return False
 
         if double:

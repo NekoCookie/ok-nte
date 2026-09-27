@@ -440,10 +440,46 @@ class TestDailyRoutineStart(unittest.TestCase):
 
         details = task.lw_failure_details_text()
 
-        self.assertIn("账号: 账号 A", details)
-        self.assertIn("任务: 羁遇赠礼", details)
-        self.assertIn("gift_a: 未找到目标", details)
-        self.assertIn("TimeoutError: 等待超时", details)
+        self.assertEqual(
+            details.splitlines(),
+            ["账号: 账号 A", "羁遇赠礼: gift_a: 未找到目标; TimeoutError: 等待超时"],
+        )
+
+    def test_failure_without_details_uses_the_child_warning(self):
+        task = object.__new__(DailyRoutineTask)
+        task.task_failure_details = {}
+        child = SimpleNamespace(info={"Warning": "体力不足，退出异象追猎任务"})
+
+        task.lw_record_task_failure("daily_anomaly_hunter", child)
+
+        self.assertEqual(
+            task.task_failure_details["daily_anomaly_hunter"], ["体力不足，退出异象追猎任务"]
+        )
+
+    def test_failure_reason_prefers_error_then_warning_then_labeled_log(self):
+        cases = [
+            ({"Error": "e", "Warning": "w", "Log": "l"}, ["e"]),
+            ({"Warning": "w", "Log": "l"}, ["w"]),
+            ({"Log": "l"}, ["最后日志: l"]),
+        ]
+        for info, expected in cases:
+            with self.subTest(info=info):
+                task = object.__new__(DailyRoutineTask)
+                task.task_failure_details = {}
+
+                task.lw_record_task_failure("coffee", SimpleNamespace(info=dict(info)))
+
+                self.assertEqual(task.task_failure_details["coffee"], expected)
+
+    def test_failure_capture_ignores_messages_from_an_earlier_run(self):
+        task = object.__new__(DailyRoutineTask)
+        task.task_failure_details = {}
+        child = SimpleNamespace(info={"Warning": "old warning", "Log": "old log"})
+
+        task.lw_begin_task_failure_capture(child)
+        task.lw_record_task_failure("coffee", child)
+
+        self.assertNotIn("coffee", task.task_failure_details)
 
     def test_daily_routine_retry_runs_only_failed_task_ids(self):
         task = object.__new__(DailyRoutineTask)
