@@ -746,12 +746,12 @@ class AutoHeistTask(NTEOneTimeTask, BaseCombatTask):
             return
         return self._begin_character_switch(self.ROLE_AVOIDER, keys, check_switched)
 
-    def perform_avoidance_action(self, method_name=None):
+    def perform_avoidance_action(self):
         """按当前配置执行一次避战动作。
 
         长按 shift 会短暂按住 `w + lshift`；长按攻击会长按鼠标左键。
         """
-        method_name = method_name or self.config.get(self.CONF_AVOID_MTH)
+        method_name = self.config.get(self.CONF_AVOID_MTH)
         if method_name == self.AVOID_METHOD_DASH:
             self.send_key_down("w")
             self.sleep(0.1)

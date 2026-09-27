@@ -21,7 +21,7 @@ class HeistPathA(HeistPath):
         elif idx == 1:
             self.lg1_wp5_avoid_combat_02()
         elif idx == 2:
-            self.lg1_wp5_avoid_combat_g_then_shift()  # [lw] G strategy reuses the Shift route.
+            self.lg1_wp5_avoid_combat_03()
         self.wait_team_ui_settle()
         # self.check_current_floor(2)
         self.lg2_wp1_to_exit1()
@@ -483,7 +483,7 @@ class HeistPathA(HeistPath):
 
         self.switch_to_avoider(check_switched=True)
         self.sleep(0.5)
-        self.perform_avoidance_action(self.AVOID_METHOD_DASH)  # [lw] Shift route never repeats G.
+        self.perform_avoidance_action()
         self.sleep(0.11)
         self.send_key_down("w")
         self.sleep(6.0)
@@ -495,14 +495,6 @@ class HeistPathA(HeistPath):
         self.send_key_down("w")
         self.sleep(1.00)
         self.wait_and_interact(direction="w")
-
-    # [lw]
-    def lg1_wp5_avoid_combat_g_then_shift(self):
-        """点按 G 后沿用路径 1 原有的 Shift 避战路线。"""
-        self.log_round_info("LG1 WP5 G后Shift避战路线")
-        self.send_key("g")
-        self.sleep(0.5)
-        self.lg1_wp5_avoid_combat_01()
 
     def lg1_wp5_avoid_combat_02(self):
         self.log_round_info("LG1 WP5避战路线2")
