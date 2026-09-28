@@ -36,7 +36,10 @@ class OcrClickTaskMixin:
     CONF_MAX_MINUTES = "最长运行(分钟)"
     CONF_AUTO_COMBAT = "进入战斗自动战斗"
     CONF_USE_ULT = "使用终结技"
+    CONF_WALK_SECONDS = "未进战斗向前走(秒)"
     OCR_THRESHOLD = 0.8
+    WALK_POLL_INTERVAL = 0.3
+    WALK_TEXT_SCAN_INTERVAL = 1.0
 
     def configure_ocr_click(self):
         self.default_config.update({
@@ -46,6 +49,7 @@ class OcrClickTaskMixin:
             self.CONF_MAX_MINUTES: 0,
             self.CONF_AUTO_COMBAT: True,
             self.CONF_USE_ULT: True,
+            self.CONF_WALK_SECONDS: 10.0,
         })
         self.config_description.update({
             self.CONF_WORDS: "全屏OCR, 按文字从左到右优先点击, 支持/、逗号和换行; "
@@ -56,6 +60,9 @@ class OcrClickTaskMixin:
             self.CONF_MAX_MINUTES: "到时自动停止, 0为不限, 手动停止任务即可结束",
             self.CONF_AUTO_COMBAT: "本任务运行时框架不调度自动战斗, 开启后识别到战斗由本任务接管战斗, "
                                    "脱战后继续OCR点击",
+            self.CONF_WALK_SECONDS: "在队伍画面且没有可点文字时, 同自动深渊按住W加冲刺向前走找战斗; "
+                                    "走满该秒数仍未进战斗就停下, 直到下次战斗或点击后再走; "
+                                    "0为关闭, 最大60秒",
         })
 
     def _ocr_click_float(self, key, default, low, high) -> float:
@@ -75,6 +82,8 @@ class OcrClickTaskMixin:
         clicks = 0
         next_click = 0.0
         last_words = None
+        # One walk per combat/click, so an idle field never turns into endless running.
+        walk_spent = False
         while True:
             words = parse_words(self.config.get(self.CONF_WORDS, ""))
             if words != last_words:
@@ -91,9 +100,17 @@ class OcrClickTaskMixin:
                 self.log_info("OCR识别点击: 进入战斗, 开始自动战斗")
                 self.lw_combat_run()
                 self.log_info("OCR识别点击: 脱离战斗, 继续识别")
+                walk_spent = False
                 continue
             boxes = (self.ocr(threshold=self.OCR_THRESHOLD) or []) if words else []
             picked = pick_text([box.name for box in boxes], words)
+            walk_seconds = self._ocr_click_float(self.CONF_WALK_SECONDS, 10.0, 0.0, 60.0)
+            if picked is None and walk_seconds > 0 and not walk_spent and self.is_in_team():
+                self.info_set("状态", "向前走找战斗")
+                if self.ocr_click_walk(walk_seconds, words) == "timeout":
+                    walk_spent = True
+                    self.log_info(f"OCR识别点击: 向前走 {walk_seconds:.0f}s 未进入战斗, 停止前进")
+                continue
             if picked is None:
                 self.info_set("状态", "未识别到配置文字" if words else "点击文字为空, 等待配置")
             elif time.monotonic() >= next_click:
@@ -101,6 +118,7 @@ class OcrClickTaskMixin:
                 result = self.operate_click(boxes[index], action_name="ocr_click_word")
                 next_click = time.monotonic() + (click_interval if result is not False else 0.5)
                 if result is not False:
+                    walk_spent = False
                     clicks += 1
                     self.info_set("点击次数", clicks)
                     self.info_set("状态", f"已点击: {word}")
@@ -109,3 +127,32 @@ class OcrClickTaskMixin:
                     self.info_set("状态", f"点击被拦截: {word}")
             self.sleep(scan_interval)
         self.log_info(f"OCR识别点击到达最长运行时间, 共点击 {clicks} 次", notify=True)
+
+    def ocr_click_walk(self, time_out: float, words) -> str:
+        """Sprint forward like the abyss task; stop on combat, a clickable word or timeout."""
+        self.middle_click(after_sleep=0.2)
+        deadline = time.monotonic() + time_out
+        next_text_scan = time.monotonic() + self.WALK_TEXT_SCAN_INTERVAL
+        held = False
+        try:
+            while time.monotonic() < deadline:
+                self.next_frame()
+                if self.in_combat():
+                    return "combat"
+                if not self.is_in_team():
+                    return "left_team"
+                if words and time.monotonic() >= next_text_scan:
+                    next_text_scan = time.monotonic() + self.WALK_TEXT_SCAN_INTERVAL
+                    boxes = self.ocr(threshold=self.OCR_THRESHOLD) or []
+                    if pick_text([box.name for box in boxes], words) is not None:
+                        return "text"
+                if not held:
+                    self.send_key_down("w")
+                    held = True
+                    self.sleep(0.1)
+                    self.send_key("lshift")
+                self.sleep(self.WALK_POLL_INTERVAL)
+            return "timeout"
+        finally:
+            if held:
+                self.send_key_up("w")
