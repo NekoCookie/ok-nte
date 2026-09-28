@@ -32,4 +32,7 @@ def install_startup_patches(config):
         from src.patches.task_tab_patch import install_task_tab_patch
 
         install_task_tab_patch()
+        from src.lw.config_group_ui import install_config_group_widgets  # [lw]
+
+        install_config_group_widgets()  # [lw]
     _PATCH_INSTALLED = True

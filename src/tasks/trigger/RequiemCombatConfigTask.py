@@ -11,6 +11,7 @@ from ok.util.file import get_relative_path
 
 from src.combat import requiem_combo
 from src.lw.activity import ActivityController, configure_activity  # [lw]
+from src.lw.config_group import config_group, config_group_keys  # [lw]
 from src.lw.requiem_zankou_axis import (
     CoordinatedAxisSettings,
     RequiemZankouAxisTester,
@@ -173,8 +174,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
 
     # 方案四(光速4a·时间驱动)的可调时序, 单位毫秒(默认见 requiem_combo.SCHEME_LS_*)。
     # 核心是"跳A时机": 连点累计到这个时刻才左键+空格同跳, 改它时跳A那下左键自动跟着移动。
-    # 同样用开关折叠, 默认收起。
-    CONF_LS_EXPAND = "▸ 方案四·光速4a时序(展开)"  # 分组折叠开关(命名带▸与功能开关区分), 开=展开5个配置
+    # 同样折叠成组, 默认收起。
+    CONF_LS_EXPAND = "方案四·光速4a时序"  # 折叠分组, 展开=5个时序配置
     CONF_LS_JUMP_AT = "方案四-跳A时机(ms)"
     CONF_LS_JUMP_HOLD = "方案四-跳A按住(ms)"
     CONF_LS_CLICK_HOLD = "方案四-连点按住(ms)"
@@ -185,7 +186,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     # 跳A打不断)、不打那第五下, 直接接 combo。以下时序可调(ms), 实战侧(Requiem)读。
     # 测试键: 按一下=发技能键放(免费)技能 → delay → 闪避打断 → combo; 需在游戏里把技能设成免费技能(可反复放)。
     # 免费技能分组: 打断时序 + 测试键 全放一起(原测试键散在"测试开关组", 与时序分家)。
-    CONF_FREE_BREAK_EXPAND = "▸ 免费技能设置(展开)"  # 分组折叠开关(带▸), 开=展开时序+测试键
+    CONF_FREE_BREAK_EXPAND = "免费技能设置"  # 折叠分组, 展开=时序+测试键
     CONF_FREE_BREAK_DELAY = "免费技能后打断延迟(ms)"      # 免费技能→闪避 的等待(核心旋钮)
     CONF_FREE_BREAK_JUMP_HOLD = "免费技能后闪避按住(ms)"  # 闪避键按住时长
     CONF_FREE_BREAK_WAIT = "免费技能后打断后等待(ms)"     # 闪避打断→combo第一下 的间隔
@@ -200,18 +201,18 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_FREE_BREAK2_JUMP_HOLD = "方案二-跳A按住(ms)"   # 跳A(空格+左键同按)按住时长
     CONF_FREE_BREAK2_WAIT = "方案二-打断后等待(ms)"     # 跳A打断→combo第一下 的间隔
 
-    # 顶层配置太多, 全部按用途折叠成组(默认收起, 用到再展开)。分组开关一律用"▸ …(展开)"命名,
-    # 与普通功能开关(如"禁用技能大招(测试)")在视觉上区分。
+    # 顶层配置太多, 全部按用途折叠成组(默认收起, 用到再展开)。分组用 config_group() 声明,
+    # [lw] 界面上渲染成和任务卡片一样的可展开标题(见 src/lw/config_group_ui.py), 不是开关。
     #   基础触发 = 触发键/宏模式/触发方式/输入方式;
     #   实战调优参数 = 反击/后摇/主动闪避/轮数/技能前平A/脱战复查/让路 那几个秒数与比例旋钮;
     #   测试开关与测试键 = 各测试开关(闪避反击测试/禁用技能大招)与测试键(首平A/模拟闪避)。
-    CONF_GROUP_TRIGGER = "▸ 基础触发设置(展开)"   # 分组折叠开关: 触发键/宏模式/触发方式/输入方式
-    CONF_GROUP_SUPPORT_PREEMPTION = "▸ 辅助资源提权(展开)"
+    CONF_GROUP_TRIGGER = "基础触发设置"   # 折叠分组: 触发键/宏模式/触发方式/输入方式
+    CONF_GROUP_SUPPORT_PREEMPTION = "辅助资源提权"
     CONF_SUPPORT_SKILL_SWITCH = "辅助技能就绪是否切人"
     CONF_SUPPORT_SKILL_PREEMPTION = "辅助E是否提权"
     CONF_SUPPORT_ULTIMATE_PREEMPTION = "辅助Q是否提权"
     # [lw] Requiem and Zankou main-DPS axis settings, folded away by default.
-    CONF_GROUP_COAXIS = "▸ 安魂曲残虹合轴(展开)"
+    CONF_GROUP_COAXIS = "安魂曲残虹合轴"
     CONF_COAXIS_COMBAT_ENABLE = "实战启用合轴"
     CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT = "入场提前执行技能大招"
     CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT = "安魂曲真技能后固定切人位置"
@@ -230,12 +231,12 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION = "残虹声音闪避后普攻时长(s)"
     CONF_ORDINARY_DODGE_WAIT = "普通闪避等待(s)"
     CONF_REQUIEM_ORDINARY_DODGE_WAIT = "安魂曲普通闪避等待(s)"
-    CONF_GROUP_DODGE = "▸ 闪避反击设置(展开)"     # 分组折叠开关: 展开=闪避方式(下拉)+选闪双4a时的时序
-    CONF_GROUP_TUNING = "▸ 实战调优参数(展开)"    # 分组折叠开关
-    CONF_GROUP_TEST = "▸ 测试开关与测试键(展开)"   # 分组折叠开关
+    CONF_GROUP_DODGE = "闪避反击设置"     # 折叠分组: 展开=闪避方式(下拉)+选闪双4a时的时序
+    CONF_GROUP_TUNING = "实战调优参数"    # 折叠分组
+    CONF_GROUP_TEST = "测试开关与测试键"   # 折叠分组
     CONF_MANUAL_KEY_TRIGGERS = "启用手动触发按键"
     # [lw] 虚拟手柄共存实验: 不读取/隐藏实体手柄, 虚拟手柄摇杆始终中立, 只周期按 A。
-    CONF_GROUP_GAMEPAD = "▸ 虚拟手柄共存测试(展开)"
+    CONF_GROUP_GAMEPAD = "虚拟手柄共存测试"
     CONF_GAMEPAD_TEST = "启用虚拟手柄A键脉冲"
     CONF_GAMEPAD_INTERVAL = "虚拟手柄A键间隔(s)"
     GAMEPAD_TEST_HOLD_SECONDS = 0.08
@@ -419,73 +420,53 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "type": "drop_down",
                     "options": [self.MODE_RECORDED, self.MODE_SCHEME_A, self.MODE_SCHEME_LS],
                 },
-                # 方案四那5个时序配置用开关按钮折叠, 打开(True)才显示。
-                self.CONF_LS_EXPAND: {
-                    "sub_configs": {
-                        True: [
-                            self.CONF_LS_JUMP_AT, self.CONF_LS_JUMP_HOLD,
-                            self.CONF_LS_CLICK_HOLD, self.CONF_LS_CLICK_GAP,
-                            self.CONF_LS_TAIL,
-                        ],
-                    },
-                },
+                # 方案四那5个时序配置折叠成组, 展开才显示。
+                self.CONF_LS_EXPAND: config_group([
+                    self.CONF_LS_JUMP_AT, self.CONF_LS_JUMP_HOLD,
+                    self.CONF_LS_CLICK_HOLD, self.CONF_LS_CLICK_GAP,
+                    self.CONF_LS_TAIL,
+                ]),
                 # 基础触发组(折叠): 触发键/宏模式/触发方式/输入方式全收进来, 不再裸露顶层。
-                self.CONF_GROUP_TRIGGER: {
-                    "sub_configs": {
-                        True: [
-                            self.CONF_TRIGGER_KEY, self.CONF_MACRO_MODE,
-                            self.CONF_TRIGGER_MODE, self.CONF_INPUT_MODE,
-                        ],
-                    },
-                },
+                self.CONF_GROUP_TRIGGER: config_group([
+                    self.CONF_TRIGGER_KEY, self.CONF_MACRO_MODE,
+                    self.CONF_TRIGGER_MODE, self.CONF_INPUT_MODE,
+                ]),
                 # 顶层折叠: 分别控制辅助 E/Q 是否发布 LW preemptive claim。
-                self.CONF_GROUP_SUPPORT_PREEMPTION: {
-                    "sub_configs": {
-                        True: [
-                            self.CONF_SUPPORT_SKILL_SWITCH,
-                            self.CONF_SUPPORT_SKILL_PREEMPTION,
-                            self.CONF_SUPPORT_ULTIMATE_PREEMPTION,
-                        ],
-                    },
-                },
+                self.CONF_GROUP_SUPPORT_PREEMPTION: config_group([
+                    self.CONF_SUPPORT_SKILL_SWITCH,
+                    self.CONF_SUPPORT_SKILL_PREEMPTION,
+                    self.CONF_SUPPORT_ULTIMATE_PREEMPTION,
+                ]),
                 # [lw] Pair axis timings and its toggle key stay in one folded group.
-                self.CONF_GROUP_COAXIS: {
-                    "sub_configs": {
-                        True: [
-                            self.CONF_COAXIS_COMBAT_ENABLE,
-                            self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT,
-                            self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT,
-                            self.CONF_COAXIS_TRIGGER_KEY,
-                            self.CONF_COAXIS_REQUIEM_SWITCH_KEY,
-                            self.CONF_COAXIS_ZANKOU_SWITCH_KEY,
-                            self.CONF_COAXIS_REQUIEM_DURATION,
-                            self.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION,
-                            self.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
-                            self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION,
-                            self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT,
-                            self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL,
-                            self.CONF_COAXIS_ZANKOU_HOLD_DURATION,
-                            self.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
-                            self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
-                            self.CONF_ORDINARY_DODGE_WAIT,
-                            self.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
-                        ],
-                    },
-                },
+                self.CONF_GROUP_COAXIS: config_group([
+                    self.CONF_COAXIS_COMBAT_ENABLE,
+                    self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT,
+                    self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT,
+                    self.CONF_COAXIS_TRIGGER_KEY,
+                    self.CONF_COAXIS_REQUIEM_SWITCH_KEY,
+                    self.CONF_COAXIS_ZANKOU_SWITCH_KEY,
+                    self.CONF_COAXIS_REQUIEM_DURATION,
+                    self.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION,
+                    self.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
+                    self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION,
+                    self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT,
+                    self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL,
+                    self.CONF_COAXIS_ZANKOU_HOLD_DURATION,
+                    self.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
+                    self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
+                    self.CONF_ORDINARY_DODGE_WAIT,
+                    self.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
+                ]),
                 self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: {
                     "sub_configs": {
                         True: [self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS],
                     },
                 },
                 # 免费技能组(折叠): 打断时序 + 测试键 全放一起(测试键原散在"测试开关组")。
-                self.CONF_FREE_BREAK_EXPAND: {
-                    "sub_configs": {
-                        True: [
-                            self.CONF_FREE_BREAK_MODE,
-                            self.CONF_FREE_BREAK_TEST_KEY, self.CONF_FREE_SKILL_KEY,
-                        ],
-                    },
-                },
+                self.CONF_FREE_BREAK_EXPAND: config_group([
+                    self.CONF_FREE_BREAK_MODE,
+                    self.CONF_FREE_BREAK_TEST_KEY, self.CONF_FREE_SKILL_KEY,
+                ]),
                 # 打断方式(下拉)→ 选方案一显示闪避那3个时序, 选方案二显示跳A那3个时序(各自独立)。
                 self.CONF_FREE_BREAK_MODE: {
                     "type": "drop_down",
@@ -504,43 +485,29 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 # 实战调优参数折叠: 开(True)才显示那几个秒数/比例旋钮(收起不影响其值生效)。
                 # 实战调优只留"两方案通用"的; 方案一专属的(反击强制平A/主动闪避次数/间隔/后摇等待)
                 # 已移到 CONF_DODGE_STYLE=方案一 的 sub_configs, 选方案一才显示。
-                self.CONF_GROUP_TUNING: {
-                    "sub_configs": {
-                        True: [
-                            self.CONF_COMBO_ROUNDS, self.CONF_ENGAGE_ATTACK,
-                            self.CONF_COMBO_COMBAT_CHECK, self.CONF_COMBO_BREAK_FOR_SKILL,
-                            self.CONF_G_SKILL_ENABLE, self.CONF_G_SKILL_DELAY,
-                        ],
-                    },
-                },
+                self.CONF_GROUP_TUNING: config_group([
+                    self.CONF_COMBO_ROUNDS, self.CONF_ENGAGE_ATTACK,
+                    self.CONF_COMBO_COMBAT_CHECK, self.CONF_COMBO_BREAK_FOR_SKILL,
+                    self.CONF_G_SKILL_ENABLE, self.CONF_G_SKILL_DELAY,
+                ]),
                 # 测试开关与测试键折叠: 开(True)才显示(收起不影响其值生效; 禁用技能大招默认关)。
                 # 免费技能测试键已移到"免费技能组", 这里不再重复。
-                self.CONF_GROUP_TEST: {
-                    "sub_configs": {
-                        True: [
-                            self.CONF_MANUAL_KEY_TRIGGERS, self.CONF_DODGE_TEST,
-                            self.CONF_DISABLE_SKILLS,
-                            self.CONF_FIRST_ATTACK_TEST_KEY, self.CONF_DODGE_TEST_KEY,
-                        ],
-                    },
-                },
+                self.CONF_GROUP_TEST: config_group([
+                    self.CONF_MANUAL_KEY_TRIGGERS, self.CONF_DODGE_TEST,
+                    self.CONF_DISABLE_SKILLS,
+                    self.CONF_FIRST_ATTACK_TEST_KEY, self.CONF_DODGE_TEST_KEY,
+                ]),
                 # [lw] 单独折叠，避免实验功能裸露在安魂曲配置最外层。
-                self.CONF_GROUP_GAMEPAD: {
-                    "sub_configs": {
-                        True: [
-                            self.CONF_GAMEPAD_TEST,
-                            self.CONF_GAMEPAD_INTERVAL,
-                        ],
-                    },
-                },
+                self.CONF_GROUP_GAMEPAD: config_group([
+                    self.CONF_GAMEPAD_TEST,
+                    self.CONF_GAMEPAD_INTERVAL,
+                ]),
                 self.CONF_TRIGGER_MODE: {
                     "type": "drop_down",
                     "options": [self.TRIGGER_HOLD, self.TRIGGER_TOGGLE],
                 },
                 # 闪避反击设置组(折叠): 展开后才显示"闪避反击方式"下拉。
-                self.CONF_GROUP_DODGE: {
-                    "sub_configs": {True: [self.CONF_DODGE_STYLE]},
-                },
+                self.CONF_GROUP_DODGE: config_group([self.CONF_DODGE_STYLE]),
                 self.CONF_DODGE_STYLE: {
                     "type": "drop_down",
                     "options": [self.STYLE_CURRENT, self.STYLE_SCHEME_B],
@@ -587,7 +554,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_G_SKILL_DELAY: "按G后等这么久(ms)再交回决策; 用来测按下G的后摇(后面好接大招)",
                 self.CONF_DODGE_TEST: "开=每次声音闪避走一整轮(关自动战斗后调时间用)",
                 self.CONF_DISABLE_SKILLS: "开=所有LW角色模板不放E/Q; G和合轴不受影响(测手感/闪避用); 刷本记得关",
-                self.CONF_GROUP_DODGE: "▸ 分组折叠: 展开闪避反击设置(闪避方式 + 选闪双4a后的7个时序)",
+                self.CONF_GROUP_DODGE: "闪避方式 + 选闪双4a后的7个时序",
                 self.CONF_DODGE_STYLE: "闪避反击方式: 方案一 / 闪双4a",
                 self.CONF_D4_FRONT: "双4a 前段平A毫秒(打第一个4a); 太短会接不出第二个4a",
                 self.CONF_D4_JUMP_HOLD: "双4a 跳A空格+左键同按毫秒(代替闪避)",
@@ -598,7 +565,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_D4_TAIL_FILL: "双4a 闪避后补平A毫秒(替换延迟; 平A节拍复用光速4a连点按住/抬起)",
                 self.CONF_FIRST_ATTACK_TEST_KEY: "按此键→闪避→等后摇→打一个平A(调后摇用); 留空=关",
                 self.CONF_DODGE_TEST_KEY: "按此键=模拟一次声音闪避走整轮; 留空=关",
-                self.CONF_LS_EXPAND: "▸ 分组折叠: 展开方案四(光速4a)5个时序配置(默认收起)",
+                self.CONF_LS_EXPAND: "方案四(光速4a)的5个时序配置",
                 self.CONF_LS_JUMP_AT: "方案四 跳A时机毫秒(核心); 大世界约1390其他约1470; 跳早出1a",
                 self.CONF_LS_JUMP_HOLD: "方案四 跳A左键+空格同按毫秒(参考18)",
                 self.CONF_LS_CLICK_HOLD: "方案四 连点每下左键按住毫秒",
@@ -606,7 +573,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_LS_TAIL: "方案四 跳A后收尾毫秒(连点节拍继续平A填满; 参考218)",
                 self.CONF_FREE_BREAK_TEST_KEY: "按此键=发技能键放(免费)技能→闪避打断a5→combo; 需游戏里把技能设成免费技能; 留空=关",
                 self.CONF_FREE_SKILL_KEY: "测试放免费技能用的技能键(填游戏里的技能键, 如e)",
-                self.CONF_FREE_BREAK_EXPAND: "▸ 分组折叠: 展开免费技能设置(打断方式+对应方案时序 + 免费技测试键/技能键)",
+                self.CONF_FREE_BREAK_EXPAND: "打断方式 + 对应方案时序 + 免费技测试键/技能键",
                 self.CONF_FREE_BREAK_MODE: "免费技能打断a5的方式: 方案一(闪避lshift) / 方案二(跳A=空格+左键同按)",
                 self.CONF_FREE_BREAK_DELAY: "方案一 免费技能放出→按闪避打断 之间等这么久(核心; 早了打断免费技能/晚了a5已出)",
                 self.CONF_FREE_BREAK_JUMP_HOLD: "方案一 打断用的闪避键按住毫秒",
@@ -614,12 +581,12 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_FREE_BREAK2_DELAY: "方案二 免费技能放出→跳A打断 之间等这么久(ms)",
                 self.CONF_FREE_BREAK2_JUMP_HOLD: "方案二 跳A(空格+左键同按)按住毫秒",
                 self.CONF_FREE_BREAK2_WAIT: "方案二 跳A打断→combo第一下 的间隔毫秒(可填0)",
-                self.CONF_GROUP_TRIGGER: "▸ 分组折叠: 展开基础触发设置(触发键/宏模式/触发方式/输入方式)",
-                self.CONF_GROUP_SUPPORT_PREEMPTION: "▸ 分组折叠: 展开辅助技能切人以及 Q/E 资源提权开关",
+                self.CONF_GROUP_TRIGGER: "触发键/宏模式/触发方式/输入方式",
+                self.CONF_GROUP_SUPPORT_PREEMPTION: "辅助技能切人以及 Q/E 资源提权开关",
                 self.CONF_SUPPORT_SKILL_SWITCH: "开=辅助 E 推算就绪时允许主动切人; 关=不因辅助 E 就绪切人",
                 self.CONF_SUPPORT_SKILL_PREEMPTION: "开=允许切人时, 辅助 E 就绪会在环合前抢占; 关=仅按普通评分切人",
                 self.CONF_SUPPORT_ULTIMATE_PREEMPTION: "开=辅助 Q 待铺时在环合前抢占; 关=仅按普通评分参与切人",
-                self.CONF_GROUP_COAXIS: "▸ 分组折叠: 展开安魂曲主C与残虹主C的合轴触发键和时序",
+                self.CONF_GROUP_COAXIS: "安魂曲主C与残虹主C的合轴触发键和时序",
                 self.CONF_COAXIS_COMBAT_ENABLE: "开=两个主C模板同队时自动进入实战合轴; 关=仅保留按键测试",
                 self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT: (
                     "开=普通入场保持角色原顺序立即执行, 环合入场1s后由planner提前推进原入场流程; "
@@ -669,15 +636,15 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "仅安魂曲主C使用: 从程序首次按Shift开始等待完美闪避声音; "
                     "超时判为普通闪避, 等待期间不攻击; 合轴时恢复纯普攻, 非合轴时接combo"
                 ),
-                self.CONF_GROUP_TUNING: "▸ 分组折叠: 展开实战调优参数(反击平A/后摇/主动闪避/轮数/技能前平A/脱战复查/让路)",
+                self.CONF_GROUP_TUNING: "combo轮数/技能前平A/脱战复查/让路/G技能",
                 self.CONF_GROUP_TEST: (
-                    "▸ 分组折叠: 展开手动按键总开关, 闪避反击测试/禁用技能大招/首平A/模拟闪避"
+                    "手动按键总开关, 闪避反击测试/禁用技能大招/首平A/模拟闪避"
                 ),
                 self.CONF_MANUAL_KEY_TRIGGERS: (
                     "开=允许鼠标侧键4A, 合轴及所有手动测试按键; "
                     "关=统一忽略这些手动按键"
                 ),
-                self.CONF_GROUP_GAMEPAD: "▸ 分组折叠: 展开实体手柄与虚拟手柄共存测试",
+                self.CONF_GROUP_GAMEPAD: "实体手柄与虚拟手柄共存测试",
                 self.CONF_GAMEPAD_TEST: "开=虚拟Xbox手柄每隔数秒按一次A；不接管、不隐藏实体手柄",
                 self.CONF_GAMEPAD_INTERVAL: "虚拟手柄两次A键测试脉冲之间的秒数",
                 self.CONF_PRESET_SLOT: "选择配置档位(1~4), 存取/导入导出都对该档位",
@@ -1025,9 +992,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
 
     # ---- 配置档位: 界面内保存/载入 1~4 套 + 导出/从文件导入 ----
     def _preset_keys(self):
-        """参与存取的配置键: 除下划线内部键和"档位选择器"本身外的全部。"""
+        """参与存取的配置键: 除下划线内部键, "档位选择器"本身和折叠分组展开状态外的全部。"""
+        excluded = {self.CONF_PRESET_SLOT} | config_group_keys(self.config_type)
         return [k for k in self.default_config
-                if not k.startswith("_") and k != self.CONF_PRESET_SLOT]
+                if not k.startswith("_") and k not in excluded]
 
     def _current_slot(self):
         return str(self.config.get(self.CONF_PRESET_SLOT, "1"))
