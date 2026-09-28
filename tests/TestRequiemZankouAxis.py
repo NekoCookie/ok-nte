@@ -461,6 +461,42 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertEqual(entry.send(first_result).name, "ZankouMainDps_coordinated_axis")
         zankou._wait_for_awakened_second_ultimate.assert_not_called()
 
+    def test_zankou_consumed_ultimate_without_observed_animation_finishes_as_cast(self):
+        _requiem, zankou, _context = make_combat_pair(combat_enabled=True)
+        released = {
+            "clicked": True,
+            "action_time": 12.5,
+            "animation_start": 0,
+            "status": "released",
+            "timed_out": False,
+        }
+
+        with mock.patch.object(
+            Zankou, "_finish_ultimate_action", return_value=True
+        ) as finish:
+            self.assertTrue(zankou._finish_ultimate_action(released, True))
+
+        finished = finish.call_args.args[0]
+        self.assertEqual(finished["status"], "animation")
+        self.assertEqual(finished["animation_start"], 12.5)
+        self.assertTrue(finished["clicked"])
+        self.assertEqual(released["status"], "released")
+
+    def test_zankou_unsent_or_animated_ultimate_results_are_unchanged(self):
+        _requiem, zankou, _context = make_combat_pair(combat_enabled=True)
+        results = [
+            {"clicked": False, "action_time": 0, "animation_start": 0, "status": "unavailable"},
+            {"clicked": False, "action_time": 0, "animation_start": 0, "status": "released"},
+            {"clicked": True, "action_time": 3.0, "animation_start": 3.0, "status": "animation"},
+        ]
+
+        for result in results:
+            with mock.patch.object(
+                Zankou, "_finish_ultimate_action", return_value=False
+            ) as finish:
+                zankou._finish_ultimate_action(result, True)
+            self.assertIs(finish.call_args.args[0], result)
+
     def test_zankou_second_ultimate_poll_uses_bounded_point_one_second_cadence(self):
         _requiem, zankou, _context = make_combat_pair(combat_enabled=True)
         zankou.logger = mock.MagicMock()

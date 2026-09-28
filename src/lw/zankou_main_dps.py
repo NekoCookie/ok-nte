@@ -1,5 +1,7 @@
 """[lw] Zankou main-DPS template backed by the current RU implementation."""
 
+import time
+
 from src.char.Zankou import Zankou
 from src.combat.planner import ActionSlot, ActionTag
 from src.lw.combat_test_policy import LWCombatTestPolicyMixin
@@ -66,6 +68,27 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
         if self._has_coordinated_axis_partner():
             click = False
         return super()._wait_ultimate_unfreeze(start=start, click=click)
+
+    def _finish_ultimate_action(self, result, send_click):
+        """Treat a consumed Q whose animation was not observed as a cast.
+
+        A combat re-check right after the Q input can block (boss HUD hidden by the
+        cutscene triggers retargeting) for the whole animation. RU then sees the team
+        HUD back with Q unavailable and reports "released", which skipped the awakened
+        second Q. Q only becomes unavailable after the key was sent, so finish it
+        through the normal cast settlement instead.
+        """
+
+        if result.get("status") == "released" and result.get("clicked"):
+            self.logger.warning(
+                "zankou ultimate consumed without an observed animation; treating as cast"
+            )
+            result = dict(
+                result,
+                status="animation",
+                animation_start=result.get("action_time") or time.time(),
+            )
+        return super()._finish_ultimate_action(result, send_click)
 
     def _wait_for_awakened_second_ultimate(self) -> bool:
         deadline = self.now() + self.AWAKENED_SECOND_ULTIMATE_WAIT
