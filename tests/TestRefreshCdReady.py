@@ -146,5 +146,29 @@ class TestRefreshCdReady(unittest.TestCase):
         self.assertEqual(self.skill_cds()["skill_ocr_raw"], 3.0)
 
 
+class TestSwitchInCdTruth(unittest.TestCase):
+    """cd-truth 对照: 切上场后自己放了技能, 在场读数是新 CD, 不算推算切早。"""
+
+    def _task(self, press_at):
+        t = BaseCombatTask.__new__(BaseCombatTask)
+        t.log_info = mock.MagicMock()
+        t.log_debug = mock.MagicMock()
+        t.chars = [mock.Mock(index=IDX, lw_last_skill_press_at=press_at)]
+        t.main_dps_overlapping = mock.MagicMock(return_value=False)
+        t._switch_in_pending = {"index": IDX, "est": {"skill": -1.0}, "at": 100.0}
+        return t
+
+    def _report(self, task):
+        cds = {"skill": 15.9, "skill_time": 101.0}
+        task._report_switch_in_cd_truth(IDX, cds, 101.0)
+        return task.log_info.call_args.args[0]
+
+    def test_own_cast_after_switch_in_is_not_reported_as_early_switch(self):
+        self.assertIn("切入即放招", self._report(self._task(press_at=100.3)))
+
+    def test_ready_estimate_with_cooldown_on_entry_is_early_switch(self):
+        self.assertIn("切早", self._report(self._task(press_at=90.0)))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -103,6 +103,36 @@ class ResourceSupportMixin:
             self.logger.info("support skill used while ultimate remains available")
         self.resource_cache_confirmed = self.has_resource()
 
+    RESOURCE_DIAG_INTERVAL = 2.0
+
+    def _log_resource_decision_diag(self, needs_probe, claims):
+        """CD 对照诊断: 下场且推算技能已就绪/将就绪时, 记下 planner 评估这一刻的判断依据。
+
+        用来定位"推算已就绪却没发技能就绪诉求"。每个角色节流, 只在
+        SKILL_CD_TRUTH_DIAG 打开时运行。
+        """
+
+        task = getattr(self, "task", None)
+        if getattr(task, "SKILL_CD_TRUTH_DIAG", False) is not True:
+            return
+        if getattr(self, "is_current_char", False) or not self.has_cd_cache():
+            return
+        skill_cd = task.get_cd("skill", self.index)
+        if skill_cd > self.SKILL_ABOUT_READY_WAIT:
+            return
+        now = time.time()
+        if now - getattr(self, "_lw_resource_diag_at", 0.0) < self.RESOURCE_DIAG_INTERVAL:
+            return
+        self._lw_resource_diag_at = now
+        claim = claims[0].reason if claims else "none"
+        self.logger.info(
+            f"support-diag {self}: skill_est={skill_cd:.1f} "
+            f"skill_resource={self.has_skill_resource()} "
+            f"switch_cfg={self.should_switch_for_ready_skill()} "
+            f"recent_use={self.recently_used_resource()} "
+            f"ult_ready={self.ultimate_ready_now()} probe={needs_probe} claim={claim}"
+        )
+
     def skill_about_ready_on_field(self):
         """在场且技能差不到 SKILL_ABOUT_READY_WAIT 就绪: 值得执行技能动作留场等放。"""
 
@@ -183,6 +213,7 @@ class ResourceSupportMixin:
             priority_ready=lambda _: self.skill_priority_ready(),
         )
         claims = self.resource_field_claims(needs_probe)
+        self._log_resource_decision_diag(needs_probe, claims)
 
         def entry():
             used_ultimate = bool((yield ultimate))

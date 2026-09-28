@@ -228,6 +228,26 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
             ResourceSupportMixin.needs_resource_probe(self._probe_candidate(False, ult_ready=True))
         )
 
+    def test_resource_decision_diag_logs_ready_off_field_skill_once_per_interval(self):
+        c = make_buff(skill_ready=True)
+        c.is_current_char = False
+        c.has_cd_cache = lambda: True
+        c.should_switch_for_ready_skill = lambda: True
+        c.task = mock.MagicMock()
+        c.task.SKILL_CD_TRUTH_DIAG = True
+        c.task.get_cd.return_value = -4.6
+        c.logger = mock.MagicMock()
+
+        c._log_resource_decision_diag(False, [])
+        message = c.logger.info.call_args.args[0]
+        self.assertIn("skill_est=-4.6", message)
+        self.assertIn("skill_resource=True", message)
+        self.assertIn("claim=none", message)
+
+        c.logger.info.reset_mock()
+        c._log_resource_decision_diag(False, [])
+        c.logger.info.assert_not_called()
+
     def test_skill_action_runs_on_field_when_skill_is_about_ready(self):
         # 在场差不到 1s: 技能动作要执行, 才能进入 _cast_skill_if_about_ready 留场等放。
         c = make_buff(skill_ready=False)

@@ -560,6 +560,13 @@ class CombatExtMixin(_TaskProxy):
 
     # ---------- CD 诊断(SKILL_CD_DIAG) ----------
 
+    def _lw_skill_press_at(self, index):
+        char = next(
+            (c for c in (self.chars or ()) if c is not None and c.index == index),
+            None,
+        )
+        return getattr(char, "lw_last_skill_press_at", 0.0)
+
     def _capture_switch_in_estimate(self, index, cds):
         """临时诊断:切上场瞬间,用覆盖前的下场锚点算出"下场最后推算 CD",挂起待对照。验证完即删。"""
         try:
@@ -592,7 +599,7 @@ class CombatExtMixin(_TaskProxy):
                 if e_rdy and not r_rdy:
                     # 切入后该角色自己把技能放出去了(skill_cast_at 晚于切入时刻)→ 推算"可用"其实是对的,
                     # "在场真实"读到的是它自己放招后的CD, 不是切入前就存在的CD → 不是空切(诊断读基线读晚了)。
-                    cast_at = cds.get(box + "_cast_at", 0)
+                    cast_at = max(cds.get(box + "_cast_at", 0), self._lw_skill_press_at(index))
                     cast_after_switch_in = box == "skill" and cast_at >= pending.get("at", 0)
                     # 主C overlap 强制切人拉上来的(非因资源)→ 不算CD误报, 单独标注。
                     if box == "skill" and self.main_dps_overlapping():

@@ -48,6 +48,9 @@ class CharExtMixin(_CharProxy):
     def lw_after_skill_action(self, result, clicked, animated, down_time):
         """Apply LW dodge-settlement only after a non-animated successful skill."""
 
+        if clicked:
+            # CD 对照诊断用: 切上场后自己放了技能, 在场读数就是新 CD, 不能拿来对照推算。
+            self.lw_last_skill_press_at = result.get("action_time") or time.time()
         if not clicked or animated:
             return
         cooldown, max_duration = getattr(
