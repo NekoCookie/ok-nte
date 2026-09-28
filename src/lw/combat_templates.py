@@ -134,7 +134,7 @@ class BuffSupport(LWCombatTestPolicyMixin, ResourceSupportMixin, BaseChar):
     """增益辅助模板：确认有资源时先入场铺 buff，再把输出窗口交给主 C。"""
 
     def _support_setting_enabled(self, config_key):
-        """读取安魂曲配置的辅助调度开关; 旧配置或非安魂曲队伍保持原行为。"""
+        """读取角色自定义配置的辅助调度开关; 旧配置或非安魂曲队伍保持原行为。"""
         task = getattr(self, "task", None)
         get_task_by_class = getattr(task, "get_task_by_class", None)
         if not callable(get_task_by_class):

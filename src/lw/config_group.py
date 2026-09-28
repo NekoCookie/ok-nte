@@ -19,3 +19,27 @@ def is_config_group(the_type):
 
 def config_group_keys(config_type):
     return {key for key, the_type in (config_type or {}).items() if is_config_group(the_type)}
+
+
+def config_group_depth(config_type, key):
+    """How many ``sub_configs`` parents ``key`` has, counted only when a folded group is among them.
+
+    The config card indents every sub config by a single fixed step, so nested groups would
+    render flat. The Qt header adds ``depth - 1`` extra steps to restore the hierarchy.
+    """
+    parents = {}
+    for parent, the_type in (config_type or {}).items():
+        if not isinstance(the_type, dict) or not isinstance(the_type.get("sub_configs"), dict):
+            continue
+        for children in the_type["sub_configs"].values():
+            for child in [children] if isinstance(children, str) else children or []:
+                parents.setdefault(child, parent)
+    depth, in_group, seen = 0, False, {key}
+    while key in parents:
+        key = parents[key]
+        if key in seen:
+            break
+        seen.add(key)
+        depth += 1
+        in_group = in_group or is_config_group(config_type.get(key))
+    return depth if in_group else 0

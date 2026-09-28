@@ -1,4 +1,5 @@
 import ctypes
+import json
 import os
 import shutil
 import time
@@ -12,6 +13,7 @@ from ok.util.file import get_relative_path
 from src.combat import requiem_combo
 from src.lw.activity import ActivityController, configure_activity  # [lw]
 from src.lw.config_group import config_group, config_group_keys  # [lw]
+from src.lw import nanally_super_jump as nanally  # [lw]
 from src.lw.requiem_zankou_axis import (
     CoordinatedAxisSettings,
     RequiemZankouAxisTester,
@@ -145,15 +147,19 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_FREE_BREAK_TEST_KEY = "免费技能后接combo测试键"
     CONF_FREE_SKILL_KEY = "技能键(测试放免费技能用)"
 
-    # 顶层配置太多, 全部按用途折叠成组(默认收起, 用到再展开)。分组用 config_group() 声明,
-    # [lw] 界面上渲染成和任务卡片一样的可展开标题(见 src/lw/config_group_ui.py), 不是开关。
-    CONF_GROUP_TRIGGER = "基础触发设置"   # 折叠分组: 触发键/触发方式
+    # 顶层按角色分区: 通用 / 安魂曲 / 残虹 / 娜娜莉, 分区内再按用途折叠成组(默认收起)。
+    # 分组用 config_group() 声明, [lw] 界面上渲染成和任务卡片一样的可展开标题
+    # (见 src/lw/config_group_ui.py), 不是开关。
+    CONF_SECTION_GENERAL = "通用配置"
+    CONF_SECTION_REQUIEM = "安魂曲配置"
+    CONF_SECTION_ZANKOU = "残虹配置"     # 含安魂曲残虹合轴
+    CONF_SECTION_NANALLY = "娜娜莉配置"
+    CONF_GROUP_TRIGGER = "4A宏触发设置"   # 折叠分组: 触发键/触发方式
     CONF_GROUP_SUPPORT_PREEMPTION = "辅助资源提权"
     CONF_SUPPORT_SKILL_SWITCH = "辅助技能就绪是否切人"
     CONF_SUPPORT_SKILL_PREEMPTION = "辅助E是否提权"
     CONF_SUPPORT_ULTIMATE_PREEMPTION = "辅助Q是否提权"
-    # [lw] Requiem and Zankou main-DPS axis settings, folded away by default.
-    CONF_GROUP_COAXIS = "安魂曲残虹合轴"
+    # [lw] Requiem and Zankou main-DPS axis settings live in the Zankou section.
     CONF_COAXIS_COMBAT_ENABLE = "实战启用合轴"
     CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT = "入场提前执行技能大招"
     CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT = "安魂曲真技能后固定切人位置"
@@ -174,7 +180,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_REQUIEM_ORDINARY_DODGE_WAIT = "安魂曲普通闪避等待(s)"
     CONF_GROUP_DODGE = "闪避反击设置"     # 折叠分组: 闪双4a时序
     CONF_GROUP_TUNING = "实战调优参数"    # 折叠分组
-    CONF_GROUP_TEST = "测试开关与测试键"   # 折叠分组
+    CONF_GROUP_DODGE_TEST = "闪避反击测试"   # 折叠分组: 测试开关 + 模拟测试键
     CONF_MANUAL_KEY_TRIGGERS = "启用手动触发按键"
 
     # 配置档位: 界面内保存/载入 1~4 套配置(存在 PRESET_FILE), 外加导出/从文件导入。
@@ -184,7 +190,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_PRESET_FILE = "配置文件"       # 两个按钮: 导出到文件 / 从文件导入
     PRESET_FILE = "configs/RequiemPresets.json"  # 4 套档位存这里
     EXCHANGE_DIRECTORY = "data_export"
-    EXCHANGE_FILE_NAME = "安魂曲配置.json"
+    EXCHANGE_FILE_NAME = "角色自定义配置.json"
 
     # combo 的精确时序统一放在 src/combat/requiem_combo.py(宏与实战主C共用, 改一处两边同步)。
     # 一轮结束后, 若仍按着触发键, 停这么久再进下一轮(对齐参考的 Sleep(200))。
@@ -217,7 +223,12 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             {
                 # 默认值 = longwei 实测调优后的最优解(2026-07-05)。别的机器哪怕微调, 也从这套起,
                 # 而不是最初那套(如光速4a跳A时机1470根本触发不了)。
-                # 基础触发组(折叠): 触发键/触发方式
+                # 顶层分区(折叠), 顺序即界面顺序
+                self.CONF_SECTION_GENERAL: False,
+                self.CONF_SECTION_REQUIEM: False,
+                self.CONF_SECTION_ZANKOU: False,
+                self.CONF_SECTION_NANALLY: False,
+                # 4A宏触发组(折叠): 触发键/触发方式
                 self.CONF_GROUP_TRIGGER: False,
                 self.CONF_TRIGGER_KEY: "mouse5",
                 self.CONF_TRIGGER_MODE: self.TRIGGER_HOLD,
@@ -227,7 +238,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_SUPPORT_SKILL_PREEMPTION: True,
                 self.CONF_SUPPORT_ULTIMATE_PREEMPTION: True,
                 # [lw] Pair-axis testing and default-off automatic-combat integration.
-                self.CONF_GROUP_COAXIS: False,
                 self.CONF_COAXIS_COMBAT_ENABLE: False,
                 self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT: False,
                 self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT: "关闭",
@@ -275,7 +285,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_G_SKILL_ENABLE: False,
                 self.CONF_G_SKILL_DELAY: 300,
                 # 测试开关与测试键(折叠, 默认收起)
-                self.CONF_GROUP_TEST: False,
+                self.CONF_GROUP_DODGE_TEST: False,
                 self.CONF_MANUAL_KEY_TRIGGERS: False,
                 self.CONF_DODGE_TEST: False,
                 self.CONF_DISABLE_SKILLS: False,
@@ -306,10 +316,27 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     self.CONF_SUPPORT_SKILL_PREEMPTION,
                     self.CONF_SUPPORT_ULTIMATE_PREEMPTION,
                 ]),
-                # [lw] Pair axis timings and its toggle key stay in one folded group.
-                self.CONF_GROUP_COAXIS: config_group([
-                    self.CONF_COAXIS_COMBAT_ENABLE,
+                # 通用: 所有角色模板共用的切人/入场/闪避设置 + 手动按键总开关与测试开关。
+                self.CONF_SECTION_GENERAL: config_group([
+                    self.CONF_GROUP_SUPPORT_PREEMPTION,
                     self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT,
+                    self.CONF_ORDINARY_DODGE_WAIT,
+                    self.CONF_MANUAL_KEY_TRIGGERS,
+                    self.CONF_DISABLE_SKILLS,
+                ]),
+                # 安魂曲: 4A宏, 实战 combo/闪双4a/免费技能时序, 以及它的测试。
+                self.CONF_SECTION_REQUIEM: config_group([
+                    self.CONF_GROUP_TRIGGER,
+                    self.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
+                    self.CONF_GROUP_DODGE,
+                    self.CONF_LS_EXPAND,
+                    self.CONF_FREE_BREAK_EXPAND,
+                    self.CONF_GROUP_TUNING,
+                    self.CONF_GROUP_DODGE_TEST,
+                ]),
+                # [lw] 残虹: 安魂曲残虹合轴的实战开关, 按键测试和时序。
+                self.CONF_SECTION_ZANKOU: config_group([
+                    self.CONF_COAXIS_COMBAT_ENABLE,
                     self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT,
                     self.CONF_COAXIS_TRIGGER_KEY,
                     self.CONF_COAXIS_REQUIEM_SWITCH_KEY,
@@ -323,9 +350,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     self.CONF_COAXIS_ZANKOU_HOLD_DURATION,
                     self.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
                     self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
-                    self.CONF_ORDINARY_DODGE_WAIT,
-                    self.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
                 ]),
+                # [lw] 娜娜莉: 超级跳宏(原独立任务"娜娜莉超级跳"合并进来)。
+                self.CONF_SECTION_NANALLY: config_group(nanally.KEYS),
                 self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: {
                     "sub_configs": {
                         True: [self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS],
@@ -343,11 +370,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     self.CONF_COMBO_COMBAT_CHECK, self.CONF_COMBO_BREAK_FOR_SKILL,
                     self.CONF_G_SKILL_ENABLE, self.CONF_G_SKILL_DELAY,
                 ]),
-                # 测试开关与测试键折叠: 展开才显示(收起不影响其值生效; 禁用技能大招默认关)。
-                # 免费技能测试键在"免费技能组", 这里不再重复。
-                self.CONF_GROUP_TEST: config_group([
-                    self.CONF_MANUAL_KEY_TRIGGERS, self.CONF_DODGE_TEST,
-                    self.CONF_DISABLE_SKILLS, self.CONF_DODGE_TEST_KEY,
+                # 安魂曲闪避反击测试: 声音闪避测试开关 + 模拟测试键。
+                self.CONF_GROUP_DODGE_TEST: config_group([
+                    self.CONF_DODGE_TEST, self.CONF_DODGE_TEST_KEY,
                 ]),
                 self.CONF_TRIGGER_MODE: {
                     "type": "drop_down",
@@ -393,12 +418,15 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_FREE_BREAK_DELAY: "免费技能放出→按闪避打断 之间等这么久(核心; 早了打断免费技能/晚了a5已出)",
                 self.CONF_FREE_BREAK_JUMP_HOLD: "打断用的闪避键按住毫秒",
                 self.CONF_FREE_BREAK_WAIT: "闪避打断→combo第一下 的间隔毫秒(可填0)",
-                self.CONF_GROUP_TRIGGER: "触发键/触发方式",
+                self.CONF_SECTION_GENERAL: "所有角色共用: 辅助资源提权, 入场技能, 普通闪避等待, 手动按键总开关, 禁用技能大招",
+                self.CONF_SECTION_REQUIEM: "安魂曲4A宏, 实战combo/闪双4a/免费技能时序与测试",
+                self.CONF_SECTION_ZANKOU: "安魂曲残虹合轴: 实战开关, 按键测试与时序",
+                self.CONF_SECTION_NANALLY: "娜娜莉超级跳宏",
+                self.CONF_GROUP_TRIGGER: "侧键4A宏的触发键/触发方式",
                 self.CONF_GROUP_SUPPORT_PREEMPTION: "辅助技能切人以及 Q/E 资源提权开关",
                 self.CONF_SUPPORT_SKILL_SWITCH: "开=辅助 E 推算就绪时允许主动切人; 关=不因辅助 E 就绪切人",
                 self.CONF_SUPPORT_SKILL_PREEMPTION: "开=允许切人时, 辅助 E 就绪会在环合前抢占; 关=仅按普通评分切人",
                 self.CONF_SUPPORT_ULTIMATE_PREEMPTION: "开=辅助 Q 待铺时在环合前抢占; 关=仅按普通评分参与切人",
-                self.CONF_GROUP_COAXIS: "安魂曲主C与残虹主C的合轴触发键和时序",
                 self.CONF_COAXIS_COMBAT_ENABLE: "开=两个主C模板同队时自动进入实战合轴; 关=仅保留按键测试",
                 self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT: (
                     "开=普通入场保持角色原顺序立即执行, 环合入场1s后由planner提前推进原入场流程; "
@@ -449,14 +477,15 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "超时判为普通闪避, 等待期间不攻击; 合轴时恢复纯普攻, 非合轴时接combo"
                 ),
                 self.CONF_GROUP_TUNING: "combo轮数/技能前平A/脱战复查/让路/G技能",
-                self.CONF_GROUP_TEST: "手动按键总开关, 闪避反击测试/禁用技能大招/模拟闪避",
+                self.CONF_GROUP_DODGE_TEST: "声音闪避测试开关 + 模拟闪避测试键(需开通用里的手动按键总开关)",
                 self.CONF_MANUAL_KEY_TRIGGERS: (
                     "开=允许鼠标侧键4A, 合轴及所有手动测试按键; "
                     "关=统一忽略这些手动按键"
                 ),
             }
         )
-        self.name = "安魂曲配置"
+        self.name = "角色自定义配置"
+        nanally.configure_nanally_super_jump(self)  # [lw] Former standalone task.
         configure_activity(self)  # [lw] Independent top-level activity group.
         # 配置档位组放在最后(活动配置之后)。
         self.default_config.update({self.CONF_GROUP_PRESET: False, self.CONF_PRESET_SLOT: "1"})
@@ -492,7 +521,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             }
         )
         self._activity = ActivityController(self)  # [lw]
-        self.description = "安魂曲光速4a宏 / 实战闪双4a等配置; 含闪避反击测试开关"
+        self._nanally = nanally.NanallySuperJump(self)  # [lw]
+        self.description = "按角色分区的自定义配置: 通用 / 安魂曲 / 残虹 / 娜娜莉, 外加活动辅助"
         self._submitted = False
         self._key_was_down = False
         self._macro_running = False
@@ -522,7 +552,21 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.logger.warning(
                     f"failed to migrate legacy Requiem config ({type(e).__name__})"
                 )
+        nanally_migrated = self._config_file_has(current_file, nanally.ENABLE)
         super().load_config()
+        if not nanally_migrated:  # [lw] 首次合并时沿用原"娜娜莉超级跳"任务的配置
+            legacy_nanally = get_relative_path(folder, f"{nanally.LEGACY_TASK_NAME}.json")
+            for key, value in nanally.legacy_values(legacy_nanally).items():
+                self.config[key] = value
+
+    @staticmethod
+    def _config_file_has(path, key):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return False
+        return isinstance(data, dict) and key in data
 
     def run(self):
         if not self._submitted:
@@ -538,6 +582,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     def _loop(self):
         if not self.enabled:
             self._activity.stop()  # [lw]
+            self._nanally.reset()  # [lw]
             self._submitted = False
             self._manual_key_triggers_armed = False
             self._reset_manual_key_trigger_state()
@@ -547,6 +592,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             return False
 
         if self._activity.poll():  # [lw] Activity has its own enable switch.
+            return True
+        if self._nanally.poll():  # [lw] Super jump has its own enable switch.
             return True
         if self._poll_manual_key_triggers():
             return True
@@ -822,7 +869,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         from PySide6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getSaveFileName(
             None,
-            "导出安魂曲配置",
+            "导出角色自定义配置",
             self._preset_export_default_path(),
             "JSON (*.json)",
         )
@@ -841,7 +888,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         from PySide6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getOpenFileName(
             None,
-            "从文件导入安魂曲配置",
+            "从文件导入角色自定义配置",
             self._preset_exchange_directory(),
             "JSON (*.json)",
         )

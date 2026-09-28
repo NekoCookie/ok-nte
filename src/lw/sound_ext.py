@@ -587,6 +587,6 @@ class SoundContextExtMixin:
 
     @classmethod
     def set_dodge_paused(cls, paused):
-        """暂停/恢复声音自动闪避。仅用于"安魂曲配置"的闪避反击测试: 跑一整轮期间暂停, 免得
+        """暂停/恢复声音自动闪避。仅用于"角色自定义配置"的闪避反击测试: 跑一整轮期间暂停, 免得
         SoundTriggerTask 对真·敌人攻击的自动闪避插进测试的 combo 里、看不清完整一轮。实战不用。"""
         cls._dodge_paused = bool(paused)

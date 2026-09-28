@@ -35,7 +35,7 @@ class _RequiemCombatIO:
         self._dodge_react = dodge_react
         # watch_combat=True(仅主站场 combo): combo 中途每隔一段复查脱战, 目标死/打空立即收手,
         # 不再对着尸体空打完整轮。双4a 等精调时序段不开, 免插帧扰乱跳A时机。0=关(配置读不到默认)。
-        # task: 本轮已抓好的"安魂曲配置"任务引用, 复查间隔/让路阈值都复用它, 不再各自 get_task_by_class。
+        # task: 本轮已抓好的"角色自定义配置"任务引用, 复查间隔/让路阈值都复用它, 不再各自 get_task_by_class。
         self._combat_check_interval = char._combo_combat_check_interval(task) if watch_combat else 0.0
         # combo 进度 < 此比例且技能/大招就绪就中断(让路去开)。0=关。round_seconds=这一轮预计总时长。
         self._break_for_skill_ratio = char._combo_break_for_skill_ratio(task) if watch_combat else 0.0
@@ -505,7 +505,7 @@ class Requiem(MainDps):
         return True
 
     def engage_attack_duration(self):
-        """真技能前的起手平A时长, 读"安魂曲配置"任务(RequiemCombatConfigTask)的配置, 便于实时调。"""
+        """真技能前的起手平A时长, 读"角色自定义配置"任务(RequiemCombatConfigTask)的配置, 便于实时调。"""
         return self._read_jump_task_conf(self.CONF_ENGAGE_ATTACK, self.SKILL_ENGAGE_ATTACK)
 
     def engage_before_skill(self, duration):
@@ -526,7 +526,7 @@ class Requiem(MainDps):
         self.logger.info(f"requiem pre-skill engage: {n} normal attack(s) over {duration:.2f}s")
 
     def _jump_task(self):
-        """取"安魂曲配置"任务(RequiemCombatConfigTask)实例, 拿不到返回 None。
+        """取"角色自定义配置"任务(RequiemCombatConfigTask)实例, 拿不到返回 None。
         实战直接复用该任务的方案选择/参数构建方法, 保证与测试同一套逻辑同一份配置。"""
         try:
             from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
@@ -536,7 +536,7 @@ class Requiem(MainDps):
             return None
 
     def _run_configured_combo(self, io, task=None):
-        """按"安魂曲配置"跑一轮光速4a combo(复用配置任务的 run_combo_once, 时序/参数与测试一致)。
+        """按"角色自定义配置"跑一轮光速4a combo(复用配置任务的 run_combo_once, 时序/参数与测试一致)。
         拿不到配置时用 requiem_combo 的默认时序。should_continue 每下点击前查(≈40ms/次),
         执行仍由 combo_attack 尾部的 sleep_check 统一兜底。"""
         from src.combat.BaseCombatTask import NotInCombatException
@@ -553,7 +553,7 @@ class Requiem(MainDps):
         requiem_combo.run_scheme_lightspeed(io)
 
     def combo_attack(self):
-        """主C的普通攻击 = 跑一轮光速4a combo(时序读"安魂曲配置")。
+        """主C的普通攻击 = 跑一轮光速4a combo(时序读"角色自定义配置")。
         走后台 PostMessage; 提 1ms 定时精度 + raw sleep 保节奏(self.sleep 会插帧截图, 打乱 combo);
         每一下之前查 should_continue, 闪避待执行/已切走即中止, 交回战斗循环让闪避随后落地。"""
         self.check_combat()  # 战斗已结束/切队则抛出, 不空打一轮
@@ -563,7 +563,7 @@ class Requiem(MainDps):
             d4_gap = time.perf_counter() - d4_last_end
             if d4_gap < 3:
                 self.logger.info(f"双4a结束后 {d4_gap:.2f}s 起手站场combo")
-        # 本轮抓一次"安魂曲配置"任务引用: 脱战复查间隔 / 让路阈值 / 一轮预计时长都复用它,
+        # 本轮抓一次"角色自定义配置"任务引用: 脱战复查间隔 / 让路阈值 / 一轮预计时长都复用它,
         # 不再各自 get_task_by_class(线性扫任务表)。拿不到就用光速4a默认时长兜底。
         task = self._jump_task()
         round_seconds = (task.scheme_round_seconds() if task is not None
@@ -595,7 +595,7 @@ class Requiem(MainDps):
         return default
 
     def _combo_combat_check_interval(self, task=None):
-        """combo 中途脱战复查间隔(秒), 从"安魂曲配置"读, 可实时调; 0=关。默认 COMBO_COMBAT_CHECK_INTERVAL。"""
+        """combo 中途脱战复查间隔(秒), 从"角色自定义配置"读, 可实时调; 0=关。默认 COMBO_COMBAT_CHECK_INTERVAL。"""
         from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
         return self._read_jump_task_conf(
             RequiemCombatConfigTask.CONF_COMBO_COMBAT_CHECK, self.COMBO_COMBAT_CHECK_INTERVAL, task=task)
@@ -773,7 +773,7 @@ class Requiem(MainDps):
 
     def _free_skill_break_a5(self):
         """免费技能放出后用闪避(lshift)打断那又慢又低伤的第五下平A(a5), 省掉它直接接后续输出。
-        delay=技能→闪避的等待; hold=闪避键按住; wait=打断后到后续的间隔。全读"安魂曲配置"可实时调。
+        delay=技能→闪避的等待; hold=闪避键按住; wait=打断后到后续的间隔。全读"角色自定义配置"可实时调。
         hold<=0 视为关闭(不打断)。与测试脚手架(_run_free_skill_combo_test)同一份配置。"""
         from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
         task = self._jump_task()

@@ -18,7 +18,6 @@ class TestConfigTaskRegistration(unittest.TestCase):
         self.assertTrue(
             {
                 ("src.tasks.trigger.RequiemCombatConfigTask", "RequiemCombatConfigTask"),
-                ("src.tasks.trigger.NanallySuperJumpTask", "NanallySuperJumpTask"),
             }.issubset(_TRIGGER_TASKS)
         )
 

@@ -12,7 +12,7 @@ from PySide6.QtCore import Qt, Signal
 from qfluentwidgets.components.settings.expand_setting_card import ExpandButton
 
 from ok.ui.qt.tasks.ConfigLabelAndWidget import ConfigLabelAndWidget
-from src.lw.config_group import is_config_group
+from src.lw.config_group import config_group_depth, is_config_group
 
 
 class _GroupExpandButton(ExpandButton):
@@ -89,12 +89,23 @@ def install_config_group_widgets():
     if getattr(original, "_lw_config_group", False):
         return
 
+    from ok.ui.qt.common.design_system import DesignToken
+
     @wraps(original)
     def config_widget(config_type, config_desc, config, key, value, task):
         the_type = config_type.get(key) if config_type is not None else None
         if is_config_group(the_type):
-            return LabelAndConfigGroup(config_desc, config, key)
-        return original(config_type, config_desc, config, key, value, task)
+            widget = LabelAndConfigGroup(config_desc, config, key)
+        else:
+            widget = original(config_type, config_desc, config, key, value, task)
+        # The card adds one indent step to every sub config; add the rest for nested groups.
+        extra = config_group_depth(config_type, key) - 1
+        if extra > 0:
+            margins = widget.layout.contentsMargins()
+            widget.layout.setContentsMargins(
+                margins.left() + extra * DesignToken.SUBCONFIG_INDENT,
+                margins.top(), margins.right(), margins.bottom())
+        return widget
 
     config_widget._lw_config_group = True
     config_card_module.config_widget = config_widget

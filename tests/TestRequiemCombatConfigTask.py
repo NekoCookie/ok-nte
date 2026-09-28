@@ -12,12 +12,14 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
     def make_task(self):
         task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
         task.logger = mock.MagicMock()
+        task.config = {}
         return task
 
     def test_load_config_copies_legacy_config_once(self):
         task = self.make_task()
         with (
             mock.patch.object(BaseNTETask, "load_config") as parent_load,
+            mock.patch("src.lw.nanally_super_jump.legacy_values", return_value={}),
             mock.patch("src.tasks.trigger.RequiemCombatConfigTask.os.path.exists", return_value=False),
             mock.patch("src.tasks.trigger.RequiemCombatConfigTask.os.path.isfile", return_value=True),
             mock.patch("src.tasks.trigger.RequiemCombatConfigTask.shutil.copyfile") as copyfile,
@@ -33,6 +35,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         task = self.make_task()
         with (
             mock.patch.object(BaseNTETask, "load_config") as parent_load,
+            mock.patch("src.lw.nanally_super_jump.legacy_values", return_value={}),
             mock.patch("src.tasks.trigger.RequiemCombatConfigTask.os.path.exists", return_value=True),
             mock.patch("src.tasks.trigger.RequiemCombatConfigTask.shutil.copyfile") as copyfile,
         ):
@@ -80,12 +83,13 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             task.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
             task.config_type[task.CONF_GROUP_DODGE]["sub_configs"][True],
         )
-        coaxis_configs = task.config_type[task.CONF_GROUP_COAXIS]["sub_configs"][True]
-        zankou_index = coaxis_configs.index(task.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION)
-        self.assertEqual(coaxis_configs[zankou_index + 1], task.CONF_ORDINARY_DODGE_WAIT)
-        self.assertEqual(
-            coaxis_configs[zankou_index + 2],
+        self.assertIn(
+            task.CONF_ORDINARY_DODGE_WAIT,
+            task.config_type[task.CONF_SECTION_GENERAL]["sub_configs"][True],
+        )
+        self.assertIn(
             task.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
+            task.config_type[task.CONF_SECTION_REQUIEM]["sub_configs"][True],
         )
         self.assertIn(
             "首次按Shift",
@@ -109,7 +113,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         with mock.patch.object(BaseNTETask, "__init__", return_value=None):
             RequiemCombatConfigTask.__init__(task)
 
-        self.assertFalse(task.default_config[task.CONF_GROUP_COAXIS])
+        self.assertFalse(task.default_config[task.CONF_SECTION_ZANKOU])
         self.assertFalse(task.default_config[task.CONF_COAXIS_COMBAT_ENABLE])
         self.assertFalse(task.default_config[task.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT])
         self.assertIn(
@@ -131,7 +135,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertFalse(task.default_config[task.CONF_MANUAL_KEY_TRIGGERS])
         self.assertIn(
             task.CONF_MANUAL_KEY_TRIGGERS,
-            task.config_type[task.CONF_GROUP_TEST]["sub_configs"][True],
+            task.config_type[task.CONF_SECTION_GENERAL]["sub_configs"][True],
         )
         self.assertEqual(task.default_config[task.CONF_COAXIS_TRIGGER_KEY], "8")
         self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_SWITCH_KEY], "1")
@@ -154,10 +158,9 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertEqual(task.default_config[task.CONF_REQUIEM_ORDINARY_DODGE_WAIT], 0.5)
         self.assertEqual(task.default_config[task.CONF_FREE_BREAK_TEST_KEY], "9")
         self.assertEqual(
-            task.config_type[task.CONF_GROUP_COAXIS]["sub_configs"][True],
+            task.config_type[task.CONF_SECTION_ZANKOU]["sub_configs"][True],
             [
                 task.CONF_COAXIS_COMBAT_ENABLE,
-                task.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT,
                 task.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT,
                 task.CONF_COAXIS_TRIGGER_KEY,
                 task.CONF_COAXIS_REQUIEM_SWITCH_KEY,
@@ -171,8 +174,6 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
                 task.CONF_COAXIS_ZANKOU_HOLD_DURATION,
                 task.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
                 task.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
-                task.CONF_ORDINARY_DODGE_WAIT,
-                task.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
             ],
         )
 
@@ -336,7 +337,7 @@ class TestRequiemCombatConfigTaskExchangePaths(unittest.TestCase):
 
         self.assertEqual(
             get_save_file_name.call_args.args[2],
-            os.path.join("D:/workspace/data_export", "安魂曲配置.json"),
+            os.path.join("D:/workspace/data_export", "角色自定义配置.json"),
         )
 
     def test_import_dialog_defaults_to_data_export(self):

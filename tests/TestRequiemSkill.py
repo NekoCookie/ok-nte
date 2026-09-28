@@ -42,7 +42,7 @@ def make_requiem(clock, skill_kind="real", skill_available=True,
     r.index = 0
     r.task = mock.MagicMock()
     r.task.config = {}
-    # engage/闪避反击等时长现从"安魂曲配置"任务(get_task_by_class)读; 默认None→走各自默认值。
+    # engage/闪避反击等时长现从"角色自定义配置"任务(get_task_by_class)读; 默认None→走各自默认值。
     r.task.get_task_by_class = mock.MagicMock(return_value=None)
     r.logger = mock.MagicMock()
     r.wait_intro = mock.MagicMock()
@@ -307,7 +307,7 @@ class TestRequiemSkillClassification(unittest.TestCase):
         r = make_requiem(self.clock)
         # get_task_by_class 默认 None → 走默认 SKILL_ENGAGE_ATTACK
         self.assertEqual(r.engage_attack_duration(), r.SKILL_ENGAGE_ATTACK)
-        # 从"安魂曲配置"任务读: 配置该任务的 config
+        # 从"角色自定义配置"任务读: 配置该任务的 config
         jump_task = mock.MagicMock()
         jump_task.config = {r.CONF_ENGAGE_ATTACK: 0.45}
         r.task.get_task_by_class = mock.MagicMock(return_value=jump_task)
