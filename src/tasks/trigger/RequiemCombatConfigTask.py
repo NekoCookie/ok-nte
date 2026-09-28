@@ -159,7 +159,12 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_SUPPORT_SKILL_SWITCH = "辅助技能就绪是否切人"
     CONF_SUPPORT_SKILL_PREEMPTION = "辅助E是否提权"
     CONF_SUPPORT_ULTIMATE_PREEMPTION = "辅助Q是否提权"
-    # [lw] Requiem and Zankou main-DPS axis settings live in the Zankou section.
+    # [lw] Requiem and Zankou main-DPS axis settings: Requiem timings under the Requiem section,
+    # the axis switch, Zankou timings and the key test under the Zankou section.
+    CONF_GROUP_REQUIEM_COAXIS = "安魂曲合轴"     # 折叠分组: 安魂曲在合轴里的时长/切人
+    CONF_GROUP_ZANKOU_ATTACK = "残虹普攻时序"    # 折叠分组: 入场静默 + 各段普攻时长
+    CONF_GROUP_ZANKOU_GOLD_SKILL = "残虹强化E"   # 折叠分组: 黄E打断 + 开局黄E
+    CONF_GROUP_COAXIS_KEY_TEST = "合轴按键测试"  # 折叠分组: 独立按键测试的按键与等待
     CONF_COAXIS_COMBAT_ENABLE = "实战启用合轴"
     CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT = "入场提前执行技能大招"
     CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT = "安魂曲真技能后固定切人位置"
@@ -228,6 +233,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_SECTION_REQUIEM: False,
                 self.CONF_SECTION_ZANKOU: False,
                 self.CONF_SECTION_NANALLY: False,
+                self.CONF_GROUP_REQUIEM_COAXIS: False,
+                self.CONF_GROUP_ZANKOU_ATTACK: False,
+                self.CONF_GROUP_ZANKOU_GOLD_SKILL: False,
+                self.CONF_GROUP_COAXIS_KEY_TEST: False,
                 # 4A宏触发组(折叠): 触发键/触发方式
                 self.CONF_GROUP_TRIGGER: False,
                 self.CONF_TRIGGER_KEY: "mouse5",
@@ -326,6 +335,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 ]),
                 # 安魂曲: 4A宏, 实战 combo/闪双4a/免费技能时序, 以及它的测试。
                 self.CONF_SECTION_REQUIEM: config_group([
+                    self.CONF_GROUP_REQUIEM_COAXIS,
                     self.CONF_GROUP_TRIGGER,
                     self.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
                     self.CONF_GROUP_DODGE,
@@ -334,22 +344,34 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     self.CONF_GROUP_TUNING,
                     self.CONF_GROUP_DODGE_TEST,
                 ]),
-                # [lw] 残虹: 安魂曲残虹合轴的实战开关, 按键测试和时序。
-                self.CONF_SECTION_ZANKOU: config_group([
-                    self.CONF_COAXIS_COMBAT_ENABLE,
-                    self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT,
-                    self.CONF_COAXIS_TRIGGER_KEY,
-                    self.CONF_COAXIS_REQUIEM_SWITCH_KEY,
-                    self.CONF_COAXIS_ZANKOU_SWITCH_KEY,
+                # [lw] 安魂曲合轴: 合轴中安魂曲自己的普攻时长与真技能后切人。
+                self.CONF_GROUP_REQUIEM_COAXIS: config_group([
                     self.CONF_COAXIS_REQUIEM_DURATION,
                     self.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION,
-                    self.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
+                    self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT,
+                ]),
+                # [lw] 残虹: 合轴实战总开关 + 残虹普攻时序 / 强化E / 按键测试三组。
+                self.CONF_SECTION_ZANKOU: config_group([
+                    self.CONF_COAXIS_COMBAT_ENABLE,
+                    self.CONF_GROUP_ZANKOU_ATTACK,
+                    self.CONF_GROUP_ZANKOU_GOLD_SKILL,
+                    self.CONF_GROUP_COAXIS_KEY_TEST,
+                ]),
+                self.CONF_GROUP_ZANKOU_ATTACK: config_group([
                     self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION,
-                    self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT,
-                    self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL,
                     self.CONF_COAXIS_ZANKOU_HOLD_DURATION,
                     self.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
                     self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
+                ]),
+                self.CONF_GROUP_ZANKOU_GOLD_SKILL: config_group([
+                    self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT,
+                    self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL,
+                ]),
+                self.CONF_GROUP_COAXIS_KEY_TEST: config_group([
+                    self.CONF_COAXIS_TRIGGER_KEY,
+                    self.CONF_COAXIS_REQUIEM_SWITCH_KEY,
+                    self.CONF_COAXIS_ZANKOU_SWITCH_KEY,
+                    self.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
                 ]),
                 # [lw] 娜娜莉: 超级跳宏(原独立任务"娜娜莉超级跳"合并进来)。
                 self.CONF_SECTION_NANALLY: config_group(nanally.KEYS),
@@ -419,8 +441,12 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_FREE_BREAK_JUMP_HOLD: "打断用的闪避键按住毫秒",
                 self.CONF_FREE_BREAK_WAIT: "闪避打断→combo第一下 的间隔毫秒(可填0)",
                 self.CONF_SECTION_GENERAL: "所有角色共用: 辅助资源提权, 入场技能, 普通闪避等待, 手动按键总开关, 禁用技能大招",
-                self.CONF_SECTION_REQUIEM: "安魂曲4A宏, 实战combo/闪双4a/免费技能时序与测试",
-                self.CONF_SECTION_ZANKOU: "安魂曲残虹合轴: 实战开关, 按键测试与时序",
+                self.CONF_SECTION_REQUIEM: "安魂曲合轴, 4A宏, 实战combo/闪双4a/免费技能时序与测试",
+                self.CONF_SECTION_ZANKOU: "安魂曲残虹合轴实战开关, 残虹普攻时序/强化E, 合轴按键测试",
+                self.CONF_GROUP_REQUIEM_COAXIS: "合轴中安魂曲的普攻时长, 免费技能后普攻时长, 真技能后切人位置",
+                self.CONF_GROUP_ZANKOU_ATTACK: "合轴中残虹的环合静默等待, 长按/普攻/声音闪避后普攻时长",
+                self.CONF_GROUP_ZANKOU_GOLD_SKILL: "合轴中强化E(黄E)打断, 开局黄E后切辅助",
+                self.CONF_GROUP_COAXIS_KEY_TEST: "按合轴触发键开始/停止的独立按键测试(需开通用里的手动按键总开关)",
                 self.CONF_SECTION_NANALLY: "娜娜莉超级跳宏",
                 self.CONF_GROUP_TRIGGER: "侧键4A宏的触发键/触发方式",
                 self.CONF_GROUP_SUPPORT_PREEMPTION: "辅助技能切人以及 Q/E 资源提权开关",

@@ -97,12 +97,13 @@ class TestCharacterConfigSections(unittest.TestCase):
         self.assertEqual(
             children(task.CONF_SECTION_REQUIEM),
             [
+                task.CONF_GROUP_REQUIEM_COAXIS,
                 task.CONF_GROUP_TRIGGER, task.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
                 task.CONF_GROUP_DODGE, task.CONF_LS_EXPAND, task.CONF_FREE_BREAK_EXPAND,
                 task.CONF_GROUP_TUNING, task.CONF_GROUP_DODGE_TEST,
             ],
         )
-        self.assertIn(task.CONF_COAXIS_COMBAT_ENABLE, children(task.CONF_SECTION_ZANKOU))
+        self.assertEqual(children(task.CONF_SECTION_ZANKOU)[0], task.CONF_COAXIS_COMBAT_ENABLE)
         self.assertEqual(children(task.CONF_SECTION_NANALLY), nanally.KEYS)
         self.assertEqual(
             children(task.CONF_GROUP_DODGE_TEST), [task.CONF_DODGE_TEST, task.CONF_DODGE_TEST_KEY]
@@ -125,6 +126,18 @@ class TestCharacterConfigSections(unittest.TestCase):
         self.assertTrue(config_group_keys(task.config_type).isdisjoint(preset_keys))
         self.assertIn(task.CONF_TRIGGER_KEY, preset_keys)
         self.assertIn(nanally.HOTKEY, preset_keys)
+        self.assertIn(task.CONF_COAXIS_ZANKOU_HOLD_DURATION, preset_keys)
+
+    def test_presets_cover_every_setting_automatically(self):
+        task = self.make_task()
+        task.default_config["以后新增的配置"] = 1  # 新增配置不需要登记到档位清单
+
+        excluded = config_group_keys(task.config_type) | {task.CONF_PRESET_SLOT}
+        self.assertEqual(
+            task._preset_keys(),
+            [k for k in task.default_config if not k.startswith("_") and k not in excluded],
+        )
+        self.assertIn("以后新增的配置", task._preset_keys())
 
 
 if __name__ == "__main__":

@@ -161,19 +161,42 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             task.config_type[task.CONF_SECTION_ZANKOU]["sub_configs"][True],
             [
                 task.CONF_COAXIS_COMBAT_ENABLE,
-                task.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT,
-                task.CONF_COAXIS_TRIGGER_KEY,
-                task.CONF_COAXIS_REQUIEM_SWITCH_KEY,
-                task.CONF_COAXIS_ZANKOU_SWITCH_KEY,
+                task.CONF_GROUP_ZANKOU_ATTACK,
+                task.CONF_GROUP_ZANKOU_GOLD_SKILL,
+                task.CONF_GROUP_COAXIS_KEY_TEST,
+            ],
+        )
+        self.assertEqual(
+            task.config_type[task.CONF_GROUP_REQUIEM_COAXIS]["sub_configs"][True],
+            [
                 task.CONF_COAXIS_REQUIEM_DURATION,
                 task.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION,
-                task.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
+                task.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT,
+            ],
+        )
+        self.assertEqual(
+            task.config_type[task.CONF_GROUP_ZANKOU_ATTACK]["sub_configs"][True],
+            [
                 task.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION,
-                task.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT,
-                task.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL,
                 task.CONF_COAXIS_ZANKOU_HOLD_DURATION,
                 task.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
                 task.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION,
+            ],
+        )
+        self.assertEqual(
+            task.config_type[task.CONF_GROUP_ZANKOU_GOLD_SKILL]["sub_configs"][True],
+            [
+                task.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT,
+                task.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL,
+            ],
+        )
+        self.assertEqual(
+            task.config_type[task.CONF_GROUP_COAXIS_KEY_TEST]["sub_configs"][True],
+            [
+                task.CONF_COAXIS_TRIGGER_KEY,
+                task.CONF_COAXIS_REQUIEM_SWITCH_KEY,
+                task.CONF_COAXIS_ZANKOU_SWITCH_KEY,
+                task.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
             ],
         )
 
@@ -187,6 +210,20 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
 
         self.assertTrue(task._loop())
         task._activity.poll.assert_called_once_with()
+        task._poll_manual_key_triggers.assert_not_called()
+
+    def test_super_jump_is_polled_before_manual_master_gate(self):
+        task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
+        task._enabled = True
+        task.config = {task.CONF_MANUAL_KEY_TRIGGERS: False}
+        task._activity = mock.MagicMock()
+        task._activity.poll.return_value = False
+        task._nanally = mock.MagicMock()
+        task._nanally.poll.return_value = True
+        task._poll_manual_key_triggers = mock.MagicMock()
+
+        self.assertTrue(task._loop())
+        task._nanally.poll.assert_called_once_with()
         task._poll_manual_key_triggers.assert_not_called()
 
     def test_active_activity_runs_on_executor_and_keeps_trigger_priority(self):
