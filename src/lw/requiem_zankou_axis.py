@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Protocol
 
 from src.Labels import Labels
-from src.lw.boss_break_bar import break_bar_ratio
 
 if TYPE_CHECKING:
     from src.char.BaseChar import BaseChar
@@ -22,15 +21,6 @@ GOLD_SKILL_CONFIRM_TIMEOUT = 0.35
 GOLD_SKILL_CONFIRM_INTERVAL = 0.02
 GOLD_SKILL_INPUT_RETRY_INTERVAL = 0.1
 OPENING_GOLD_SKILL_DETECT_TIMEOUT = 0.4
-# Safety bound for heavy rounds that end without a dodge or yellow E.
-OPENING_GOLD_SKILL_MAX_PLAIN_ROUNDS = 3
-# Boss openings confirm yellow E by the break bar collapsing. An unbroken bar only
-# shrinks under attacks; a break drops it to almost zero, then it refills from zero.
-OPENING_BREAK_MIN_BASELINE = 0.4
-OPENING_BREAK_EMPTY_RATIO = 0.15
-OPENING_BREAK_REFILL_MARGIN = 0.5
-OPENING_BREAK_EMPTY_SAMPLES = 2
-OPENING_BREAK_POLL_INTERVAL = 0.1
 
 
 @dataclass(frozen=True, slots=True)
@@ -442,12 +432,7 @@ def _try_zankou_gold_skill_after_dodge(
     return True
 
 
-def _wait_for_zankou_gold_skill(
-    char: "BaseChar",
-    timeout: float,
-    *,
-    stop_when: Callable[[], bool] | None = None,
-) -> object | None:
+def _wait_for_zankou_gold_skill(char: "BaseChar", timeout: float) -> object | None:
     """Wait briefly for the gold E template after the opening switch settles."""
 
     find_one = getattr(getattr(char, "task", None), "find_one", None)
@@ -460,8 +445,6 @@ def _wait_for_zankou_gold_skill(
             next_frame()
         if find_one(Labels.zankou_skill_gold):
             return find_one
-        if stop_when is not None and stop_when():
-            return None
         remaining = deadline - char.now()
         if remaining <= 0:
             return None
@@ -513,214 +496,6 @@ def _opening_ring_target(task, planner, source: "BaseChar") -> "BaseChar | None"
     return target
 
 
-class _OpeningBreakBar:
-    """Boss break-bar confirmation for the opening yellow E.
-
-    Once a yellow E has been sent the bar is polled every 0.1s through all later
-    steps (heavy, template waits, dodge recovery), so a late landing E ends the
-    opening at once instead of after the running step.
-    """
-
-    def __init__(self, zankou: "BaseChar", enabled: bool):
-        self._zankou = zankou
-        self.baseline = None
-        self.armed = False
-        self.landed = False
-        self._next_poll_at = 0.0
-        if not enabled:
-            return
-        ratio = self._read()
-        if ratio is not None and ratio >= OPENING_BREAK_MIN_BASELINE:
-            self.baseline = ratio
-        log_info = getattr(getattr(zankou, "logger", None), "info", None)
-        if callable(log_info):
-            state = "confirms yellow E" if self.usable else "unusable; confirming by template"
-            log_info(f"combat opening break bar {state} (ratio={ratio})")
-
-    @property
-    def usable(self) -> bool:
-        return self.baseline is not None
-
-    def _read(self) -> float | None:
-        task = getattr(self._zankou, "task", None)
-        next_frame = getattr(task, "next_frame", None)
-        if callable(next_frame):
-            next_frame()
-        return break_bar_ratio(getattr(task, "frame", None))
-
-    def _broken(self) -> bool:
-        # A refill that already climbed a little still sits far below the pre-break fill.
-        limit = max(OPENING_BREAK_EMPTY_RATIO, self.baseline - OPENING_BREAK_REFILL_MARGIN)
-        for _ in range(OPENING_BREAK_EMPTY_SAMPLES):
-            ratio = self._read()
-            if ratio is None or ratio > limit:
-                return False
-        return True
-
-    def check(self) -> bool:
-        """Check now, right after a yellow E input; this also arms later polling."""
-
-        if not self.usable:
-            return False
-        self.armed = True
-        self._next_poll_at = self._zankou.now() + OPENING_BREAK_POLL_INTERVAL
-        if not self.landed and self._broken():
-            self.landed = True
-        return self.landed
-
-    def poll(self) -> bool:
-        """Throttled check used as ``stop_when`` inside the opening's waits."""
-
-        if self.landed:
-            return True
-        if not self.armed or self._zankou.now() < self._next_poll_at:
-            return False
-        self._next_poll_at = self._zankou.now() + OPENING_BREAK_POLL_INTERVAL
-        if self._broken():
-            self.landed = True
-            log_info = getattr(getattr(self._zankou, "logger", None), "info", None)
-            if callable(log_info):
-                log_info("combat opening break bar emptied after an unconfirmed yellow E")
-        return self.landed
-
-
-def _send_opening_gold_skill(
-    zankou: "BaseChar",
-    find_one,
-    dodge_at: float,
-    action_name: str,
-    break_bar: _OpeningBreakBar,
-) -> tuple[bool, bool, float, "SoundDodgeOutcome | None"]:
-    """Send yellow E and confirm it by the break bar, or by the template when no bar is usable."""
-
-    log_info = getattr(getattr(zankou, "logger", None), "info", None)
-    confirmed = _send_zankou_gold_skill_until_confirmed(
-        zankou,
-        find_one,
-        phase_deadline=zankou.now() + GOLD_SKILL_CONFIRM_TIMEOUT,
-        action_name=action_name,
-    )
-    if break_bar.usable:
-        # Only a break empties the bar; a dodge-cancelled cast or a hidden template cannot.
-        confirmed = break_bar.check()
-        if not confirmed and callable(log_info):
-            log_info("combat opening break bar not emptied after yellow E; continuing opening")
-    dodged, dodge_at, dodge_outcome = _sound_dodge_since(zankou, dodge_at)
-    if dodged and confirmed and not break_bar.usable:
-        # The dodge can cancel the cast while its animation also hides the template.
-        confirmed = False
-        if callable(log_info):
-            log_info(
-                "combat opening zankou gold skill confirmation interrupted by sound dodge; "
-                "rechecking after recovery"
-            )
-    return confirmed, dodged, dodge_at, dodge_outcome
-
-
-def _run_zankou_opening_gold_skill_until_confirmed(
-    zankou: "BaseChar",
-    settings: CoordinatedAxisSettings,
-    *,
-    use_break_bar: bool = False,
-) -> bool:
-    """Repeat the heavy opening until yellow E is confirmed.
-
-    A sound dodge can cancel the held heavy attack or the E cast itself. The coaxis
-    dodge recovery is reused, then a lit yellow E is sent again; otherwise the heavy
-    attack restarts. Dodge-interrupted rounds do not use the bounded retry budget.
-    In boss fights the break bar is the confirmation; after the first yellow E input
-    it is polled every 0.1s through all later steps, so a late landing E still ends
-    the opening at once.
-    """
-
-    logger = getattr(zankou, "logger", None)
-    log_info = getattr(logger, "info", None)
-    break_bar = _OpeningBreakBar(zankou, use_break_bar)
-    dodge_at = _last_sound_dodge_time(zankou)
-    plain_rounds = 0
-    while True:
-        dodged, dodge_at, dodge_outcome = _run_zankou_heavy_until_sound_dodge(
-            zankou,
-            settings.zankou_hold_duration,
-            dodge_at,
-            stop_when=break_bar.poll,
-        )
-        if break_bar.poll():
-            return True
-        if not dodged:
-            find_one = _wait_for_zankou_gold_skill(
-                zankou,
-                OPENING_GOLD_SKILL_DETECT_TIMEOUT,
-                stop_when=break_bar.poll,
-            )
-            if break_bar.poll():
-                return True
-            if find_one is None:
-                dodged, dodge_at, dodge_outcome = _sound_dodge_since(zankou, dodge_at)
-            else:
-                confirmed, dodged, dodge_at, dodge_outcome = _send_opening_gold_skill(
-                    zankou,
-                    find_one,
-                    dodge_at,
-                    "zankou_opening_gold_skill",
-                    break_bar,
-                )
-                if confirmed:
-                    return True
-
-        interrupted_by_dodge = dodged
-        while dodged:
-            _log_zankou_sound_dodge_recovery(
-                zankou,
-                settings.zankou_dodge_normal_attack_duration,
-                dodge_outcome,
-            )
-            dodge_at = _run_zankou_dodge_recovery(
-                zankou,
-                settings,
-                dodge_at,
-                dodge_outcome,
-                stop_when=break_bar.poll,
-            )
-            if break_bar.poll():
-                return True
-            find_one = _wait_for_zankou_gold_skill(
-                zankou,
-                OPENING_GOLD_SKILL_DETECT_TIMEOUT,
-                stop_when=break_bar.poll,
-            )
-            if break_bar.poll():
-                return True
-            if find_one is None:
-                dodged, dodge_at, dodge_outcome = _sound_dodge_since(zankou, dodge_at)
-                if not dodged and callable(log_info):
-                    log_info(
-                        "combat opening zankou gold skill not ready after dodge; "
-                        "restarting heavy"
-                    )
-                continue
-            confirmed, dodged, dodge_at, dodge_outcome = _send_opening_gold_skill(
-                zankou,
-                find_one,
-                dodge_at,
-                "zankou_opening_post_dodge_gold_skill",
-                break_bar,
-            )
-            if confirmed:
-                return True
-        if interrupted_by_dodge:
-            continue
-
-        plain_rounds += 1
-        if plain_rounds >= OPENING_GOLD_SKILL_MAX_PLAIN_ROUNDS:
-            return break_bar.poll()
-        if callable(log_info):
-            log_info(
-                "combat opening zankou gold skill not ready after heavy; "
-                f"restarting heavy {plain_rounds + 1}/{OPENING_GOLD_SKILL_MAX_PLAIN_ROUNDS}"
-            )
-
-
 def run_zankou_opening_gold_skill(task) -> bool:
     """Insert Zankou's yellow E before the precomputed ordinary combat opening."""
 
@@ -748,8 +523,9 @@ def run_zankou_opening_gold_skill(task) -> bool:
     if not settings.opening_zankou_gold_skill:
         return False
     is_boss = getattr(task, "is_boss", None)
-    boss_fight = callable(is_boss) and bool(is_boss())
-    if not settings.opening_zankou_gold_skill_non_boss and not boss_fight:
+    if not settings.opening_zankou_gold_skill_non_boss and (
+        not callable(is_boss) or not is_boss()
+    ):
         logger = getattr(task, "logger", None)
         log_info = getattr(logger, "info", None)
         if callable(log_info):
@@ -785,16 +561,21 @@ def run_zankou_opening_gold_skill(task) -> bool:
         return False
 
     _consume_opening_intro(zankou)
-    if not _run_zankou_opening_gold_skill_until_confirmed(
-        zankou,
-        settings,
-        use_break_bar=boss_fight,
-    ):
+    zankou.heavy_attack(duration=settings.zankou_hold_duration)
+    find_one = _wait_for_zankou_gold_skill(zankou, OPENING_GOLD_SKILL_DETECT_TIMEOUT)
+    if find_one is None:
         if callable(log_info):
             log_info(
-                "combat opening zankou gold skill was not confirmed; "
+                "combat opening zankou gold skill was not detected; "
                 "returning to ordinary opening"
             )
+    else:
+        _send_zankou_gold_skill_until_confirmed(
+            zankou,
+            find_one,
+            phase_deadline=zankou.now() + GOLD_SKILL_CONFIRM_TIMEOUT,
+            action_name="zankou_opening_gold_skill",
+        )
 
     # Zankou-started openings only need to leave Zankou; the Requiem fallback
     # is dropped when a ring switch already does that.
@@ -810,6 +591,7 @@ def run_zankou_opening_gold_skill(task) -> bool:
             opening_target = None
             fallback_target = partner
 
+    # The ring switch follows Zankou's opening whether or not yellow E came out.
     handoff_source = zankou
     ring_target = _opening_ring_target(task, planner, zankou)
     if ring_target is not None and ring_target is not opening_target:
@@ -889,13 +671,8 @@ def _run_zankou_heavy_until_sound_dodge(
     char: "BaseChar",
     duration: float,
     dodge_at: float,
-    *,
-    stop_when: Callable[[], bool] | None = None,
 ) -> tuple[bool, float, "SoundDodgeOutcome | None"]:
-    """Hold attack while polling sound outcomes; release immediately when dodge input starts.
-
-    ``stop_when`` ends the hold early without a dodge; the button is still released.
-    """
+    """Hold attack while polling sound outcomes; release immediately when dodge input starts."""
 
     task = getattr(char, "task", None)
     mouse_down = getattr(task, "mouse_down", None)
@@ -914,8 +691,6 @@ def _run_zankou_heavy_until_sound_dodge(
             dodged, dodge_at, dodge_outcome = _sound_dodge_since(char, dodge_at)
             if dodged:
                 return True, dodge_at, dodge_outcome
-            if stop_when is not None and stop_when():
-                return False, dodge_at, None
             if not getattr(char, "_coaxis_heavy_held", False):
                 # The accepted cue released the hold, but the dodge input itself failed.
                 # Resume the original charge instead of idling until its old deadline.
@@ -936,13 +711,8 @@ def _run_zankou_dodge_recovery(
     settings: CoordinatedAxisSettings,
     dodge_at: float,
     dodge_outcome: "SoundDodgeOutcome | None",
-    *,
-    stop_when: Callable[[], bool] | None = None,
 ) -> float:
-    """Perfect: tap twice then wait from its sound; ordinary already finished its global wait.
-
-    ``stop_when`` ends the post-attack wait early.
-    """
+    """Perfect: tap twice then wait from its sound; ordinary already finished its global wait."""
 
     while True:
         if not bool(getattr(dodge_outcome, "perfect_dodge", False)):
@@ -979,8 +749,6 @@ def _run_zankou_dodge_recovery(
                 dodge_outcome = next_outcome
                 restart = True
                 break
-            if stop_when is not None and stop_when():
-                return dodge_at
         if not restart:
             return dodge_at
 
