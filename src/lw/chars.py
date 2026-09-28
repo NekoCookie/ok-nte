@@ -1,4 +1,5 @@
 from src.char.Requiem import Requiem
+from src.lw.blackbird_sub_dps import BlackbirdSubDps
 from src.lw.combat_templates import BuffSupport, HealSupport, MainDps, SakiriBuffSupport
 from src.lw.zankou_main_dps import ZankouMainDps
 
@@ -34,4 +35,9 @@ def register_lw_char_implementations(registry):
         "builtin:zankou_main_dps",
         ZankouMainDps,
         cn_name="残虹主C",
+    )
+    registry.register(
+        "builtin:blackbird_sub_dps",
+        BlackbirdSubDps,
+        cn_name="黑羽副C",
     )
