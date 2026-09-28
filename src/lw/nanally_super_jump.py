@@ -19,6 +19,14 @@ DEFAULT_SECOND_JUMP_DELAY = 0.45
 DEFAULT_MODE_SWITCH_DELAY_MS = 10
 MODE_SWITCH_DECOY_DOWN_TIME = 0.05
 JUMP_KEY_DOWN_TIME = 0.05
+# 娜娜莉超级跳配置的唯一默认值来源: 界面默认值和读不到配置时的兜底都读这里。
+DEFAULTS = {
+    ENABLE: True,
+    HOTKEY: "mouse4",
+    JUMP_DELAY: DEFAULT_JUMP_DELAY,
+    SECOND_JUMP_DELAY: DEFAULT_SECOND_JUMP_DELAY,
+    MODE_SWITCH_DELAY: DEFAULT_MODE_SWITCH_DELAY_MS,
+}
 BASE_MACRO_STEPS = [
     ("click", 0.05),
     ("sleep", 0.3),
@@ -39,13 +47,7 @@ LEGACY_KEY_MAP = {
 
 
 def configure_nanally_super_jump(task):
-    task.default_config.update({
-        ENABLE: True,
-        HOTKEY: "mouse4",
-        JUMP_DELAY: DEFAULT_JUMP_DELAY,
-        SECOND_JUMP_DELAY: DEFAULT_SECOND_JUMP_DELAY,
-        MODE_SWITCH_DELAY: DEFAULT_MODE_SWITCH_DELAY_MS,
-    })
+    task.default_config.update(DEFAULTS)
     task.config_description.update({
         ENABLE: "开=游戏在前台时按触发键执行一次娜娜莉超级跳; 不受手动触发总开关影响",
         HOTKEY: "按下该键执行一次娜娜莉超级跳宏",
@@ -105,10 +107,10 @@ class NanallySuperJump:
     def poll(self):
         """Return True when a macro ran this tick."""
         task = self.task
-        if not task.config.get(ENABLE, False) or not task.is_foreground():
+        if not task.config.get(ENABLE, DEFAULTS[ENABLE]) or not task.is_foreground():
             self._key_was_down = False
             return False
-        key_down = task._is_key_pressed(task.config.get(HOTKEY))
+        key_down = task._is_key_pressed(task.config.get(HOTKEY, DEFAULTS[HOTKEY]))
         edge = key_down and not self._key_was_down
         self._key_was_down = key_down
         if not edge:

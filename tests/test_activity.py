@@ -440,10 +440,11 @@ class TestActivity(unittest.TestCase):
 
 
     def test_move_duration_is_configurable_and_bounded(self):
-        from src.lw.activity import movement_seconds
+        from src.lw.activity import DEFAULTS, movement_seconds
 
-        for value, expected in ((0.5, 0.5), (5, 1), (-1, 0.05),
-                                ("bad", 0.2), (float("nan"), 0.2)):
+        default = DEFAULTS[MOVE_SECONDS]  # 非法值回退到配置默认值
+        for value, expected in ((0.3, 0.3), (5, 1), (-1, 0.05),
+                                ("bad", default), (float("nan"), default)):
             self.assertEqual(movement_seconds({MOVE_SECONDS: value}), expected)
 
     def test_pulse_uses_configured_duration(self):

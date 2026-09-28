@@ -134,19 +134,19 @@ class BuffSupport(LWCombatTestPolicyMixin, ResourceSupportMixin, BaseChar):
     """增益辅助模板：确认有资源时先入场铺 buff，再把输出窗口交给主 C。"""
 
     def _support_setting_enabled(self, config_key):
-        """读取角色自定义配置的辅助调度开关; 旧配置或非安魂曲队伍保持原行为。"""
+        """读取角色自定义配置的辅助调度开关; 拿不到配置时用角色配置的代码默认值。"""
+        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
+
+        default = RequiemCombatConfigTask.DEFAULT_CONFIG[config_key]
         task = getattr(self, "task", None)
         get_task_by_class = getattr(task, "get_task_by_class", None)
         if not callable(get_task_by_class):
-            return True
-
-        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
-
+            return bool(default)
         config_task = get_task_by_class(RequiemCombatConfigTask)
         config = getattr(config_task, "config", None)
         if not hasattr(config, "get"):
-            return True
-        return bool(config.get(config_key, True))
+            return bool(default)
+        return bool(config.get(config_key, default))
 
     def should_switch_for_ready_skill(self):
         from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask

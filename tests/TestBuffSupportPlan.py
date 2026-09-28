@@ -144,10 +144,25 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
 
     def test_skill_resource_claims_high(self):
         c = make_buff(ult_ready=False, skill_ready=True, buff_pending=False)
+        c.task = mock.MagicMock()
+        c.task.get_task_by_class.return_value = mock.Mock(
+            config={"辅助技能就绪是否切人": True, "辅助E是否提权": True}
+        )
         claims = list(c.combat_plan(None).claims)
         self.assertTrue(claims and claims[0].level == FieldClaimLevel.HIGH)
         self.assertTrue(is_lw_preemptive_field_claim(claims[0]))
         self.assertEqual(claims[0].expected_entry.slot, ActionSlot.SKILL)
+
+    def test_support_switches_fall_back_to_config_defaults_without_task(self):
+        c = make_buff(ult_ready=False, skill_ready=True, buff_pending=False)
+        claims = list(c.combat_plan(None).claims)
+        defaults = RequiemCombatConfigTask.DEFAULT_CONFIG
+
+        self.assertTrue(claims and claims[0].level == FieldClaimLevel.HIGH)
+        self.assertEqual(
+            is_lw_preemptive_field_claim(claims[0]),
+            defaults[RequiemCombatConfigTask.CONF_SUPPORT_SKILL_PREEMPTION],
+        )
 
     def test_due_resource_probe_claims_high_and_enables_skill(self):
         c = make_buff(ult_ready=False, skill_ready=False, buff_pending=False)

@@ -15,8 +15,8 @@ from src.lw.activity import ActivityController, configure_activity  # [lw]
 from src.lw.config_group import config_group, config_group_keys  # [lw]
 from src.lw import nanally_super_jump as nanally  # [lw]
 from src.lw.requiem_zankou_axis import (
-    CoordinatedAxisSettings,
     RequiemZankouAxisTester,
+    axis_settings_from_config,
 )
 from src.tasks.BaseNTETask import BaseNTETask
 
@@ -111,7 +111,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     # 便于测量"按下G到能接下一招(如大招)"的后摇。基线模板/匹配阈值在实战侧(Requiem)。
     CONF_G_SKILL_ENABLE = "G技能图标变化自动触发"   # 布尔开关
     CONF_G_SKILL_DELAY = "G技能按下后摇延迟(ms)"     # 按G后等这么久再交回决策(测后摇/接大招)
-    DODGE_TEST_COMBO_ROUNDS = 2  # 测试里双4a后接几轮 combo 的默认值(配置读不到时用)
     CONF_COMBO_ROUNDS = "combo轮数"  # 测试里双4a/免费技能打断之后接几轮 combo, 可配
     # 闪双4a(声音闪避版)的可调时序: 声音闪避后 → 前段平A(打第一个4a) → 跳A(空格+左键同按)代替
     # 第二次闪避、续段 → 后段平A(接第二个4a)。三段时长各自可配, 前后平A共用连点按下/抬起
@@ -221,88 +220,89 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         "side2": 0x06,
     }
 
+    # 角色配置的唯一默认值来源: 任务界面默认值, 以及实战/合轴/声音闪避读不到配置时的兜底都读这里。
+    DEFAULT_CONFIG = {
+        # 默认值 = longwei 本机实际生效的配置(2026-09-29 同步)。别的机器哪怕微调, 也从这套起,
+        # 而不是最初那套(如光速4a跳A时机1470根本触发不了)。
+        # 顶层分区(折叠), 顺序即界面顺序
+        CONF_SECTION_GENERAL: False,
+        CONF_SECTION_REQUIEM: False,
+        CONF_SECTION_ZANKOU: False,
+        CONF_SECTION_NANALLY: False,
+        CONF_GROUP_REQUIEM_COAXIS: False,
+        CONF_GROUP_ZANKOU_ATTACK: False,
+        CONF_GROUP_ZANKOU_GOLD_SKILL: False,
+        CONF_GROUP_COAXIS_KEY_TEST: False,
+        # 4A宏触发组(折叠): 触发键/触发方式
+        CONF_GROUP_TRIGGER: False,
+        CONF_TRIGGER_KEY: "mouse5",
+        CONF_TRIGGER_MODE: TRIGGER_HOLD,
+        # 辅助资源调度组: 默认保持当前行为; 可关闭 E 主动切人或 Q/E 环合前抢占。
+        CONF_GROUP_SUPPORT_PREEMPTION: False,
+        CONF_SUPPORT_SKILL_SWITCH: True,
+        CONF_SUPPORT_SKILL_PREEMPTION: False,
+        CONF_SUPPORT_ULTIMATE_PREEMPTION: True,
+        # [lw] Pair-axis testing and default-off automatic-combat integration.
+        CONF_COAXIS_COMBAT_ENABLE: True,
+        CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT: True,
+        CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT: "关闭",
+        CONF_COAXIS_TRIGGER_KEY: "8",
+        CONF_COAXIS_REQUIEM_SWITCH_KEY: "1",
+        CONF_COAXIS_ZANKOU_SWITCH_KEY: "2",
+        CONF_COAXIS_REQUIEM_DURATION: 2.0,
+        CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: 1.0,
+        CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.3,
+        CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION: 1.3,
+        CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: True,
+        CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: True,
+        CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS: False,
+        CONF_COAXIS_ZANKOU_HOLD_DURATION: 1.0,
+        CONF_COAXIS_ZANKOU_NORMAL_DURATION: 0.6,
+        CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.6,
+        CONF_ORDINARY_DODGE_WAIT: 0.6,
+        CONF_REQUIEM_ORDINARY_DODGE_WAIT: 0.6,
+        # 闪避反击设置组(折叠): 闪双4a时序
+        CONF_GROUP_DODGE: False,
+        CONF_D4_FRONT: 1280,
+        CONF_D4_JUMP_HOLD: 20,
+        CONF_D4_BACK: 20,
+        CONF_D4_CLICK_HOLD: 20,
+        CONF_D4_CLICK_GAP: 20,
+        CONF_D4_TAIL_FILL: 200,
+        # 光速4a时序(折叠)
+        CONF_LS_EXPAND: False,
+        CONF_LS_JUMP_AT: 1800,
+        CONF_LS_JUMP_HOLD: 20,
+        CONF_LS_CLICK_HOLD: 20,
+        CONF_LS_CLICK_GAP: 20,
+        CONF_LS_TAIL: 200,
+        # 免费技能后闪避打断时序(折叠)
+        CONF_FREE_BREAK_EXPAND: False,
+        CONF_FREE_BREAK_DELAY: 230,
+        CONF_FREE_BREAK_JUMP_HOLD: 20,
+        CONF_FREE_BREAK_WAIT: 150,
+        # 实战调优参数(折叠, 默认收起)
+        CONF_GROUP_TUNING: False,
+        CONF_COMBO_ROUNDS: 2,
+        CONF_ENGAGE_ATTACK: 0.0,
+        CONF_COMBO_COMBAT_CHECK: 0.5,
+        CONF_COMBO_BREAK_FOR_SKILL: 0.5,
+        CONF_G_SKILL_ENABLE: True,
+        CONF_G_SKILL_DELAY: 300,
+        # 测试开关与测试键(折叠, 默认收起)
+        CONF_GROUP_DODGE_TEST: False,
+        CONF_MANUAL_KEY_TRIGGERS: False,
+        CONF_DODGE_TEST: False,
+        CONF_DISABLE_SKILLS: False,
+        CONF_DODGE_TEST_KEY: "7",
+        CONF_FREE_BREAK_TEST_KEY: "8",
+        CONF_FREE_SKILL_KEY: "e",
+    }
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.default_config = {"_enabled": True}
-        self.default_config.update(
-            {
-                # 默认值 = longwei 本机实际生效的配置(2026-09-29 同步)。别的机器哪怕微调, 也从这套起,
-                # 而不是最初那套(如光速4a跳A时机1470根本触发不了)。
-                # 顶层分区(折叠), 顺序即界面顺序
-                self.CONF_SECTION_GENERAL: False,
-                self.CONF_SECTION_REQUIEM: False,
-                self.CONF_SECTION_ZANKOU: False,
-                self.CONF_SECTION_NANALLY: False,
-                self.CONF_GROUP_REQUIEM_COAXIS: False,
-                self.CONF_GROUP_ZANKOU_ATTACK: False,
-                self.CONF_GROUP_ZANKOU_GOLD_SKILL: False,
-                self.CONF_GROUP_COAXIS_KEY_TEST: False,
-                # 4A宏触发组(折叠): 触发键/触发方式
-                self.CONF_GROUP_TRIGGER: False,
-                self.CONF_TRIGGER_KEY: "mouse5",
-                self.CONF_TRIGGER_MODE: self.TRIGGER_HOLD,
-                # 辅助资源调度组: 默认保持当前行为; 可关闭 E 主动切人或 Q/E 环合前抢占。
-                self.CONF_GROUP_SUPPORT_PREEMPTION: False,
-                self.CONF_SUPPORT_SKILL_SWITCH: True,
-                self.CONF_SUPPORT_SKILL_PREEMPTION: False,
-                self.CONF_SUPPORT_ULTIMATE_PREEMPTION: True,
-                # [lw] Pair-axis testing and default-off automatic-combat integration.
-                self.CONF_COAXIS_COMBAT_ENABLE: True,
-                self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT: True,
-                self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT: "关闭",
-                self.CONF_COAXIS_TRIGGER_KEY: "8",
-                self.CONF_COAXIS_REQUIEM_SWITCH_KEY: "1",
-                self.CONF_COAXIS_ZANKOU_SWITCH_KEY: "2",
-                self.CONF_COAXIS_REQUIEM_DURATION: 2.0,
-                self.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: 1.0,
-                self.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.3,
-                self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION: 1.3,
-                self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: True,
-                self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: True,
-                self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS: False,
-                self.CONF_COAXIS_ZANKOU_HOLD_DURATION: 1.0,
-                self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 0.6,
-                self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.6,
-                self.CONF_ORDINARY_DODGE_WAIT: 0.6,
-                self.CONF_REQUIEM_ORDINARY_DODGE_WAIT: 0.6,
-                # 闪避反击设置组(折叠): 闪双4a时序
-                self.CONF_GROUP_DODGE: False,
-                self.CONF_D4_FRONT: 1280,
-                self.CONF_D4_JUMP_HOLD: 20,
-                self.CONF_D4_BACK: 20,
-                self.CONF_D4_CLICK_HOLD: 20,
-                self.CONF_D4_CLICK_GAP: 20,
-                self.CONF_D4_TAIL_FILL: 200,
-                # 光速4a时序(折叠)
-                self.CONF_LS_EXPAND: False,
-                self.CONF_LS_JUMP_AT: 1800,
-                self.CONF_LS_JUMP_HOLD: 20,
-                self.CONF_LS_CLICK_HOLD: 20,
-                self.CONF_LS_CLICK_GAP: 20,
-                self.CONF_LS_TAIL: 200,
-                # 免费技能后闪避打断时序(折叠)
-                self.CONF_FREE_BREAK_EXPAND: False,
-                self.CONF_FREE_BREAK_DELAY: 230,
-                self.CONF_FREE_BREAK_JUMP_HOLD: 20,
-                self.CONF_FREE_BREAK_WAIT: 150,
-                # 实战调优参数(折叠, 默认收起)
-                self.CONF_GROUP_TUNING: False,
-                self.CONF_COMBO_ROUNDS: 2,
-                self.CONF_ENGAGE_ATTACK: 0.0,
-                self.CONF_COMBO_COMBAT_CHECK: 0.5,
-                self.CONF_COMBO_BREAK_FOR_SKILL: 0.5,
-                self.CONF_G_SKILL_ENABLE: True,
-                self.CONF_G_SKILL_DELAY: 300,
-                # 测试开关与测试键(折叠, 默认收起)
-                self.CONF_GROUP_DODGE_TEST: False,
-                self.CONF_MANUAL_KEY_TRIGGERS: False,
-                self.CONF_DODGE_TEST: False,
-                self.CONF_DISABLE_SKILLS: False,
-                self.CONF_DODGE_TEST_KEY: "7",
-                self.CONF_FREE_BREAK_TEST_KEY: "8",
-                self.CONF_FREE_SKILL_KEY: "e",
-            }
-        )
+        self.default_config.update(self.DEFAULT_CONFIG)
         self.config_type.update(
             {
                 self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT: {
@@ -633,7 +633,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         return True
 
     def _manual_key_triggers_enabled(self):
-        return bool(self.config.get(self.CONF_MANUAL_KEY_TRIGGERS, False))
+        return bool(self.config.get(self.CONF_MANUAL_KEY_TRIGGERS))
 
     def _poll_manual_key_triggers(self):
         """Run every manual test-key listener from one guarded entry point."""
@@ -757,33 +757,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     def _run_coaxis_test(self):
         """[lw] Run the input-only tester; no combat planner or character state is used."""
 
-        requiem_switch_key = str(
-            self.config.get(self.CONF_COAXIS_REQUIEM_SWITCH_KEY, "1")
-        ).strip() or "1"
-        zankou_switch_key = str(
-            self.config.get(self.CONF_COAXIS_ZANKOU_SWITCH_KEY, "2")
-        ).strip() or "2"
-        settings = CoordinatedAxisSettings(
-            trigger_key=str(self.config.get(self.CONF_COAXIS_TRIGGER_KEY, "8")),
-            requiem_switch_key=requiem_switch_key,
-            zankou_switch_key=zankou_switch_key,
-            requiem_attack_duration=max(
-                0.0,
-                self._conf_num(self.CONF_COAXIS_REQUIEM_DURATION, 2.0),
-            ),
-            zankou_switch_delay=max(
-                0.0,
-                self._conf_num(self.CONF_COAXIS_ZANKOU_SWITCH_DELAY, 0.5),
-            ),
-            zankou_hold_duration=max(
-                0.0,
-                self._conf_num(self.CONF_COAXIS_ZANKOU_HOLD_DURATION, 2.0),
-            ),
-            zankou_normal_attack_duration=max(
-                0.0,
-                self._conf_num(self.CONF_COAXIS_ZANKOU_NORMAL_DURATION, 2.0),
-            ),
-        )
+        settings = axis_settings_from_config(self)
         self._prepare_input()
         self._macro_running = True
         self._coaxis_running = True
@@ -806,11 +780,13 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             self._itx.send_key_up(key)
         return True
 
-    def _conf_num(self, key, default):
+    def _conf_num(self, key):
+        """读数值配置; 缺失或不是数字时用 DEFAULT_CONFIG 里的默认值。"""
+        default = self.DEFAULT_CONFIG[key]
         try:
             return float(self.config.get(key, default))
         except (TypeError, ValueError):
-            return default
+            return float(default)
 
     # ---- 配置档位: 界面内保存/载入 1~4 套 + 导出/从文件导入 ----
     def _preset_keys(self):
@@ -931,21 +907,21 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     def _scheme_d4_params(self):
         """双4a(声音闪避版)时序从配置读: 前段平A/跳A按住/后段平A + 前后共用的连点按下/抬起。"""
         return dict(
-            front_ms=self._conf_num(self.CONF_D4_FRONT, 950),
-            jump_hold_ms=self._conf_num(self.CONF_D4_JUMP_HOLD, 40),
-            back_ms=self._conf_num(self.CONF_D4_BACK, 200),
-            click=(self._conf_num(self.CONF_D4_CLICK_HOLD, 40),
-                   self._conf_num(self.CONF_D4_CLICK_GAP, 8)),
+            front_ms=self._conf_num(self.CONF_D4_FRONT),
+            jump_hold_ms=self._conf_num(self.CONF_D4_JUMP_HOLD),
+            back_ms=self._conf_num(self.CONF_D4_BACK),
+            click=(self._conf_num(self.CONF_D4_CLICK_HOLD),
+                   self._conf_num(self.CONF_D4_CLICK_GAP)),
         )
 
     def _scheme_ls_params(self):
         """方案四(光速4a·时间驱动)时序从配置读: 连点节拍 + 跳A时机/按住 + 收尾。"""
         return dict(
-            click=(self._conf_num(self.CONF_LS_CLICK_HOLD, 40),
-                   self._conf_num(self.CONF_LS_CLICK_GAP, 8)),
-            jump_at_ms=self._conf_num(self.CONF_LS_JUMP_AT, 1470),
-            jump_hold_ms=self._conf_num(self.CONF_LS_JUMP_HOLD, 18),
-            jump_tail_ms=self._conf_num(self.CONF_LS_TAIL, 218),
+            click=(self._conf_num(self.CONF_LS_CLICK_HOLD),
+                   self._conf_num(self.CONF_LS_CLICK_GAP)),
+            jump_at_ms=self._conf_num(self.CONF_LS_JUMP_AT),
+            jump_hold_ms=self._conf_num(self.CONF_LS_JUMP_HOLD),
+            jump_tail_ms=self._conf_num(self.CONF_LS_TAIL),
         )
 
     def scheme_round_seconds(self):
@@ -1012,7 +988,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         self._macro_running = True
         self._in_dodge_test = True
         SoundCombatContext.set_dodge_paused(True)  # 整轮期间暂停声音自动闪避, 让流程干净可观察
-        rounds = max(0, int(self._conf_num(self.CONF_COMBO_ROUNDS, self.DODGE_TEST_COMBO_ROUNDS)))
+        rounds = max(0, int(self._conf_num(self.CONF_COMBO_ROUNDS)))
         self.log_info("闪避反击测试: 触发")
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
@@ -1024,17 +1000,17 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             p = self._scheme_d4_params()
             requiem_combo.run_scheme_double_4a(io, **p)
             # 尾段: 跳A(空格+左键同按, 复用光速4a的跳A按住)代替闪避
-            jh = self._conf_num(self.CONF_LS_JUMP_HOLD, 18)
+            jh = self._conf_num(self.CONF_LS_JUMP_HOLD)
             io.space_down()
             io.mouse_down()
             io.sleep_ms(jh)
             io.mouse_up()
             io.space_up()
             # 跳A后补平A: 时长可配, 平A节拍复用光速4a连点按住/抬起
-            fill = self._conf_num(self.CONF_D4_TAIL_FILL, 350)
+            fill = self._conf_num(self.CONF_D4_TAIL_FILL)
             requiem_combo._fill_attacks(io, fill,
-                                        self._conf_num(self.CONF_LS_CLICK_HOLD, 40),
-                                        self._conf_num(self.CONF_LS_CLICK_GAP, 8))
+                                        self._conf_num(self.CONF_LS_CLICK_HOLD),
+                                        self._conf_num(self.CONF_LS_CLICK_GAP))
             self._run_combo_rounds(io, rounds)
             self.log_info(
                 f"闪避反击测试(双4a): 前段{p['front_ms']}→跳A{p['jump_hold_ms']}→后段{p['back_ms']}ms "
@@ -1055,10 +1031,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         self._macro_running = True
         self._in_dodge_test = True
         SoundCombatContext.set_dodge_paused(True)
-        delay = self._conf_num(self.CONF_FREE_BREAK_DELAY, 200)
-        hold = self._conf_num(self.CONF_FREE_BREAK_JUMP_HOLD, 20)
-        wait = self._conf_num(self.CONF_FREE_BREAK_WAIT, 0)
-        skill_key = self.config.get(self.CONF_FREE_SKILL_KEY, "e")
+        delay = self._conf_num(self.CONF_FREE_BREAK_DELAY)
+        hold = self._conf_num(self.CONF_FREE_BREAK_JUMP_HOLD)
+        wait = self._conf_num(self.CONF_FREE_BREAK_WAIT)
+        skill_key = self.config.get(self.CONF_FREE_SKILL_KEY)
         self.log_info(f"免费技能后接combo测试: 触发 (技能键={skill_key})")
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
@@ -1073,7 +1049,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             self.send_key_up(self.DODGE_KEY)
             if wait > 0:
                 io.sleep_ms(wait)
-            rounds = max(1, int(self._conf_num(self.CONF_COMBO_ROUNDS, self.DODGE_TEST_COMBO_ROUNDS)))
+            rounds = max(1, int(self._conf_num(self.CONF_COMBO_ROUNDS)))
             self._run_combo_rounds(io, rounds)   # 打断后接光速4a, 轮数复用"combo轮数"
             self.log_info(
                 f"免费技能后接combo测试: 放技能→等{delay:.0f}→闪避{hold:.0f}→等{wait:.0f}ms → {rounds}轮光速4a")

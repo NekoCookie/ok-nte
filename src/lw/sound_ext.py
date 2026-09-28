@@ -227,31 +227,24 @@ class SoundContextExtMixin:
     def lw_ordinary_dodge_wait_for_task(self, task) -> float:
         """Read the ordinary-dodge wait selected for the current character."""
 
-        default_wait = self._lw_ordinary_dodge_wait
-        try:
-            from src.lw.requiem_zankou_axis import REQUIEM_IMPL_ID
-            from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
+        from src.lw.requiem_zankou_axis import REQUIEM_IMPL_ID
+        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 
-            config_task = task.get_task_by_class(RequiemCombatConfigTask)
-            config = config_task.config
-            config_key = RequiemCombatConfigTask.CONF_ORDINARY_DODGE_WAIT
-            fallback_wait = default_wait
+        config_key = RequiemCombatConfigTask.CONF_ORDINARY_DODGE_WAIT
+        try:
             get_current_char = getattr(task, "get_current_char", None)
             current_char = (
                 get_current_char(raise_exception=False) if callable(get_current_char) else None
             )
             if getattr(current_char, "impl_id", "") == REQUIEM_IMPL_ID:
                 config_key = RequiemCombatConfigTask.CONF_REQUIEM_ORDINARY_DODGE_WAIT
-                fallback_wait = self.DEFAULT_ORDINARY_DODGE_WAIT
-            value = float(
-                config.get(
-                    config_key,
-                    fallback_wait,
-                )
-            )
-            return max(0.0, min(self.MAX_ORDINARY_DODGE_WAIT, value))
+            default_wait = RequiemCombatConfigTask.DEFAULT_CONFIG[config_key]
+            config = task.get_task_by_class(RequiemCombatConfigTask).config
+            value = float(config.get(config_key, default_wait))
         except (AttributeError, LookupError, RuntimeError, TypeError, ValueError):
-            return default_wait
+            # 拿不到配置时用角色配置的代码默认值, 不另存一份兜底数字。
+            value = RequiemCombatConfigTask.DEFAULT_CONFIG[config_key]
+        return max(0.0, min(self.MAX_ORDINARY_DODGE_WAIT, value))
 
     def lw_bind_score_listener(self, listener) -> None:
         listener.on_scores_updated = self.lw_observe_sound_scores

@@ -118,11 +118,6 @@ class Requiem(MainDps):
     # 改成 0.1 间隔平A盯着就绪; >= 1s 一律走完整轮 combo(输出不亏)。
     IDLE_NEAR_SKILL_CD = 1.0
     IDLE_NEAR_SKILL_INTERVAL = 0.1
-    # combo 中途每隔这么久复查一次脱战(目标死/打空即收手, 不空打整轮)。配置读不到时用; 0=关。
-    COMBO_COMBAT_CHECK_INTERVAL = 0.5
-    # combo 进度 < 此比例且技能/大招就绪 → 中断本轮 combo 交回主循环去开(伤害大头在结尾, 过半就打完)。
-    # 配置读不到时用; 0=关(永不为技能中断)。
-    COMBO_BREAK_FOR_SKILL_RATIO = 0.5
     DODGE_KEY = "lshift"  # 游戏闪避键
     # 双4a首段时长(ms): 完美闪避声音确认后先打前段平A的前这么久, 剩余部分交下一次
     # plan entry 无缝续打。首段结束后重新决策, 后续仍可被新的声音闪避打断。
@@ -142,11 +137,6 @@ class Requiem(MainDps):
     REAL_SKILL_LANDED_CONFIRM_WINDOW = 0.5
     REAL_SKILL_LANDED_POLL_INTERVAL = 0.1
     PRE_SKILL_ULTIMATE_WAIT = 0.3
-    # 真技能放出"之前"先平A出手进入交战。开战瞬间安魂曲还没真正攻击,
-    # 直接放技能会打空(技能消失);先平A一下交战,技能才稳。与切人时机无关。
-    # 只在"真技能"分支生效;免费技能是中途放的(已交战),不需要。可被配置覆盖。
-    SKILL_ENGAGE_ATTACK = 0.1
-    CONF_ENGAGE_ATTACK = "安魂曲技能前平A(s)"
     # 技能图标模板:真技能 / 免费技能图标长得不一样,直接用模板匹配区分。
     # 这是唯一判据(不再用时间锚点——时间猜在免费技能拖过16s时必然判反,
     # 反而是 bug 源头)。识别不到时按真技能处理(见 is_real_skill_now)。
@@ -165,15 +155,9 @@ class Requiem(MainDps):
     G_SKILL_KEY = "g"              # 触发键(与游戏里那个图标绑的按键一致)
     G_SKILL_MIN_CONF = 0.35        # 两模板都低于此 = 没识别到(遮挡/切场/背景太乱), 不按
     G_SKILL_MARGIN = 0.08          # 番茄要比平底锅高出此值才算就绪, 否则分不清 → 不按(宁漏勿乱)
-    G_SKILL_DELAY_MS = 300         # 按G后摇默认延迟(配置读不到时用)
     G_SKILL_DEBUG_DUMP = False     # [诊断] 临时采图开关; 实战默认关闭, 避免同步写盘阻塞战斗
     FREE_SKILL_ATTACK_INTERVAL = 0.1
     FREE_SKILL_FOLLOWUP_ATTACK_DURATION = 0.85
-    # 免费技能后普攻会顺出又慢又低伤的第五下平A(a5); 放完免费技能用闪避打断它(实测只有闪避能打断,
-    # 跳A打不断)、不打那第五下, 直接接后续输出。以下为打断时序默认值(ms, 配置读不到时用); hold<=0=关(不打断)。
-    FREE_BREAK_DELAY_MS = 250
-    FREE_BREAK_JUMP_HOLD_MS = 20
-    FREE_BREAK_WAIT_MS = 400
 
     _skill_real_template = None
     _skill_free_template = None
@@ -478,7 +462,7 @@ class Requiem(MainDps):
         就绪=第一优先级按 G 触发, 再等配置的后摇延迟(供测量后摇/后接大招)。
         返回 True = 本轮按了 G(调用方应 return, 不再走后续决策)。"""
         task = self._jump_task()
-        if task is None or not task.config.get(task.CONF_G_SKILL_ENABLE, False):
+        if task is None or not task.config.get(task.CONF_G_SKILL_ENABLE):
             return False
         confs = self._g_icon_confs()
         if confs is None:
@@ -494,8 +478,7 @@ class Requiem(MainDps):
             self._dump_g_crop(conf_pan, conf_ready)
         if not ready:
             return False  # 还是平底锅 / 识别不可靠(技能没就绪)
-        delay = int(self._read_jump_task_conf(
-            task.CONF_G_SKILL_DELAY, self.G_SKILL_DELAY_MS, task=task))
+        delay = int(self._read_jump_task_conf(task.CONF_G_SKILL_DELAY, task=task))
         self.logger.info(
             f"G技能: 图标就绪(番茄{conf_ready:.2f}>平底锅{conf_pan:.2f}), 按G触发, 后摇等{delay}ms")
         self.task.send_key(self.G_SKILL_KEY, down_time=0.02)
@@ -506,7 +489,8 @@ class Requiem(MainDps):
 
     def engage_attack_duration(self):
         """真技能前的起手平A时长, 读"角色自定义配置"任务(RequiemCombatConfigTask)的配置, 便于实时调。"""
-        return self._read_jump_task_conf(self.CONF_ENGAGE_ATTACK, self.SKILL_ENGAGE_ATTACK)
+        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
+        return self._read_jump_task_conf(RequiemCombatConfigTask.CONF_ENGAGE_ATTACK)
 
     def engage_before_skill(self, duration):
         """真技能前的起手平A:用无守卫的 normal_attack 直接出手进入交战。
@@ -581,24 +565,26 @@ class Requiem(MainDps):
         # 连点每0.1s一次sleep_check同效), 只加在轮与轮之间, 不打乱单轮 combo 节奏。
         self.task.sleep_check()
 
-    def _read_jump_task_conf(self, key, default, task=None):
-        """读安魂曲战斗配置任务(RequiemCombatConfigTask)的某个数值配置(可实时调), 读不到用默认。
+    def _read_jump_task_conf(self, key, task=None):
+        """读角色自定义配置(RequiemCombatConfigTask)的某个数值配置(可实时调)。拿不到任务、缺项或
+        不是数字时用 RequiemCombatConfigTask.DEFAULT_CONFIG 的默认值。
         传入 task 则复用它(本轮已抓好), 不再 get_task_by_class 重复扫任务表。"""
+        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
+        default = RequiemCombatConfigTask.DEFAULT_CONFIG[key]
         try:
             if task is None:
-                from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
                 task = self.task.get_task_by_class(RequiemCombatConfigTask)
             if task is not None:
                 return max(0.0, float(task.config.get(key, default)))
         except Exception as e:
             self.logger.debug(f"read jump task config {key} failed: {e}")
-        return default
+        return float(default)
 
     def _combo_combat_check_interval(self, task=None):
-        """combo 中途脱战复查间隔(秒), 从"角色自定义配置"读, 可实时调; 0=关。默认 COMBO_COMBAT_CHECK_INTERVAL。"""
+        """combo 中途脱战复查间隔(秒), 从"角色自定义配置"读, 可实时调; 0=关。"""
         from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
         return self._read_jump_task_conf(
-            RequiemCombatConfigTask.CONF_COMBO_COMBAT_CHECK, self.COMBO_COMBAT_CHECK_INTERVAL, task=task)
+            RequiemCombatConfigTask.CONF_COMBO_COMBAT_CHECK, task=task)
 
     def _combo_break_for_skill_ratio(self, task=None):
         """combo 为技能/大招让路的进度阈值(0~1): 进度<此值且技能/大招就绪就中断本轮 combo 去开。
@@ -607,8 +593,7 @@ class Requiem(MainDps):
             return 0.0
         from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
         return self._read_jump_task_conf(
-            RequiemCombatConfigTask.CONF_COMBO_BREAK_FOR_SKILL,
-            self.COMBO_BREAK_FOR_SKILL_RATIO, task=task)
+            RequiemCombatConfigTask.CONF_COMBO_BREAK_FOR_SKILL, task=task)
 
     def _skill_or_ult_ready(self):
         """combo 中途: 大招或技能是否已就绪(值得中断 combo 让路去开)。读缓存CD/就绪判定, 不贵。"""
@@ -630,15 +615,15 @@ class Requiem(MainDps):
         """完美闪避确认后的双4a首段: 先打前段平A的前 ~1 秒, 再挂起
         _pending_double_4a。剩余部分(前段剩余→跳A→后段→尾段闪避→补平A)交下一次
         plan entry 无缝续打; 首段和续段都允许新的声音闪避排队并中止当前输入。"""
-        front_ms = task._conf_num(task.CONF_D4_FRONT, 950)
+        front_ms = task._conf_num(task.CONF_D4_FRONT)
         inside_ms = min(front_ms, self.DODGE_WINDOW_FILL_MS)
         io = _RequiemCombatIO(self, dodge_react=True)
         t0 = time.perf_counter()
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
             clicks, aborted = requiem_combo._fill_attacks(io, inside_ms,
-                                        task._conf_num(task.CONF_D4_CLICK_HOLD, 40),
-                                        task._conf_num(task.CONF_D4_CLICK_GAP, 8))
+                                        task._conf_num(task.CONF_D4_CLICK_HOLD),
+                                        task._conf_num(task.CONF_D4_CLICK_GAP))
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
         self.logger.info(
@@ -671,14 +656,14 @@ class Requiem(MainDps):
             if io.should_continue():
                 io.space_down()   # 尾段: 跳A(空格+左键同按)代替闪避
                 io.mouse_down()
-                io.sleep_ms(task._conf_num(task.CONF_LS_JUMP_HOLD, 18))
+                io.sleep_ms(task._conf_num(task.CONF_LS_JUMP_HOLD))
                 io.mouse_up()
                 io.space_up()
                 tail_dodge = "跳+左键"
                 tail_clicks, tail_aborted = requiem_combo._fill_attacks(
-                    io, task._conf_num(task.CONF_D4_TAIL_FILL, 350),
-                    task._conf_num(task.CONF_LS_CLICK_HOLD, 40),
-                    task._conf_num(task.CONF_LS_CLICK_GAP, 8))
+                    io, task._conf_num(task.CONF_D4_TAIL_FILL),
+                    task._conf_num(task.CONF_LS_CLICK_HOLD),
+                    task._conf_num(task.CONF_LS_CLICK_GAP))
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
         self._log_d4_outside_report(rep, io, tail_dodge, tail_clicks, tail_aborted)
@@ -777,9 +762,9 @@ class Requiem(MainDps):
         hold<=0 视为关闭(不打断)。与测试脚手架(_run_free_skill_combo_test)同一份配置。"""
         from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
         task = self._jump_task()
-        delay = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_DELAY, self.FREE_BREAK_DELAY_MS, task=task)
-        hold = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_JUMP_HOLD, self.FREE_BREAK_JUMP_HOLD_MS, task=task)
-        wait = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_WAIT, self.FREE_BREAK_WAIT_MS, task=task)
+        delay = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_DELAY, task=task)
+        hold = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_JUMP_HOLD, task=task)
+        wait = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_WAIT, task=task)
         if hold <= 0:
             return  # 关: 不打断, 沿用免费技能后的默认后续(会顺出 a5)
         io = _RequiemCombatIO(self)  # 普通 io: 就一下打断, 不需中途复查

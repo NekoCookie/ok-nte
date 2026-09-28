@@ -2,6 +2,7 @@
 
 import time
 import unittest
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest import mock
 
@@ -11,7 +12,7 @@ from src.char.BaseChar import BaseChar
 from src.char.Zankou import Zankou
 from src.combat.planner import ActionSlot
 from src.lw.requiem_zankou_axis import (
-    CoordinatedAxisSettings,
+    axis_settings_from_config,
     REQUIEM_IMPL_ID,
     RequiemZankouAxisTester,
     ZANKOU_MAIN_DPS_IMPL_ID,
@@ -929,7 +930,8 @@ class TestRequiemZankouAxis(unittest.TestCase):
     def test_one_round_uses_configured_keys_and_attack_sequence(self):
         clock = FakeClock()
         io = FakeAxisIO()
-        settings = CoordinatedAxisSettings(
+        settings = replace(
+            axis_settings_from_config(None),
             requiem_switch_key="3",
             zankou_switch_key="1",
             requiem_attack_duration=0.45,
@@ -968,7 +970,8 @@ class TestRequiemZankouAxis(unittest.TestCase):
         clock = FakeClock()
         io = FakeAxisIO()
         io.stop_after_attack_down = True
-        settings = CoordinatedAxisSettings(
+        settings = replace(
+            axis_settings_from_config(None),
             requiem_attack_duration=0,
             zankou_hold_duration=2.0,
         )
@@ -985,7 +988,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         io = FakeAxisIO()
         states = iter([True, False, True, *([False] * 8)])
         io.trigger_pressed = lambda _key: next(states, False)
-        tester = RequiemZankouAxisTester(io, CoordinatedAxisSettings())
+        tester = RequiemZankouAxisTester(io, axis_settings_from_config(None))
 
         with mock.patch("src.lw.requiem_zankou_axis.time", clock):
             self.assertTrue(tester._wait_for_initial_release())

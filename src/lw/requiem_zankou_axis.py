@@ -25,20 +25,22 @@ OPENING_GOLD_SKILL_DETECT_TIMEOUT = 0.4
 
 @dataclass(frozen=True, slots=True)
 class CoordinatedAxisSettings:
-    trigger_key: str = "8"
-    requiem_switch_key: str = "1"
-    zankou_switch_key: str = "2"
-    requiem_attack_duration: float = 2.0
-    requiem_free_skill_attack_duration: float = 2.0
-    zankou_switch_delay: float = 0.5
-    zankou_intro_wait_duration: float = 1.5
-    zankou_gold_skill_interrupt: bool = False
-    opening_zankou_gold_skill: bool = False
-    opening_zankou_gold_skill_non_boss: bool = True
-    zankou_hold_duration: float = 2.0
-    zankou_normal_attack_duration: float = 2.0
-    zankou_dodge_normal_attack_duration: float = 0.5
-    requiem_real_skill_switch_slot: int = 0
+    """Axis settings read from the character config; build with axis_settings_from_config()."""
+
+    trigger_key: str
+    requiem_switch_key: str
+    zankou_switch_key: str
+    requiem_attack_duration: float
+    requiem_free_skill_attack_duration: float
+    zankou_switch_delay: float
+    zankou_intro_wait_duration: float
+    zankou_gold_skill_interrupt: bool
+    opening_zankou_gold_skill: bool
+    opening_zankou_gold_skill_non_boss: bool
+    zankou_hold_duration: float
+    zankou_normal_attack_duration: float
+    zankou_dodge_normal_attack_duration: float
+    requiem_real_skill_switch_slot: int
 
 
 @dataclass(slots=True)
@@ -103,99 +105,68 @@ def coordinated_axis_partner(
     )
 
 
-def _config_number(config_task, key: str, default: float) -> float:
+def axis_settings_from_config(config_task) -> CoordinatedAxisSettings:
+    """Read axis settings from the character config task; missing or invalid values (or no task)
+    fall back to RequiemCombatConfigTask.DEFAULT_CONFIG, the single source of defaults."""
+
+    from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask as Conf
+
     config = getattr(config_task, "config", None)
-    if not hasattr(config, "get"):
-        return default
-    try:
-        return max(0.0, float(config.get(key, default)))
-    except (TypeError, ValueError):
-        return default
 
+    def value(key):
+        default = Conf.DEFAULT_CONFIG[key]
+        return config.get(key, default) if hasattr(config, "get") else default
 
-def _config_boolean(config_task, key: str, default: bool) -> bool:
-    config = getattr(config_task, "config", None)
-    if not key or not hasattr(config, "get"):
-        return default
-    value = config.get(key, default)
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
+    def number(key):
+        try:
+            return max(0.0, float(value(key)))
+        except (TypeError, ValueError):
+            return float(Conf.DEFAULT_CONFIG[key])
 
+    def boolean(key):
+        result = value(key)
+        if isinstance(result, str):
+            return result.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(result)
 
-def _config_switch_slot(config_task, key: str) -> int:
-    config = getattr(config_task, "config", None)
-    if not key or not hasattr(config, "get"):
-        return 0
-    try:
-        slot = int(str(config.get(key, "关闭") or "关闭").strip())
-    except (TypeError, ValueError):
-        return 0
-    return slot if 1 <= slot <= 4 else 0
+    def key_name(key):
+        return str(value(key) or "").strip() or str(Conf.DEFAULT_CONFIG[key])
+
+    def switch_slot(key):
+        try:
+            slot = int(str(value(key) or "关闭").strip())
+        except (TypeError, ValueError):
+            return 0
+        return slot if 1 <= slot <= 4 else 0
+
+    return CoordinatedAxisSettings(
+        trigger_key=key_name(Conf.CONF_COAXIS_TRIGGER_KEY),
+        requiem_switch_key=key_name(Conf.CONF_COAXIS_REQUIEM_SWITCH_KEY),
+        zankou_switch_key=key_name(Conf.CONF_COAXIS_ZANKOU_SWITCH_KEY),
+        requiem_attack_duration=number(Conf.CONF_COAXIS_REQUIEM_DURATION),
+        requiem_free_skill_attack_duration=number(
+            Conf.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION
+        ),
+        zankou_switch_delay=number(Conf.CONF_COAXIS_ZANKOU_SWITCH_DELAY),
+        zankou_intro_wait_duration=number(Conf.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION),
+        zankou_gold_skill_interrupt=boolean(Conf.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT),
+        opening_zankou_gold_skill=boolean(Conf.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL),
+        opening_zankou_gold_skill_non_boss=boolean(
+            Conf.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS
+        ),
+        zankou_hold_duration=number(Conf.CONF_COAXIS_ZANKOU_HOLD_DURATION),
+        zankou_normal_attack_duration=number(Conf.CONF_COAXIS_ZANKOU_NORMAL_DURATION),
+        zankou_dodge_normal_attack_duration=number(Conf.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION),
+        requiem_real_skill_switch_slot=switch_slot(
+            Conf.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT
+        ),
+    )
 
 
 def coordinated_axis_settings(char: "BaseChar") -> CoordinatedAxisSettings:
-    """Read the shared test/combat timings from Requiem configuration."""
+    """Read the shared test/combat timings from the character config."""
 
-    config_task = _config_task(char)
-    if config_task is None:
-        return CoordinatedAxisSettings()
-    return CoordinatedAxisSettings(
-        requiem_attack_duration=_config_number(
-            config_task,
-            config_task.CONF_COAXIS_REQUIEM_DURATION,
-            2.0,
-        ),
-        requiem_free_skill_attack_duration=_config_number(
-            config_task,
-            getattr(config_task, "CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION", ""),
-            2.0,
-        ),
-        zankou_switch_delay=_config_number(
-            config_task,
-            config_task.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
-            0.5,
-        ),
-        zankou_intro_wait_duration=_config_number(
-            config_task,
-            config_task.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION,
-            1.5,
-        ),
-        zankou_gold_skill_interrupt=_config_boolean(
-            config_task,
-            getattr(config_task, "CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT", ""),
-            False,
-        ),
-        opening_zankou_gold_skill=_config_boolean(
-            config_task,
-            getattr(config_task, "CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL", ""),
-            False,
-        ),
-        opening_zankou_gold_skill_non_boss=_config_boolean(
-            config_task,
-            getattr(config_task, "CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS", ""),
-            True,
-        ),
-        zankou_hold_duration=_config_number(
-            config_task,
-            config_task.CONF_COAXIS_ZANKOU_HOLD_DURATION,
-            2.0,
-        ),
-        zankou_normal_attack_duration=_config_number(
-            config_task,
-            config_task.CONF_COAXIS_ZANKOU_NORMAL_DURATION,
-            2.0,
-        ),
-        zankou_dodge_normal_attack_duration=_config_number(
-            config_task,
-            getattr(config_task, "CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION", ""),
-            0.5,
-        ),
-        requiem_real_skill_switch_slot=_config_switch_slot(
-            config_task,
-            getattr(config_task, "CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT", ""),
-        ),
-    )
+    return axis_settings_from_config(_config_task(char))
 
 
 def _run_combat_normal_attacks(

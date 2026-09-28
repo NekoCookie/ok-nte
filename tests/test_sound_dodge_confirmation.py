@@ -298,14 +298,22 @@ class SoundDodgeConfirmationTests(unittest.TestCase):
         context = _SoundContextHarness(task)
         context.lw_update_ordinary_dodge_wait(0.02)
 
-        self.assertEqual(context.lw_ordinary_dodge_wait_for_task(task), 0.5)
+        self.assertEqual(
+            context.lw_ordinary_dodge_wait_for_task(task),
+            RequiemCombatConfigTask.DEFAULT_CONFIG[
+                RequiemCombatConfigTask.CONF_REQUIEM_ORDINARY_DODGE_WAIT
+            ],
+        )
 
     def test_shared_ordinary_dodge_wait_falls_back_when_config_is_unavailable(self):
         task = _FakeTask()
         context = _SoundContextHarness(task)
         context.lw_update_ordinary_dodge_wait(0.5)
 
-        self.assertEqual(context.lw_ordinary_dodge_wait_for_task(task), 0.5)
+        self.assertEqual(
+            context.lw_ordinary_dodge_wait_for_task(task),
+            RequiemCombatConfigTask.DEFAULT_CONFIG[RequiemCombatConfigTask.CONF_ORDINARY_DODGE_WAIT],
+        )
 
     def test_sound_before_shift_does_not_confirm_current_dodge(self):
         task = _FakeTask()

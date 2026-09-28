@@ -14,6 +14,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.char.Requiem import Requiem
+from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 from src.combat.planner import ActionResult, ActionSlot, CombatPlanner, ExpectedEntry
 
 
@@ -26,6 +27,10 @@ class FakeClock:
 
     def advance(self, dt):
         self.now += dt
+
+
+ENGAGE_KEY = RequiemCombatConfigTask.CONF_ENGAGE_ATTACK
+ENGAGE_DEFAULT = RequiemCombatConfigTask.DEFAULT_CONFIG[ENGAGE_KEY]
 
 
 def make_requiem(clock, skill_kind="real", skill_available=True,
@@ -103,8 +108,9 @@ class TestRequiemSkillClassification(unittest.TestCase):
     # ---- 视觉判真 → 起手平A + 放 + 切人 ----
     def test_real_skill_switches(self):
         r = make_requiem(self.clock, skill_kind="real")
+        r.engage_attack_duration = mock.Mock(return_value=0.15)
         run_requiem_plan(r)
-        r.engage_before_skill.assert_called_once_with(r.SKILL_ENGAGE_ATTACK)
+        r.engage_before_skill.assert_called_once_with(0.15)
         self.assertTrue(r.should_force_off_field(), "真技能后应触发下场")
         r.free_skill_followup_attack.assert_not_called()
         r._free_skill_break_a5.assert_not_called()  # 真技能分支不走免费打断
@@ -158,8 +164,9 @@ class TestRequiemSkillClassification(unittest.TestCase):
     # ---- 识别不到(None)→ 按真技能处理(切人)----
     def test_unknown_treated_as_real(self):
         r = make_requiem(self.clock, skill_kind=None)
+        r.engage_attack_duration = mock.Mock(return_value=0.15)
         run_requiem_plan(r)
-        r.engage_before_skill.assert_called_once_with(r.SKILL_ENGAGE_ATTACK)
+        r.engage_before_skill.assert_called_once_with(0.15)
         self.assertTrue(r.should_force_off_field(), "识别不到应按真技能切人")
         r.free_skill_followup_attack.assert_not_called()
 
@@ -305,20 +312,20 @@ class TestRequiemSkillClassification(unittest.TestCase):
     # ---- 起手平A时长可被自动战斗任务配置覆盖 ----
     def test_engage_attack_reads_task_config(self):
         r = make_requiem(self.clock)
-        # get_task_by_class 默认 None → 走默认 SKILL_ENGAGE_ATTACK
-        self.assertEqual(r.engage_attack_duration(), r.SKILL_ENGAGE_ATTACK)
+        # get_task_by_class 默认 None → 走角色配置的代码默认值
+        self.assertEqual(r.engage_attack_duration(), ENGAGE_DEFAULT)
         # 从"角色自定义配置"任务读: 配置该任务的 config
         jump_task = mock.MagicMock()
-        jump_task.config = {r.CONF_ENGAGE_ATTACK: 0.45}
+        jump_task.config = {ENGAGE_KEY: 0.45}
         r.task.get_task_by_class = mock.MagicMock(return_value=jump_task)
         self.assertEqual(r.engage_attack_duration(), 0.45)
         # 配置为 0 → 不起手平A,但真技能仍正常放出+切人
-        jump_task.config = {r.CONF_ENGAGE_ATTACK: 0}
+        jump_task.config = {ENGAGE_KEY: 0}
         run_requiem_plan(r)
         r.engage_before_skill.assert_not_called()
         self.assertTrue(r.should_force_off_field(), "真技能仍应切下场")
-        jump_task.config = {r.CONF_ENGAGE_ATTACK: "abc"}
-        self.assertEqual(r.engage_attack_duration(), r.SKILL_ENGAGE_ATTACK)
+        jump_task.config = {ENGAGE_KEY: "abc"}
+        self.assertEqual(r.engage_attack_duration(), ENGAGE_DEFAULT)
 
     # ---- 视觉模板:真/免费图标能分开(用提交进 assets 的模板自校验)----
     def test_template_conf_separates_real_and_free(self):

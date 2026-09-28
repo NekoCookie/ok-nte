@@ -19,12 +19,20 @@ PRIORITY = "选卡优先级"
 FOOT_X = "活动脚底横坐标比例"
 FOOT_Y = "活动脚底纵坐标比例"
 MOVE_SECONDS = "活动单次移动时长(s)"
+# 活动配置的唯一默认值来源: 界面默认值和读不到配置时的兜底都读这里。
+DEFAULTS = {
+    GROUP: False, ENABLE: False, HOTKEY: "6", PRIORITY: "下一关/开始挑战",
+    FOOT_X: 0.5, FOOT_Y: 0.565, MOVE_SECONDS: 0.5,
+}
+
+
 def movement_seconds(config):
+    default = DEFAULTS[MOVE_SECONDS]
     try:
-        value = float(config.get(MOVE_SECONDS, 0.2))
+        value = float(config.get(MOVE_SECONDS, default))
     except (TypeError, ValueError):
-        return 0.2
-    return min(1.0, max(0.05, value)) if math.isfinite(value) else 0.2
+        return default
+    return min(1.0, max(0.05, value)) if math.isfinite(value) else default
 
 
 def activity_key_pressed(task, key):
@@ -36,10 +44,7 @@ def activity_key_pressed(task, key):
 
 
 def configure_activity(task):
-    task.default_config.update({
-        GROUP: False, ENABLE: False, HOTKEY: "6", PRIORITY: "下一关/开始挑战",
-        FOOT_X: 0.5, FOOT_Y: 0.565, MOVE_SECONDS: 0.5,
-    })
+    task.default_config.update(DEFAULTS)
     task.config_type[GROUP] = config_group([ENABLE, HOTKEY, MOVE_SECONDS,
                                             PRIORITY, FOOT_X, FOOT_Y])
     task.config_description.update({
@@ -318,7 +323,7 @@ class ActivityController:
         """Observe framework events synchronously to retain the caller, without patching it."""
         from ok.gui.Communicate import communicate
         def on_pause(paused):
-            if not self.task.config.get(ENABLE, False):
+            if not self.task.config.get(ENABLE, DEFAULTS[ENABLE]):
                 return
             frame = sys._getframe(1)
             callers = []
@@ -371,16 +376,16 @@ class ActivityController:
 
     def available(self):
         task = self.task
-        return (task.enabled and task.config.get(ENABLE, False)
+        return (task.enabled and task.config.get(ENABLE, DEFAULTS[ENABLE])
                 and not self.blocked_reason())
 
     def poll(self):
         task = self.task
-        if not task.enabled or not task.config.get(ENABLE, False):
+        if not task.enabled or not task.config.get(ENABLE, DEFAULTS[ENABLE]):
             self.stop("活动开关或任务已关闭")
             self.armed_key = None
             return False
-        key = str(task.config.get(HOTKEY, "5")).strip().lower()
+        key = str(task.config.get(HOTKEY, DEFAULTS[HOTKEY])).strip().lower()
         # Never use a movement key as a toggle, including shifted aliases.
         vk = task._get_vk_code(key)
         if vk is None or vk in [task._get_vk_code(k) for k in ("w", "a", "s", "d")]:
@@ -457,7 +462,7 @@ class ActivityController:
 
     def click_configured_text(self, frame):
         """Match OCR anywhere; card attributes select the card's clickable upper area."""
-        priority = str(self.task.config.get(PRIORITY, ""))
+        priority = str(self.task.config.get(PRIORITY, DEFAULTS[PRIORITY]))
         now = time.monotonic()
         if now < self.next_text_scan:
             return False
@@ -611,8 +616,8 @@ class ActivityController:
             if not self.click_configured_text(frame):
                 self.report("未识别到轨外回响界面, 暂不移动")
             return
-        foot = (round(float(task.config.get(FOOT_X, 0.5)) * 960),
-                round(float(task.config.get(FOOT_Y, 0.565)) * 540))
+        foot = (round(float(task.config.get(FOOT_X, DEFAULTS[FOOT_X])) * 960),
+                round(float(task.config.get(FOOT_Y, DEFAULTS[FOOT_Y])) * 540))
         self.unmatched_cards_since = None
         if not (100 <= foot[0] < 800 and 110 <= foot[1] < 420):
             self.stop("脚底坐标不在识别范围内, 请重新校准")
