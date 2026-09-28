@@ -208,6 +208,7 @@ config = {
         ["src.tasks.AutoBidAuctionTask", "AutoBidAuctionTask"],
         ["src.tasks.VolleyballTask", "VolleyballTask"],
         ["src.tasks.AbyssTask", "AbyssTask"],  # [lw] 轨外之境自动挑战
+        ["src.tasks.OcrClickTask", "OcrClickTask"],  # [lw] OCR识别点击
         # 测试相关
         ["src.tasks.CombatDetectionTestTask", "CombatDetectionTestTask"],
         ["src.tasks.DebugCharTask", "DebugCharTask"],
