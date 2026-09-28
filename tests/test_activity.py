@@ -510,8 +510,7 @@ class TestActivity(unittest.TestCase):
 
     def make_controller(self):
         task = MagicMock()
-        task.CONF_INPUT_MODE, task.INPUT_BG = "input", "background"
-        task.config = {ENABLE: True, HOTKEY: "5", "input": "background"}
+        task.config = {ENABLE: True, HOTKEY: "5"}
         task.enabled = True
         task._manual_key_triggers_enabled.return_value = True
         task._get_vk_code.side_effect = lambda key: {
@@ -521,7 +520,6 @@ class TestActivity(unittest.TestCase):
         task.executor.paused = False
         task.executor.current_task = None
         task.executor.exit_event.is_set.return_value = False
-        task.is_foreground.return_value = False
         task.executor.method.get_frame.return_value = np.zeros((1080, 1920, 3), np.uint8)
         controller = ActivityController(task)
         return controller, task
@@ -596,12 +594,8 @@ class TestActivity(unittest.TestCase):
         self.assertFalse(controller.running)
         task.executor.method.get_frame.assert_not_called()
 
-    def test_hardware_mode_requires_focus_and_other_task_blocks_input(self):
+    def test_other_task_blocks_input(self):
         controller, task = self.make_controller()
-        self.assertTrue(controller.available())
-        task.config["input"] = "hardware"
-        self.assertFalse(controller.available())
-        task.is_foreground.return_value = True
         self.assertTrue(controller.available())
         task.executor.current_task = object()
         self.assertFalse(controller.available())

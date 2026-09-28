@@ -9,6 +9,8 @@ import time
 import cv2
 import numpy as np
 
+from src.lw.config_group import config_group
+
 
 GROUP = "活动配置"
 ENABLE = "轨外回响辅助"
@@ -38,13 +40,11 @@ def configure_activity(task):
         GROUP: False, ENABLE: False, HOTKEY: "5", PRIORITY: "",
         FOOT_X: 0.5, FOOT_Y: 0.565, MOVE_SECONDS: 0.2,
     })
-    task.config_type[GROUP] = {
-        "sub_configs": {True: [ENABLE, HOTKEY, MOVE_SECONDS,
-                               PRIORITY, FOOT_X, FOOT_Y]},
-    }
+    task.config_type[GROUP] = config_group([ENABLE, HOTKEY, MOVE_SECONDS,
+                                            PRIORITY, FOOT_X, FOOT_Y])
     task.config_description.update({
         GROUP: "展开活动独立配置, 不影响其他配置大项",
-        ENABLE: "实验功能, 默认关闭; 独立控制活动热键, 不受手动触发总开关影响; 复用方案输入方式",
+        ENABLE: "实验功能, 默认关闭; 独立控制活动热键, 不受手动触发总开关影响",
         HOTKEY: "按一下启动, 再按一下停止; 支持5、mouse4、mouse5; 不要与其他宏重复",
         PRIORITY: "任意界面按文字从左到右优先点击, 支持/、逗号和换行; 如无尽挑战/开始挑战; 同一文字持续出现最多每2秒点击一次",
         FOOT_X: "角色脚底横坐标/画面宽度, 默认0.5; 不是地图中心; 镜头变化需校准",
@@ -365,9 +365,6 @@ class ActivityController:
             return "程序已暂停"
         if task.executor.exit_event.is_set():
             return "程序正在退出"
-        background = task.config.get(task.CONF_INPUT_MODE) == task.INPUT_BG
-        if not background and not task.is_foreground():
-            return "前台输入模式需要游戏位于前台"
         if task.executor.current_task not in (None, task):
             return "等待其他任务释放输入"
         return ""
@@ -647,26 +644,21 @@ class ActivityController:
                    and time.monotonic() >= self.next_dodge)
 
     def pulse(self, keys, sprint=False):
-        import win32api
         import win32con
 
         interaction = self.task.executor.interaction
-        background = self.task.config.get(self.task.CONF_INPUT_MODE) == self.task.INPUT_BG
         held = []
         started = {}
         right_down = False
         try:
             # Resolve/activate the mouse target BEFORE holding direction. Do not let
             # mouse_down retarget or reactivate the window after direction key-down.
-            right_pos = interaction.update_mouse_pos(-1, -1) if background and sprint else 0
+            right_pos = interaction.update_mouse_pos(-1, -1) if sprint else 0
             for key in keys:
                 if not self.running or not self.available():
                     return
                 held.append(key)
-                if background:
-                    interaction.send_key_down(key)
-                else:
-                    win32api.keybd_event(self.task._get_vk_code(key), 0, 0, 0)
+                interaction.send_key_down(key)
                 started[key] = time.monotonic()
             if sprint and self.running and self.available():
                 lead_deadline = time.monotonic() + 0.06
@@ -675,10 +667,7 @@ class ActivityController:
                         return
                     time.sleep(0.01)
                 right_down = True
-                if background:
-                    interaction.post(win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, right_pos)
-                else:
-                    win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
+                interaction.post(win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, right_pos)
                 self.dodge_count += 1
                 self.next_dodge = time.monotonic() + 1.0
                 for key in started:
@@ -689,10 +678,7 @@ class ActivityController:
         finally:
             if right_down:
                 try:
-                    if background:
-                        interaction.post(win32con.WM_RBUTTONUP, 0, right_pos)
-                    else:
-                        win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
+                    interaction.post(win32con.WM_RBUTTONUP, 0, right_pos)
                 except Exception as error:
                     self.stop(f"右键释放失败: {type(error).__name__}")
             # Preserve movement briefly after normal right release; never delay a stop.
@@ -712,12 +698,7 @@ class ActivityController:
                 self.drift[1] += amount * ((key == "s") - (key == "w"))
             for key in reversed(held):
                 try:
-                    if background:
-                        interaction.send_key_up(key)
-                    else:
-                        win32api.keybd_event(
-                            self.task._get_vk_code(key), 0, win32con.KEYEVENTF_KEYUP, 0,
-                        )
+                    interaction.send_key_up(key)
                 except Exception as error:
                     self.stop()
                     self.task.log_info(f"活动移动松键失败: {type(error).__name__}")

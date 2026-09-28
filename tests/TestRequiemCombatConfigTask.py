@@ -74,11 +74,11 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertEqual(task.default_config[task.CONF_REQUIEM_ORDINARY_DODGE_WAIT], 0.5)
         self.assertNotIn(
             task.CONF_ORDINARY_DODGE_WAIT,
-            task.config_type[task.CONF_DODGE_STYLE]["sub_configs"][task.STYLE_SCHEME_B],
+            task.config_type[task.CONF_GROUP_DODGE]["sub_configs"][True],
         )
         self.assertNotIn(
             task.CONF_REQUIEM_ORDINARY_DODGE_WAIT,
-            task.config_type[task.CONF_DODGE_STYLE]["sub_configs"][task.STYLE_SCHEME_B],
+            task.config_type[task.CONF_GROUP_DODGE]["sub_configs"][True],
         )
         coaxis_configs = task.config_type[task.CONF_GROUP_COAXIS]["sub_configs"][True]
         zankou_index = coaxis_configs.index(task.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION)
@@ -183,12 +183,10 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         task._activity = mock.MagicMock()
         task._activity.poll.return_value = True
         task._poll_manual_key_triggers = mock.MagicMock()
-        task._poll_gamepad_test = mock.MagicMock()
 
         self.assertTrue(task._loop())
         task._activity.poll.assert_called_once_with()
         task._poll_manual_key_triggers.assert_not_called()
-        task._poll_gamepad_test.assert_not_called()
 
     def test_active_activity_runs_on_executor_and_keeps_trigger_priority(self):
         task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
@@ -211,7 +209,6 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         task._poll_coaxis_trigger = mock.MagicMock()
         task._poll_dodge_test_trigger = mock.MagicMock()
         task._poll_free_skill_combo_test_trigger = mock.MagicMock()
-        task._poll_first_attack_test_trigger = mock.MagicMock()
         task._poll_macro_trigger = mock.MagicMock()
 
         self.assertFalse(task._poll_manual_key_triggers())
@@ -220,7 +217,6 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             task._poll_coaxis_trigger,
             task._poll_dodge_test_trigger,
             task._poll_free_skill_combo_test_trigger,
-            task._poll_first_attack_test_trigger,
             task._poll_macro_trigger,
         ):
             poller.assert_not_called()
@@ -237,7 +233,6 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         task._poll_coaxis_trigger = mock.MagicMock(return_value=False)
         task._poll_dodge_test_trigger = mock.MagicMock(return_value=False)
         task._poll_free_skill_combo_test_trigger = mock.MagicMock(return_value=False)
-        task._poll_first_attack_test_trigger = mock.MagicMock(return_value=False)
         task._poll_macro_trigger = mock.MagicMock(return_value=False)
 
         self.assertFalse(task._poll_manual_key_triggers())
@@ -246,7 +241,6 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             task._poll_coaxis_trigger,
             task._poll_dodge_test_trigger,
             task._poll_free_skill_combo_test_trigger,
-            task._poll_first_attack_test_trigger,
             task._poll_macro_trigger,
         ):
             poller.assert_called_once_with()
@@ -268,7 +262,6 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
     def test_coaxis_test_builds_lw_tester_without_combat_state(self):
         task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
         task.config = {
-            task.CONF_INPUT_MODE: task.INPUT_BG,
             task.CONF_COAXIS_TRIGGER_KEY: "8",
             task.CONF_COAXIS_REQUIEM_SWITCH_KEY: "3",
             task.CONF_COAXIS_ZANKOU_SWITCH_KEY: "1",
@@ -302,9 +295,8 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertFalse(task._macro_running)
         self.assertFalse(task._coaxis_running)
 
-    def test_coaxis_switch_key_uses_background_input_when_selected(self):
+    def test_coaxis_switch_key_uses_framework_input(self):
         task = RequiemCombatConfigTask.__new__(RequiemCombatConfigTask)
-        task._bg = True
         task._itx = mock.MagicMock()
 
         with mock.patch("src.tasks.trigger.RequiemCombatConfigTask.time.sleep") as sleep:

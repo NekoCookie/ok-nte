@@ -111,9 +111,9 @@ class Requiem(MainDps):
 
     cn_name = "安魂曲主C"
 
-    # 主C站场输出改用一轮 4A跳A combo(时序见 requiem_combo, 与跳A宏方案一同源)。
-    # idle 原来是 2.5s 连点; 按需求改成"刚好打一轮"的时长。
-    IDLE_ATTACK_DURATION = requiem_combo.scheme_a_round_seconds()
+    # 主C站场输出改用一轮光速4a combo(时序见 requiem_combo)。planner 的站场上限沿用
+    # 原方案一一整轮的时长(2.127s), 删方案一时保持不变, 避免改动切人节奏。
+    IDLE_ATTACK_DURATION = 2.127
     # combo 伤害大头在结尾, 不打完丢很多伤害 → 只有技能"很快就绪"(剩余CD < 1s)才不开整轮、
     # 改成 0.1 间隔平A盯着就绪; >= 1s 一律走完整轮 combo(输出不亏)。
     IDLE_NEAR_SKILL_CD = 1.0
@@ -123,18 +123,10 @@ class Requiem(MainDps):
     # combo 进度 < 此比例且技能/大招就绪 → 中断本轮 combo 交回主循环去开(伤害大头在结尾, 过半就打完)。
     # 配置读不到时用; 0=关(永不为技能中断)。
     COMBO_BREAK_FOR_SKILL_RATIO = 0.5
-    # 闪避反击: 触发闪避后强制平A的默认秒数(配置读不到时用)与点击间隔。
-    # 实际秒数在安魂曲战斗配置任务(RequiemCombatConfigTask)里可配, 便于实时调。
-    DODGE_COUNTER_ATTACK = 0.3
-    DODGE_COUNTER_INTERVAL = 0.1
     DODGE_KEY = "lshift"  # 游戏闪避键
-    DODGE_DIR_KEY = "w"   # 双4a尾段"带方向闪避"的方向键: 按住W再按闪避
     # 双4a首段时长(ms): 完美闪避声音确认后先打前段平A的前这么久, 剩余部分交下一次
     # plan entry 无缝续打。首段结束后重新决策, 后续仍可被新的声音闪避打断。
     DODGE_WINDOW_FILL_MS = 1000
-    # combo 起手前, 若紧接在闪避反击之后, 额外等这么久让反击后摇走完再落第一下(否则 combo 顺序乱)。
-    # 只加在 combo 路径; 切人/技能/大招不等→立即执行取消后摇。默认值, 4A 任务里可配。
-    DODGE_COUNTER_COMBO_WAIT = 0.3
 
     SKILL_OFF_FIELD_DURATION = 3.0
     REAL_SKILL_CD = 16.0  # 真技能固定16s CD(从释放起算);免费技能不影响, 不锚。
@@ -193,7 +185,6 @@ class Requiem(MainDps):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.skill_off_field_until = 0.0
-        self._dodge_counter_at = 0.0  # 上次闪避反击出手时刻(供 combo 起手前等后摇)
         self._pending_double_4a = None   # 非None=双4a续段待执行(plan entry优先处理)
         self._d4_front_left_ms = 0.0     # 双4a首段平A打掉后剩余的时长(ms)
         self._d4_seam_t = 0.0            # 首段结束时刻(单调时钟), 供诊断续打接缝
@@ -545,32 +536,27 @@ class Requiem(MainDps):
             return None
 
     def _run_configured_combo(self, io, task=None):
-        """按"安魂曲配置"的「4A宏模式」跑一轮 combo(方案一/二/三/四共用同一处选择, 复用 jump 任务的
-        _scheme_runner, 时序/参数与测试一致)。拿不到配置或原始录制等无对应方案时回退方案一。
-        不管哪套方案, should_continue 都是每下点击前查(光速4a≈40ms/次, 让路比方案一还快),
+        """按"安魂曲配置"跑一轮光速4a combo(复用配置任务的 run_combo_once, 时序/参数与测试一致)。
+        拿不到配置时用 requiem_combo 的默认时序。should_continue 每下点击前查(≈40ms/次),
         执行仍由 combo_attack 尾部的 sleep_check 统一兜底。"""
         from src.combat.BaseCombatTask import NotInCombatException
         if task is None:
             task = self._jump_task()
         if task is not None:
             try:
-                mode = task.config.get(task.CONF_MACRO_MODE, task.MODE_SCHEME_A)
-                runner = task._scheme_runner(mode, io)
-                if runner is not None:
-                    runner[0]()
-                    return
+                task.run_combo_once(io)
+                return
             except NotInCombatException:
                 raise  # 脱战(combo中途打空/目标死)必须一路抛到战斗循环收手, 别被下面的兜底吞掉
             except Exception as e:
-                self.logger.debug(f"configured combo failed, fallback scheme_a: {e}")
-        requiem_combo.run_scheme_a(io)
+                self.logger.debug(f"configured combo failed, fallback default lightspeed: {e}")
+        requiem_combo.run_scheme_lightspeed(io)
 
     def combo_attack(self):
-        """主C的普通攻击 = 跑一轮 combo, 走哪套复用"安魂曲配置"的「4A宏模式」(方案一/二/三/四)。
+        """主C的普通攻击 = 跑一轮光速4a combo(时序读"安魂曲配置")。
         走后台 PostMessage; 提 1ms 定时精度 + raw sleep 保节奏(self.sleep 会插帧截图, 打乱 combo);
         每一下之前查 should_continue, 闪避待执行/已切走即中止, 交回战斗循环让闪避随后落地。"""
         self.check_combat()  # 战斗已结束/切队则抛出, 不空打一轮
-        self._wait_dodge_counter_recovery()  # 若紧接闪避反击, 先等其后摇再起 combo(顺序不乱)
         # 诊断: 双4a刚结束就接站场combo时记录交接间隔(排查"双4a错位带歪后续连招"用)
         d4_last_end = getattr(self, "_d4_last_end", 0.0)
         if d4_last_end > 0:
@@ -578,10 +564,10 @@ class Requiem(MainDps):
             if d4_gap < 3:
                 self.logger.info(f"双4a结束后 {d4_gap:.2f}s 起手站场combo")
         # 本轮抓一次"安魂曲配置"任务引用: 脱战复查间隔 / 让路阈值 / 一轮预计时长都复用它,
-        # 不再各自 get_task_by_class(线性扫任务表)。拿不到就用方案一固定时长兜底。
+        # 不再各自 get_task_by_class(线性扫任务表)。拿不到就用光速4a默认时长兜底。
         task = self._jump_task()
         round_seconds = (task.scheme_round_seconds() if task is not None
-                         else requiem_combo.scheme_a_round_seconds())
+                         else requiem_combo.scheme_ls_round_seconds())
         io = _RequiemCombatIO(self, watch_combat=True, task=task, round_seconds=round_seconds)
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
@@ -640,35 +626,6 @@ class Requiem(MainDps):
         self.task.next_frame()
         self.task.check_combat()
 
-    def _dodge_counter_duration(self):
-        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
-        return self._read_jump_task_conf(
-            RequiemCombatConfigTask.CONF_DODGE_COUNTER, self.DODGE_COUNTER_ATTACK)
-
-    def _dodge_counter_combo_wait(self):
-        from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
-        return self._read_jump_task_conf(
-            RequiemCombatConfigTask.CONF_DODGE_COMBO_WAIT, self.DODGE_COUNTER_COMBO_WAIT)
-
-    def _active_dodge(self):
-        """主动按一下游戏闪避键(lshift): 取消上一段(反击)后摇, 干净衔接后续 combo
-        (否则反击后接平A会变5a、不接又原地发呆)。就是按一下键盘 shift, 不涉及声音。"""
-        try:
-            self.task.send_key(self.DODGE_KEY, down_time=0.02)
-        except Exception as e:
-            self.logger.debug(f"active dodge failed: {e}")
-
-    def _directional_dodge(self):
-        """带方向的闪避: 按住W再按闪避, 稍顿再一起松(和"安魂曲配置"双4a尾段一致)。"""
-        try:
-            self.task.send_key_down(self.DODGE_DIR_KEY)
-            self.task.send_key_down(self.DODGE_KEY)
-            time.sleep(0.05)
-            self.task.send_key_up(self.DODGE_KEY)
-            self.task.send_key_up(self.DODGE_DIR_KEY)
-        except Exception as e:
-            self.logger.debug(f"directional dodge failed: {e}")
-
     def _dodge_double_4a_inside(self, task):
         """完美闪避确认后的双4a首段: 先打前段平A的前 ~1 秒, 再挂起
         _pending_double_4a。剩余部分(前段剩余→跳A→后段→尾段闪避→补平A)交下一次
@@ -692,11 +649,10 @@ class Requiem(MainDps):
         self._d4_front_left_ms = max(0.0, front_ms - inside_ms)
         self._d4_seam_t = time.perf_counter()  # 记首段结束时刻, 供续打测接缝延迟
         self._pending_double_4a = task     # 交给下一次 plan entry 续打
-        self._dodge_counter_at = 0.0
 
     def _run_double_4a_outside(self):
         """双4a 的"窗口外"部分(跑在下一次 plan entry, 像普通 combo 一样可被新声音打断):
-        前段剩余 → 跳A(续段, 第二个4a) → 后段平A → 尾段闪避 → 补平A。用普通 io: 新声音置 combat_interrupt
+        前段剩余 → 跳A(续段, 第二个4a) → 后段平A → 尾段跳A → 补平A。用普通 io: 新声音置 combat_interrupt
         即中止 → 交回主循环, sleep_check 执行那次新闪避(→ 它自己的新一轮双4a)。"""
         task = self._pending_double_4a
         self._pending_double_4a = None
@@ -713,16 +669,12 @@ class Requiem(MainDps):
         try:
             rep = requiem_combo.run_scheme_double_4a(io, **p)  # 前段剩余 → 跳A → 后段
             if io.should_continue():
-                if task.config.get(task.CONF_D4_TAIL_DODGE, task.D4_DODGE_W) == task.D4_DODGE_JUMP:
-                    io.space_down()
-                    io.mouse_down()
-                    io.sleep_ms(task._conf_num(task.CONF_LS_JUMP_HOLD, 18))
-                    io.mouse_up()
-                    io.space_up()
-                    tail_dodge = "跳+左键"
-                else:
-                    self._directional_dodge()
-                    tail_dodge = "W+闪避"
+                io.space_down()   # 尾段: 跳A(空格+左键同按)代替闪避
+                io.mouse_down()
+                io.sleep_ms(task._conf_num(task.CONF_LS_JUMP_HOLD, 18))
+                io.mouse_up()
+                io.space_up()
+                tail_dodge = "跳+左键"
                 tail_clicks, tail_aborted = requiem_combo._fill_attacks(
                     io, task._conf_num(task.CONF_D4_TAIL_FILL, 350),
                     task._conf_num(task.CONF_LS_CLICK_HOLD, 40),
@@ -759,26 +711,12 @@ class Requiem(MainDps):
         self.logger.info(f"双4a续打报告: {' | '.join(parts)} | 中止原因={reason}")
 
     def on_dodge_counter(self):
-        """触发闪避后按"安魂曲配置"的闪避反击方式走对应流程(与测试同一份配置):
-        - 闪双4a: 完美闪避确认后立即打前段平A的前~1秒, 剩余交 plan entry 无缝续打
-          (见 _dodge_double_4a_inside / _run_double_4a_outside, 后段像普通combo可被新声音打断);
-        - 方案一(默认): 强制平A打反击(0.1间隔) → 主动闪避取消后摇 → 记时刻, combo起手前等后摇。
+        """完美闪避确认后走闪双4a: 立即打前段平A的前~1秒, 剩余交 plan entry 无缝续打
+        (见 _dodge_double_4a_inside / _run_double_4a_outside, 后段像普通combo可被新声音打断)。
         由 task.after_sound_dodge_resolved 在完美闪避声音确认后同步调用。"""
         task = self._jump_task()
-        style = task.config.get(task.CONF_DODGE_STYLE, task.STYLE_CURRENT) if task is not None else None
-        if task is not None and style == task.STYLE_SCHEME_B:
+        if task is not None:
             self._dodge_double_4a_inside(task)
-            return
-        duration = self._dodge_counter_duration()
-        if duration <= 0:
-            return
-        self.logger.info(f"安魂曲闪避反击: 强制平A {duration:.2f}s → 主动闪避 → combo")
-        start = time.time()
-        while time.time() - start < duration:
-            self.click()
-            time.sleep(self.DODGE_COUNTER_INTERVAL)
-        self._active_dodge()               # 主动闪避, 取消反击后摇
-        self._dodge_counter_at = time.time()  # combo 起手前从这里算"闪避后到首平A"的等待
 
     def on_ordinary_dodge(self):  # [lw]
         """Resume plain axis normals, or use the configured combo outside the axis."""
@@ -805,18 +743,6 @@ class Requiem(MainDps):
         self._coaxis_ordinary_dodge_restart_pending = False
         self._real_skill_sound_dodge_blocked = False  # [lw]
         super().switch_out()
-
-    def _wait_dodge_counter_recovery(self):
-        """combo 起手前: 若紧接在闪避反击之后(在后摇窗口内), 等后摇走完再落第一下, 否则 combo 顺序乱。
-        raw sleep 不插帧, 保 combo 起手时机。消费掉标记, 只对紧接反击的这一次 combo 生效。
-        切人/技能/大招不走这里→立即执行取消后摇。"""
-        if self._dodge_counter_at <= 0:
-            return
-        remaining = self._dodge_counter_combo_wait() - (time.time() - self._dodge_counter_at)
-        self._dodge_counter_at = 0.0
-        if remaining > 0:
-            self.logger.info(f"combo 起手前等闪避反击后摇 {remaining:.2f}s")
-            time.sleep(remaining)
 
     def idle_normal_attack(self, duration=None):
         """主C站场输出: 用一轮 4A跳A combo 替代原连点(原 2.5s)。放完一轮即返回、交战斗循环
@@ -846,23 +772,14 @@ class Requiem(MainDps):
         self.combo_attack()
 
     def _free_skill_break_a5(self):
-        """免费技能放出后打断那又慢又低伤的第五下平A(a5), 省掉它直接接后续输出。打断方式两套(选哪套
-        读哪套参数): 方案一(闪避, 默认)按游戏闪避键(lshift); 方案二(跳A)用光速4a/双4a那个跳A(空格+
-        左键同按)代替闪避。delay=技能→打断的等待; hold=闪避键/跳A按住; wait=打断后到后续的间隔。全读
-        "安魂曲配置"可实时调。hold<=0 视为关闭(不打断)。与测试脚手架(_run_free_skill_combo_test)同一份配置。"""
+        """免费技能放出后用闪避(lshift)打断那又慢又低伤的第五下平A(a5), 省掉它直接接后续输出。
+        delay=技能→闪避的等待; hold=闪避键按住; wait=打断后到后续的间隔。全读"安魂曲配置"可实时调。
+        hold<=0 视为关闭(不打断)。与测试脚手架(_run_free_skill_combo_test)同一份配置。"""
         from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
         task = self._jump_task()
-        jump_mode = (task is not None and task.config.get(
-            RequiemCombatConfigTask.CONF_FREE_BREAK_MODE,
-            RequiemCombatConfigTask.FREE_BREAK_MODE_DODGE) == RequiemCombatConfigTask.FREE_BREAK_MODE_JUMP)
-        if jump_mode:
-            delay = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK2_DELAY, self.FREE_BREAK_DELAY_MS, task=task)
-            hold = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK2_JUMP_HOLD, self.FREE_BREAK_JUMP_HOLD_MS, task=task)
-            wait = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK2_WAIT, self.FREE_BREAK_WAIT_MS, task=task)
-        else:
-            delay = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_DELAY, self.FREE_BREAK_DELAY_MS, task=task)
-            hold = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_JUMP_HOLD, self.FREE_BREAK_JUMP_HOLD_MS, task=task)
-            wait = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_WAIT, self.FREE_BREAK_WAIT_MS, task=task)
+        delay = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_DELAY, self.FREE_BREAK_DELAY_MS, task=task)
+        hold = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_JUMP_HOLD, self.FREE_BREAK_JUMP_HOLD_MS, task=task)
+        wait = self._read_jump_task_conf(RequiemCombatConfigTask.CONF_FREE_BREAK_WAIT, self.FREE_BREAK_WAIT_MS, task=task)
         if hold <= 0:
             return  # 关: 不打断, 沿用免费技能后的默认后续(会顺出 a5)
         io = _RequiemCombatIO(self)  # 普通 io: 就一下打断, 不需中途复查
@@ -870,22 +787,14 @@ class Requiem(MainDps):
         try:
             if delay > 0:
                 io.sleep_ms(delay)
-            if jump_mode:
-                io.space_down()   # 跳A打断 a5: 空格+左键同按(光速4a/双4a那个跳A)
-                io.mouse_down()
-                io.sleep_ms(hold)
-                io.mouse_up()
-                io.space_up()
-            else:
-                self.task.send_key_down(self.DODGE_KEY)   # 闪避打断 a5
-                io.sleep_ms(hold)
-                self.task.send_key_up(self.DODGE_KEY)
+            self.task.send_key_down(self.DODGE_KEY)   # 闪避打断 a5
+            io.sleep_ms(hold)
+            self.task.send_key_up(self.DODGE_KEY)
             if wait > 0:
                 io.sleep_ms(wait)
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
-        action = "跳A" if jump_mode else "闪避"
-        self.logger.info(f"免费技能后{action}打断a5: 等{delay:.0f}→{action}{hold:.0f}→等{wait:.0f}ms")
+        self.logger.info(f"免费技能后闪避打断a5: 等{delay:.0f}→闪避{hold:.0f}→等{wait:.0f}ms")
 
     def _mark_real_skill_overlap(self, reason):
         """真技能确认进CD后: 安排 overlap 下场 + 当场锚16s CD。
@@ -1032,7 +941,6 @@ class Requiem(MainDps):
     def reset_state(self):
         super().reset_state()
         self.skill_off_field_until = 0.0
-        self._dodge_counter_at = 0.0
         self._pending_double_4a = None
         self._d4_front_left_ms = 0.0
         self._d4_seam_t = 0.0

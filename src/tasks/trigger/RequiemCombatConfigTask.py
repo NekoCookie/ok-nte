@@ -16,15 +16,11 @@ from src.lw.requiem_zankou_axis import (
     CoordinatedAxisSettings,
     RequiemZankouAxisTester,
 )
-from src.lw.virtual_gamepad import (
-    VirtualGamepadPulseTester,
-    VirtualGamepadUnavailableError,
-)
 from src.tasks.BaseNTETask import BaseNTETask
 
 
 class _MacroIO:
-    """把宏任务的底层收发(前台硬件/后台发消息)适配成 requiem_combo 执行器要的 io 接口。"""
+    """把宏任务的框架输入收发适配成 requiem_combo 执行器要的 io 接口。"""
 
     def __init__(self, task):
         self._t = task
@@ -86,45 +82,17 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     LEGACY_CONFIG_NAME = "RequiemJumpAttackTestTask"
     CONF_TRIGGER_KEY = "触发按键"
     CHECK_INTERVAL = 0.03
-    END_RECOVERY = 0.15
 
-    # 4A宏三种模式:
-    #   原始录制: 回放用户录的鼠标宏(RECORDED_MACRO), 走框架 PostMessage 后台点击, 一次一轮。
-    #   安魂曲(方案一)/闪双4a(方案二): 移植自 YiHuan-Macro 参考实现, 硬件级输入
-    #     (mouse_event/keybd_event, 等价 SendInput)+ 精确逐点时序 + 左键空格同时跳。
-    #     长按触发键循环执行、松手即停(每一步都查键是否还按着)。
-    #     PostMessage 版狂点会被游戏判成"长按左键→进瞄准", 故这两个方案改用硬件输入。
-    MODE_RECORDED = "原始录制"
-    MODE_SCHEME_A = "安魂曲(方案一)"
-    MODE_SCHEME_LS = "光速4a(方案四·时间驱动)"  # 方案一进化: 连点到"跳A时机"才跳, 改时机时跳A左键自动跟着走
-    CONF_MACRO_MODE = "4A宏模式"
+    # 4A宏: 长按(或按一下开关)触发键循环跑光速4a combo, 输入走框架 interaction(和自动战斗同一路)。
     # 触发方式: 长按循环(松手停) / 按一下开关循环(按一下开始一直循环, 再按一下停)。
     CONF_TRIGGER_MODE = "触发方式"
     TRIGGER_HOLD = "长按循环(松手停)"
     TRIGGER_TOGGLE = "按一下开/关循环"
-    # 方案一/二的输入方式:
-    #   前台(硬件): win32 mouse_event/keybd_event 硬件级注入, 需游戏在前台、操作真实鼠键(已验证能打出)。
-    #   后台(发消息): 走框架 PostMessage(mouse_down/up + send_key_down/up)发给游戏窗口, 不动真实鼠键、
-    #                 游戏可不在前台。是否吃后台点击取决于游戏, 故做成开关实测。
-    INPUT_HW = "前台(硬件)"
-    INPUT_BG = "后台(发消息)"
-    CONF_INPUT_MODE = "方案输入方式"
-    # 安魂曲实战: 触发闪避后强制平A的持续秒数(0.1间隔), 保证高伤闪避反击一定打出、
-    # 不被技能/大招/切人打断。放这里方便实时调; 实战侧(Requiem)读这个值。0=关闭。
-    CONF_DODGE_COUNTER = "安魂曲闪避反击强制平A(s)"
-    # combo 起手前, 若紧接在闪避反击之后, 额外等这么久让反击后摇走完再落第一下(否则 combo 顺序乱)。
-    # 只影响 combo 路径; 切人/技能/大招不等。0=不等。
-    CONF_DODGE_COMBO_WAIT = "combo前闪避反击后摇等待(s)"
     # 安魂曲实战: 真技能前先起手平A进入交战这么久(防开战瞬间直接放技能打空); 0=不补。
     # 原在"自动战斗"界面, 挪来这里统一; 实战侧(Requiem)读这个值。
     CONF_ENGAGE_ATTACK = "安魂曲技能前平A(s)"
-    # 当前流程(方案一)的主动闪避次数: 1=现状(闪避后连段停在a4, combo可能错位);
-    # 2=连续两次闪避重置连段→后续combo从a1起手对齐。间隔=两次闪避之间的等待(给闪避后摇)。
-    CONF_DODGE_COUNT = "主动闪避次数"
-    CONF_DODGE_GAP = "主动闪避间隔(s)"
-    # 闪避反击测试开关: 打开后本任务专门测这套时序 —— 关掉自动战斗、开这个, 每次声音闪避触发就
-    # 执行[闪避反击强制平A(CONF_DODGE_COUNTER) → combo前后摇等待(CONF_DODGE_COMBO_WAIT) → 2轮combo],
-    # 方便边看边调那两个 0.3s。开启时忽略触发键宏, 只等声音闪避。
+    # 闪避反击测试开关: 打开后本任务专门测闪双4a时序 —— 关掉自动战斗、开这个, 每次声音闪避触发就
+    # 执行[双4a → 尾段跳A → 补平A → N轮combo]。开启时忽略触发键宏, 只等声音闪避。
     CONF_DODGE_TEST = "闪避反击测试开关"  # 布尔开关(SwitchButton); 改过名, 让旧的下拉字符串值作废
     # 实战测试开关: 开=所有 LW 角色模板不放 E/Q, 方便单独测普攻手感 + 闪避。实战读它。
     CONF_DISABLE_SKILLS = "禁用技能大招(测试)"  # 布尔开关
@@ -141,40 +109,25 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     # 便于测量"按下G到能接下一招(如大招)"的后摇。基线模板/匹配阈值在实战侧(Requiem)。
     CONF_G_SKILL_ENABLE = "G技能图标变化自动触发"   # 布尔开关
     CONF_G_SKILL_DELAY = "G技能按下后摇延迟(ms)"     # 按G后等这么久再交回决策(测后摇/接大招)
-    DODGE_TEST_COMBO_ROUNDS = 2  # 测试里反击后接几轮 combo 的默认值(配置读不到时用)
-    CONF_COMBO_ROUNDS = "combo轮数"  # 测试里反击+闪避之后接几轮 combo, 可配
-    # 闪避反击测试用哪套流程(供对比):
-    #   当前: 强制平A(反击/第一个4a) → 主动闪避(再触发一个4a) → 后摇等待 → N轮方案一combo。
-    #   闪双4a: 闪避后等后摇 → 直接打方案二(5点4a → 跳A取消续打 → …), 用跳A取消续打第二个4a,
-    #          不用主动闪避、不重起combo(参考"闪后双4a"原设计)。
-    CONF_DODGE_STYLE = "闪避反击方式"
-    STYLE_CURRENT = "反击+主动闪避+方案一"
-    STYLE_SCHEME_B = "闪双4a(方案二)"
-    # 双4a(声音闪避版)的可调时序(选"闪双4a"才显示): 声音闪避后 → 前段平A(打第一个4a) → 跳A(空格+
-    # 左键同按)代替第二次闪避、续段 → 后段平A(接第二个4a)。三段时长各自可配, 前后平A共用连点按下/抬起
-    # (逻辑同光速4a方案四)。精确时序在 requiem_combo.run_scheme_double_4a。
+    DODGE_TEST_COMBO_ROUNDS = 2  # 测试里双4a后接几轮 combo 的默认值(配置读不到时用)
+    CONF_COMBO_ROUNDS = "combo轮数"  # 测试里双4a/免费技能打断之后接几轮 combo, 可配
+    # 闪双4a(声音闪避版)的可调时序: 声音闪避后 → 前段平A(打第一个4a) → 跳A(空格+左键同按)代替
+    # 第二次闪避、续段 → 后段平A(接第二个4a)。三段时长各自可配, 前后平A共用连点按下/抬起
+    # (逻辑同光速4a)。精确时序在 requiem_combo.run_scheme_double_4a。
     CONF_D4_FRONT = "双4a-前段平A(ms)"       # 第一个4a: 跳A之前的平A时长
     CONF_D4_JUMP_HOLD = "双4a-跳A按住(ms)"    # 空格+左键同时按住(代替闪避)
     CONF_D4_BACK = "双4a-后段平A(ms)"        # 第二个4a: 跳A之后的平A时长
     CONF_D4_CLICK_HOLD = "双4a-连点按住(ms)"  # 前后两段平A共用的左键按住
     CONF_D4_CLICK_GAP = "双4a-连点抬起(ms)"   # 前后两段平A共用的左键抬起
-    # 双4a尾段(两个4a打完后)的"闪避替代"方式 + 闪避后补平A(替换旧的死等延迟)。
-    CONF_D4_TAIL_DODGE = "双4a-尾段闪避方式"   # drop_down: W+闪避 / 跳+左键(复用光速4a跳A按住)
-    D4_DODGE_W = "W+闪避"                     # 按住W再按闪避(带前冲方向)
-    D4_DODGE_JUMP = "跳+左键(光速4a跳A)"       # 空格+左键同按, 时长复用光速4a的"跳A按住"
-    CONF_D4_TAIL_FILL = "双4a-闪避后补平A(ms)"  # 替换延迟: 闪避后补平A的时长(平A节拍复用光速4a连点按住/抬起)
-    DODGE_KEY = "lshift"  # 游戏闪避键(主动闪避/闪避测试用)
-    DODGE_DIR_KEY = "w"   # 双4a尾段闪避的方向键: 按住W再按闪避(带前冲方向), 再一起松
-    # 专测"闪避后接第一个平A所需时间"的触发键: 按一下→闪避→等 combo前后摇等待→打一个平A。
-    # 用来调 combo前后摇等待(=闪避后到首平A的时间)。留空=关闭。
-    CONF_FIRST_ATTACK_TEST_KEY = "闪避后首平A测试键"
-    # 模拟声音闪避的测试键: 按一下=假装出现了声音闪避, 走一整轮完整流程[初始闪避→强制平A→主动闪避
-    # →后摇→N轮combo], 整轮暂停声音自动闪避。不用真声音、不受敌人干扰, 最适合看清流程。留空=关闭。
+    # 两个4a打完后用跳A(空格+左键同按, 时长复用光速4a的"跳A按住")代替闪避, 再补平A。
+    CONF_D4_TAIL_FILL = "双4a-闪避后补平A(ms)"  # 跳A后补平A的时长(平A节拍复用光速4a连点按住/抬起)
+    DODGE_KEY = "lshift"  # 游戏闪避键(免费技能打断/闪避测试用)
+    # 模拟声音闪避的测试键: 按一下=假装出现了声音闪避, 走一整轮完整流程[初始闪避→双4a→N轮combo],
+    # 整轮暂停声音自动闪避。不用真声音、不受敌人干扰, 最适合看清流程。留空=关闭。
     CONF_DODGE_TEST_KEY = "闪避反击模拟测试键"
 
-    # 方案四(光速4a·时间驱动)的可调时序, 单位毫秒(默认见 requiem_combo.SCHEME_LS_*)。
+    # 光速4a(时间驱动)的可调时序, 单位毫秒(默认见 requiem_combo.SCHEME_LS_*)。
     # 核心是"跳A时机": 连点累计到这个时刻才左键+空格同跳, 改它时跳A那下左键自动跟着移动。
-    # 同样折叠成组, 默认收起。
     CONF_LS_EXPAND = "方案四·光速4a时序"  # 折叠分组, 展开=5个时序配置
     CONF_LS_JUMP_AT = "方案四-跳A时机(ms)"
     CONF_LS_JUMP_HOLD = "方案四-跳A按住(ms)"
@@ -182,31 +135,19 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_LS_CLICK_GAP = "方案四-连点抬起(ms)"
     CONF_LS_TAIL = "方案四-跳后收尾(ms)"
 
-    # 免费技能后普攻会顺出又慢又低伤的第五下平A(a5)。放完免费技能用闪避打断它(实测只有闪避能打断,
-    # 跳A打不断)、不打那第五下, 直接接 combo。以下时序可调(ms), 实战侧(Requiem)读。
+    # 免费技能后普攻会顺出又慢又低伤的第五下平A(a5)。放完免费技能用闪避打断它、不打那第五下,
+    # 直接接 combo。以下时序可调(ms), 实战侧(Requiem)读。
     # 测试键: 按一下=发技能键放(免费)技能 → delay → 闪避打断 → combo; 需在游戏里把技能设成免费技能(可反复放)。
-    # 免费技能分组: 打断时序 + 测试键 全放一起(原测试键散在"测试开关组", 与时序分家)。
     CONF_FREE_BREAK_EXPAND = "免费技能设置"  # 折叠分组, 展开=时序+测试键
     CONF_FREE_BREAK_DELAY = "免费技能后打断延迟(ms)"      # 免费技能→闪避 的等待(核心旋钮)
     CONF_FREE_BREAK_JUMP_HOLD = "免费技能后闪避按住(ms)"  # 闪避键按住时长
     CONF_FREE_BREAK_WAIT = "免费技能后打断后等待(ms)"     # 闪避打断→combo第一下 的间隔
     CONF_FREE_BREAK_TEST_KEY = "免费技能后接combo测试键"
     CONF_FREE_SKILL_KEY = "技能键(测试放免费技能用)"
-    # 打断a5两套方案(选哪套下面只出哪套参数): 方案一=闪避(lshift, 原实现); 方案二=跳A(空格+左键
-    # 同按, 即光速4a/双4a里那个跳A)代替闪避打断。两套 delay/hold/wait 各自独立配置。
-    CONF_FREE_BREAK_MODE = "免费技能打断方式"
-    FREE_BREAK_MODE_DODGE = "方案一(闪避)"
-    FREE_BREAK_MODE_JUMP = "方案二(跳A)"
-    CONF_FREE_BREAK2_DELAY = "方案二-打断延迟(ms)"      # 免费技能→跳A 的等待
-    CONF_FREE_BREAK2_JUMP_HOLD = "方案二-跳A按住(ms)"   # 跳A(空格+左键同按)按住时长
-    CONF_FREE_BREAK2_WAIT = "方案二-打断后等待(ms)"     # 跳A打断→combo第一下 的间隔
 
     # 顶层配置太多, 全部按用途折叠成组(默认收起, 用到再展开)。分组用 config_group() 声明,
     # [lw] 界面上渲染成和任务卡片一样的可展开标题(见 src/lw/config_group_ui.py), 不是开关。
-    #   基础触发 = 触发键/宏模式/触发方式/输入方式;
-    #   实战调优参数 = 反击/后摇/主动闪避/轮数/技能前平A/脱战复查/让路 那几个秒数与比例旋钮;
-    #   测试开关与测试键 = 各测试开关(闪避反击测试/禁用技能大招)与测试键(首平A/模拟闪避)。
-    CONF_GROUP_TRIGGER = "基础触发设置"   # 折叠分组: 触发键/宏模式/触发方式/输入方式
+    CONF_GROUP_TRIGGER = "基础触发设置"   # 折叠分组: 触发键/触发方式
     CONF_GROUP_SUPPORT_PREEMPTION = "辅助资源提权"
     CONF_SUPPORT_SKILL_SWITCH = "辅助技能就绪是否切人"
     CONF_SUPPORT_SKILL_PREEMPTION = "辅助E是否提权"
@@ -231,17 +172,13 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION = "残虹声音闪避后普攻时长(s)"
     CONF_ORDINARY_DODGE_WAIT = "普通闪避等待(s)"
     CONF_REQUIEM_ORDINARY_DODGE_WAIT = "安魂曲普通闪避等待(s)"
-    CONF_GROUP_DODGE = "闪避反击设置"     # 折叠分组: 展开=闪避方式(下拉)+选闪双4a时的时序
+    CONF_GROUP_DODGE = "闪避反击设置"     # 折叠分组: 闪双4a时序
     CONF_GROUP_TUNING = "实战调优参数"    # 折叠分组
     CONF_GROUP_TEST = "测试开关与测试键"   # 折叠分组
     CONF_MANUAL_KEY_TRIGGERS = "启用手动触发按键"
-    # [lw] 虚拟手柄共存实验: 不读取/隐藏实体手柄, 虚拟手柄摇杆始终中立, 只周期按 A。
-    CONF_GROUP_GAMEPAD = "虚拟手柄共存测试"
-    CONF_GAMEPAD_TEST = "启用虚拟手柄A键脉冲"
-    CONF_GAMEPAD_INTERVAL = "虚拟手柄A键间隔(s)"
-    GAMEPAD_TEST_HOLD_SECONDS = 0.08
 
     # 配置档位: 界面内保存/载入 1~4 套配置(存在 PRESET_FILE), 外加导出/从文件导入。
+    CONF_GROUP_PRESET = "配置档位与导入导出"  # 折叠分组
     CONF_PRESET_SLOT = "配置档位"       # drop_down 1/2/3/4
     CONF_PRESET_OPS = "档位存取"        # 两个按钮: 保存到该档位 / 载入该档位
     CONF_PRESET_FILE = "配置文件"       # 两个按钮: 导出到文件 / 从文件导入
@@ -249,7 +186,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     EXCHANGE_DIRECTORY = "data_export"
     EXCHANGE_FILE_NAME = "安魂曲配置.json"
 
-    # 方案一/二的精确时序统一放在 src/combat/requiem_combo.py(宏与实战主C共用, 改一处两边同步)。
+    # combo 的精确时序统一放在 src/combat/requiem_combo.py(宏与实战主C共用, 改一处两边同步)。
     # 一轮结束后, 若仍按着触发键, 停这么久再进下一轮(对齐参考的 Sleep(200))。
     SCHEME_LOOP_GAP = 0.200
 
@@ -272,35 +209,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         "side1": 0x05,
         "side2": 0x06,
     }
-    # Recorded from the user's working mouse macro:
-    # repeated left click down/up timings, then Space, then follow-up left clicks.
-    RECORDED_MACRO = [
-        ("click", 0.096),
-        ("sleep", 0.087),
-        ("click", 0.064),
-        ("sleep", 0.095),
-        ("click", 0.068),
-        ("sleep", 0.099),
-        ("click", 0.072),
-        ("sleep", 0.092),
-        ("click", 0.084),
-        ("sleep", 0.077),
-        ("click", 0.085),
-        ("sleep", 0.074),
-        ("click", 0.093),
-        ("sleep", 0.082),
-        ("click", 0.098),
-        ("sleep", 0.077),
-        ("click", 0.092),
-        ("sleep", 0.326),
-        ("key", "space", 0.100),
-        ("sleep", 0.002),
-        ("click", 0.074),
-        ("sleep", 0.042),
-        # 最后一个平A: 原 0.082s 时宏总时长短于这一下的后摇, 连打第二轮时上一轮后摇还没走完
-        # 就开下一轮→第二轮结尾错乱。把按住时长拉到 0.25s 盖住后摇, 单轮/连轮结尾都稳。
-        ("click", 0.25),
-    ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -309,12 +217,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             {
                 # 默认值 = longwei 实测调优后的最优解(2026-07-05)。别的机器哪怕微调, 也从这套起,
                 # 而不是最初那套(如光速4a跳A时机1470根本触发不了)。
-                # 基础触发组(折叠): 触发键/宏模式/触发方式/输入方式
+                # 基础触发组(折叠): 触发键/触发方式
                 self.CONF_GROUP_TRIGGER: False,
                 self.CONF_TRIGGER_KEY: "mouse5",
-                self.CONF_MACRO_MODE: self.MODE_SCHEME_LS,
                 self.CONF_TRIGGER_MODE: self.TRIGGER_HOLD,
-                self.CONF_INPUT_MODE: self.INPUT_BG,
                 # 辅助资源调度组: 默认保持当前行为; 可关闭 E 主动切人或 Q/E 环合前抢占。
                 self.CONF_GROUP_SUPPORT_PREEMPTION: False,
                 self.CONF_SUPPORT_SKILL_SWITCH: True,
@@ -340,38 +246,28 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.5,
                 self.CONF_ORDINARY_DODGE_WAIT: 0.5,
                 self.CONF_REQUIEM_ORDINARY_DODGE_WAIT: 0.5,
-                # 闪避反击设置组(折叠)→ 闪避方式(下拉)→ 选"闪双4a"才显示7个时序
+                # 闪避反击设置组(折叠): 闪双4a时序
                 self.CONF_GROUP_DODGE: False,
-                self.CONF_DODGE_STYLE: self.STYLE_SCHEME_B,
                 self.CONF_D4_FRONT: 1800,
                 self.CONF_D4_JUMP_HOLD: 20,
                 self.CONF_D4_BACK: 700,
                 self.CONF_D4_CLICK_HOLD: 20,
                 self.CONF_D4_CLICK_GAP: 20,
-                self.CONF_D4_TAIL_DODGE: self.D4_DODGE_JUMP,
                 self.CONF_D4_TAIL_FILL: 250,
-                # 方案四(光速4a)时序, 展开开关
+                # 光速4a时序(折叠)
                 self.CONF_LS_EXPAND: False,
                 self.CONF_LS_JUMP_AT: 1800,
                 self.CONF_LS_JUMP_HOLD: 20,
                 self.CONF_LS_CLICK_HOLD: 20,
                 self.CONF_LS_CLICK_GAP: 20,
                 self.CONF_LS_TAIL: 200,
-                # 免费技能后打断时序, 展开开关
+                # 免费技能后闪避打断时序(折叠)
                 self.CONF_FREE_BREAK_EXPAND: False,
-                self.CONF_FREE_BREAK_MODE: self.FREE_BREAK_MODE_DODGE,  # 默认方案一(闪避), 保持现有行为
                 self.CONF_FREE_BREAK_DELAY: 250,
                 self.CONF_FREE_BREAK_JUMP_HOLD: 20,
                 self.CONF_FREE_BREAK_WAIT: 450,
-                self.CONF_FREE_BREAK2_DELAY: 250,
-                self.CONF_FREE_BREAK2_JUMP_HOLD: 20,
-                self.CONF_FREE_BREAK2_WAIT: 450,
                 # 实战调优参数(折叠, 默认收起)
                 self.CONF_GROUP_TUNING: False,
-                self.CONF_DODGE_COUNTER: 0.95,
-                self.CONF_DODGE_COMBO_WAIT: 0.3,
-                self.CONF_DODGE_COUNT: 1,
-                self.CONF_DODGE_GAP: 0.3,
                 self.CONF_COMBO_ROUNDS: 2,
                 self.CONF_ENGAGE_ATTACK: 0.15,
                 self.CONF_COMBO_COMBAT_CHECK: 0.5,
@@ -383,53 +279,26 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_MANUAL_KEY_TRIGGERS: False,
                 self.CONF_DODGE_TEST: False,
                 self.CONF_DISABLE_SKILLS: False,
-                self.CONF_FIRST_ATTACK_TEST_KEY: "6",
                 self.CONF_DODGE_TEST_KEY: "7",
                 self.CONF_FREE_BREAK_TEST_KEY: "9",
                 self.CONF_FREE_SKILL_KEY: "e",
-                # [lw] 实验功能默认关闭，避免未验证双手柄兼容性时影响游戏输入。
-                self.CONF_GROUP_GAMEPAD: False,
-                self.CONF_GAMEPAD_TEST: False,
-                self.CONF_GAMEPAD_INTERVAL: 3.0,
-                self.CONF_PRESET_SLOT: "1",
             }
         )
         self.config_type.update(
             {
-                self.CONF_PRESET_SLOT: {
-                    "type": "drop_down",
-                    "options": ["1", "2", "3", "4"],
-                },
                 self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT: {
                     "type": "drop_down",
                     "options": ["关闭", "1", "2", "3", "4"],
                 },
-                self.CONF_PRESET_OPS: {
-                    "buttons": [
-                        {"text": "保存到该档位", "callback": self._preset_save},
-                        {"text": "载入该档位", "callback": self._preset_load},
-                    ],
-                },
-                self.CONF_PRESET_FILE: {
-                    "buttons": [
-                        {"text": "导出到文件", "callback": self._preset_export},
-                        {"text": "从文件导入", "callback": self._preset_import},
-                    ],
-                },
-                self.CONF_MACRO_MODE: {
-                    "type": "drop_down",
-                    "options": [self.MODE_RECORDED, self.MODE_SCHEME_A, self.MODE_SCHEME_LS],
-                },
-                # 方案四那5个时序配置折叠成组, 展开才显示。
+                # 光速4a那5个时序配置折叠成组, 展开才显示。
                 self.CONF_LS_EXPAND: config_group([
                     self.CONF_LS_JUMP_AT, self.CONF_LS_JUMP_HOLD,
                     self.CONF_LS_CLICK_HOLD, self.CONF_LS_CLICK_GAP,
                     self.CONF_LS_TAIL,
                 ]),
-                # 基础触发组(折叠): 触发键/宏模式/触发方式/输入方式全收进来, 不再裸露顶层。
+                # 基础触发组(折叠): 触发键/触发方式收进来, 不再裸露顶层。
                 self.CONF_GROUP_TRIGGER: config_group([
-                    self.CONF_TRIGGER_KEY, self.CONF_MACRO_MODE,
-                    self.CONF_TRIGGER_MODE, self.CONF_INPUT_MODE,
+                    self.CONF_TRIGGER_KEY, self.CONF_TRIGGER_MODE,
                 ]),
                 # 顶层折叠: 分别控制辅助 E/Q 是否发布 LW preemptive claim。
                 self.CONF_GROUP_SUPPORT_PREEMPTION: config_group([
@@ -462,91 +331,41 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                         True: [self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS],
                     },
                 },
-                # 免费技能组(折叠): 打断时序 + 测试键 全放一起(测试键原散在"测试开关组")。
+                # 免费技能组(折叠): 闪避打断时序 + 测试键 全放一起。
                 self.CONF_FREE_BREAK_EXPAND: config_group([
-                    self.CONF_FREE_BREAK_MODE,
+                    self.CONF_FREE_BREAK_DELAY, self.CONF_FREE_BREAK_JUMP_HOLD,
+                    self.CONF_FREE_BREAK_WAIT,
                     self.CONF_FREE_BREAK_TEST_KEY, self.CONF_FREE_SKILL_KEY,
                 ]),
-                # 打断方式(下拉)→ 选方案一显示闪避那3个时序, 选方案二显示跳A那3个时序(各自独立)。
-                self.CONF_FREE_BREAK_MODE: {
-                    "type": "drop_down",
-                    "options": [self.FREE_BREAK_MODE_DODGE, self.FREE_BREAK_MODE_JUMP],
-                    "sub_configs": {
-                        self.FREE_BREAK_MODE_DODGE: [
-                            self.CONF_FREE_BREAK_DELAY, self.CONF_FREE_BREAK_JUMP_HOLD,
-                            self.CONF_FREE_BREAK_WAIT,
-                        ],
-                        self.FREE_BREAK_MODE_JUMP: [
-                            self.CONF_FREE_BREAK2_DELAY, self.CONF_FREE_BREAK2_JUMP_HOLD,
-                            self.CONF_FREE_BREAK2_WAIT,
-                        ],
-                    },
-                },
-                # 实战调优参数折叠: 开(True)才显示那几个秒数/比例旋钮(收起不影响其值生效)。
-                # 实战调优只留"两方案通用"的; 方案一专属的(反击强制平A/主动闪避次数/间隔/后摇等待)
-                # 已移到 CONF_DODGE_STYLE=方案一 的 sub_configs, 选方案一才显示。
+                # 实战调优参数折叠: 展开才显示那几个秒数/比例旋钮(收起不影响其值生效)。
                 self.CONF_GROUP_TUNING: config_group([
                     self.CONF_COMBO_ROUNDS, self.CONF_ENGAGE_ATTACK,
                     self.CONF_COMBO_COMBAT_CHECK, self.CONF_COMBO_BREAK_FOR_SKILL,
                     self.CONF_G_SKILL_ENABLE, self.CONF_G_SKILL_DELAY,
                 ]),
-                # 测试开关与测试键折叠: 开(True)才显示(收起不影响其值生效; 禁用技能大招默认关)。
-                # 免费技能测试键已移到"免费技能组", 这里不再重复。
+                # 测试开关与测试键折叠: 展开才显示(收起不影响其值生效; 禁用技能大招默认关)。
+                # 免费技能测试键在"免费技能组", 这里不再重复。
                 self.CONF_GROUP_TEST: config_group([
                     self.CONF_MANUAL_KEY_TRIGGERS, self.CONF_DODGE_TEST,
-                    self.CONF_DISABLE_SKILLS,
-                    self.CONF_FIRST_ATTACK_TEST_KEY, self.CONF_DODGE_TEST_KEY,
-                ]),
-                # [lw] 单独折叠，避免实验功能裸露在安魂曲配置最外层。
-                self.CONF_GROUP_GAMEPAD: config_group([
-                    self.CONF_GAMEPAD_TEST,
-                    self.CONF_GAMEPAD_INTERVAL,
+                    self.CONF_DISABLE_SKILLS, self.CONF_DODGE_TEST_KEY,
                 ]),
                 self.CONF_TRIGGER_MODE: {
                     "type": "drop_down",
                     "options": [self.TRIGGER_HOLD, self.TRIGGER_TOGGLE],
                 },
-                # 闪避反击设置组(折叠): 展开后才显示"闪避反击方式"下拉。
-                self.CONF_GROUP_DODGE: config_group([self.CONF_DODGE_STYLE]),
-                self.CONF_DODGE_STYLE: {
-                    "type": "drop_down",
-                    "options": [self.STYLE_CURRENT, self.STYLE_SCHEME_B],
-                    # 嵌套第三层(按所选方案显示各自专属参数, 不属于本方案的不显示):
-                    #   方案一 → 反击强制平A/主动闪避次数/间隔/combo后摇等待(这套只方案一走);
-                    #   闪双4a → 它的7个专属时序。
-                    "sub_configs": {
-                        self.STYLE_CURRENT: [
-                            self.CONF_DODGE_COUNTER, self.CONF_DODGE_COUNT,
-                            self.CONF_DODGE_GAP, self.CONF_DODGE_COMBO_WAIT,
-                        ],
-                        self.STYLE_SCHEME_B: [
-                            self.CONF_D4_FRONT, self.CONF_D4_JUMP_HOLD, self.CONF_D4_BACK,
-                            self.CONF_D4_CLICK_HOLD, self.CONF_D4_CLICK_GAP,
-                            self.CONF_D4_TAIL_DODGE, self.CONF_D4_TAIL_FILL,
-                        ],
-                    },
-                },
-                self.CONF_D4_TAIL_DODGE: {
-                    "type": "drop_down",
-                    "options": [self.D4_DODGE_W, self.D4_DODGE_JUMP],
-                },
-                self.CONF_INPUT_MODE: {
-                    "type": "drop_down",
-                    "options": [self.INPUT_HW, self.INPUT_BG],
-                },
+                # 闪避反击设置组(折叠): 闪双4a的6个时序。
+                self.CONF_GROUP_DODGE: config_group([
+                    self.CONF_D4_FRONT, self.CONF_D4_JUMP_HOLD, self.CONF_D4_BACK,
+                    self.CONF_D4_CLICK_HOLD, self.CONF_D4_CLICK_GAP,
+                    self.CONF_D4_TAIL_FILL,
+                ]),
             }
         )
         self.config_description.update(
             {
-                self.CONF_TRIGGER_KEY: "长按该键执行4A+跳A宏(松手即停)",
-                self.CONF_MACRO_MODE: "4A宏模式: 原始录制/方案一/光速4a(方案四)",
+                self.CONF_TRIGGER_KEY: "长按该键执行光速4a宏(松手即停)",
                 self.CONF_TRIGGER_MODE: "长按循环(松手停) 或 按一下开/关循环",
-                self.CONF_INPUT_MODE: "仅方案一/四: 前台(硬件) 或 后台(发消息)",
-                self.CONF_DODGE_COUNTER: "闪避反击强制平A秒数(0.1间隔), 保证反击打出; 0=关",
-                self.CONF_DODGE_COMBO_WAIT: "combo前若紧接闪避反击, 额外等这么久走完后摇; 0=不等",
-                self.CONF_DODGE_COUNT: "方案一反击后主动闪避几次: 2=重置连段让combo从a1对齐",
-                self.CONF_DODGE_GAP: "主动闪避≥2次时, 每两次之间等这么久",
-                self.CONF_COMBO_ROUNDS: "反击+闪避后接几轮combo",
+                self.CONF_COMBO_ROUNDS: "测试里双4a/免费技能打断后接几轮combo",
                 self.CONF_ENGAGE_ATTACK: "放真技能前先平A进交战这么久, 防打空; 0=不补",
                 self.CONF_COMBO_COMBAT_CHECK: "实战combo中途每隔这么久复查脱战(目标死/打空即收手); 0=关",
                 self.CONF_COMBO_BREAK_FOR_SKILL: "combo进度<此比例(0~1)且技能/大招就绪就中断去开(伤害大头在combo尾, 过半就打完); 0=关",
@@ -554,18 +373,15 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_G_SKILL_DELAY: "按G后等这么久(ms)再交回决策; 用来测按下G的后摇(后面好接大招)",
                 self.CONF_DODGE_TEST: "开=每次声音闪避走一整轮(关自动战斗后调时间用)",
                 self.CONF_DISABLE_SKILLS: "开=所有LW角色模板不放E/Q; G和合轴不受影响(测手感/闪避用); 刷本记得关",
-                self.CONF_GROUP_DODGE: "闪避方式 + 选闪双4a后的7个时序",
-                self.CONF_DODGE_STYLE: "闪避反击方式: 方案一 / 闪双4a",
+                self.CONF_GROUP_DODGE: "声音闪避后的闪双4a时序",
                 self.CONF_D4_FRONT: "双4a 前段平A毫秒(打第一个4a); 太短会接不出第二个4a",
                 self.CONF_D4_JUMP_HOLD: "双4a 跳A空格+左键同按毫秒(代替闪避)",
                 self.CONF_D4_BACK: "双4a 后段平A毫秒(接第二个4a)",
                 self.CONF_D4_CLICK_HOLD: "双4a 前后平A共用的左键按住毫秒",
                 self.CONF_D4_CLICK_GAP: "双4a 前后平A共用的左键抬起毫秒",
-                self.CONF_D4_TAIL_DODGE: "双4a两个4a后的闪避替代: W+闪避 / 跳+左键(复用光速4a跳A按住)",
-                self.CONF_D4_TAIL_FILL: "双4a 闪避后补平A毫秒(替换延迟; 平A节拍复用光速4a连点按住/抬起)",
-                self.CONF_FIRST_ATTACK_TEST_KEY: "按此键→闪避→等后摇→打一个平A(调后摇用); 留空=关",
+                self.CONF_D4_TAIL_FILL: "双4a 两个4a后跳A(复用光速4a跳A按住), 再补平A这么多毫秒(节拍复用光速4a连点按住/抬起)",
                 self.CONF_DODGE_TEST_KEY: "按此键=模拟一次声音闪避走整轮; 留空=关",
-                self.CONF_LS_EXPAND: "方案四(光速4a)的5个时序配置",
+                self.CONF_LS_EXPAND: "光速4a的5个时序配置",
                 self.CONF_LS_JUMP_AT: "方案四 跳A时机毫秒(核心); 大世界约1390其他约1470; 跳早出1a",
                 self.CONF_LS_JUMP_HOLD: "方案四 跳A左键+空格同按毫秒(参考18)",
                 self.CONF_LS_CLICK_HOLD: "方案四 连点每下左键按住毫秒",
@@ -573,15 +389,11 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_LS_TAIL: "方案四 跳A后收尾毫秒(连点节拍继续平A填满; 参考218)",
                 self.CONF_FREE_BREAK_TEST_KEY: "按此键=发技能键放(免费)技能→闪避打断a5→combo; 需游戏里把技能设成免费技能; 留空=关",
                 self.CONF_FREE_SKILL_KEY: "测试放免费技能用的技能键(填游戏里的技能键, 如e)",
-                self.CONF_FREE_BREAK_EXPAND: "打断方式 + 对应方案时序 + 免费技测试键/技能键",
-                self.CONF_FREE_BREAK_MODE: "免费技能打断a5的方式: 方案一(闪避lshift) / 方案二(跳A=空格+左键同按)",
-                self.CONF_FREE_BREAK_DELAY: "方案一 免费技能放出→按闪避打断 之间等这么久(核心; 早了打断免费技能/晚了a5已出)",
-                self.CONF_FREE_BREAK_JUMP_HOLD: "方案一 打断用的闪避键按住毫秒",
-                self.CONF_FREE_BREAK_WAIT: "方案一 闪避打断→combo第一下 的间隔毫秒(可填0)",
-                self.CONF_FREE_BREAK2_DELAY: "方案二 免费技能放出→跳A打断 之间等这么久(ms)",
-                self.CONF_FREE_BREAK2_JUMP_HOLD: "方案二 跳A(空格+左键同按)按住毫秒",
-                self.CONF_FREE_BREAK2_WAIT: "方案二 跳A打断→combo第一下 的间隔毫秒(可填0)",
-                self.CONF_GROUP_TRIGGER: "触发键/宏模式/触发方式/输入方式",
+                self.CONF_FREE_BREAK_EXPAND: "免费技能后闪避打断a5的时序 + 免费技测试键/技能键",
+                self.CONF_FREE_BREAK_DELAY: "免费技能放出→按闪避打断 之间等这么久(核心; 早了打断免费技能/晚了a5已出)",
+                self.CONF_FREE_BREAK_JUMP_HOLD: "打断用的闪避键按住毫秒",
+                self.CONF_FREE_BREAK_WAIT: "闪避打断→combo第一下 的间隔毫秒(可填0)",
+                self.CONF_GROUP_TRIGGER: "触发键/触发方式",
                 self.CONF_GROUP_SUPPORT_PREEMPTION: "辅助技能切人以及 Q/E 资源提权开关",
                 self.CONF_SUPPORT_SKILL_SWITCH: "开=辅助 E 推算就绪时允许主动切人; 关=不因辅助 E 就绪切人",
                 self.CONF_SUPPORT_SKILL_PREEMPTION: "开=允许切人时, 辅助 E 就绪会在环合前抢占; 关=仅按普通评分切人",
@@ -637,25 +449,50 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     "超时判为普通闪避, 等待期间不攻击; 合轴时恢复纯普攻, 非合轴时接combo"
                 ),
                 self.CONF_GROUP_TUNING: "combo轮数/技能前平A/脱战复查/让路/G技能",
-                self.CONF_GROUP_TEST: (
-                    "手动按键总开关, 闪避反击测试/禁用技能大招/首平A/模拟闪避"
-                ),
+                self.CONF_GROUP_TEST: "手动按键总开关, 闪避反击测试/禁用技能大招/模拟闪避",
                 self.CONF_MANUAL_KEY_TRIGGERS: (
                     "开=允许鼠标侧键4A, 合轴及所有手动测试按键; "
                     "关=统一忽略这些手动按键"
                 ),
-                self.CONF_GROUP_GAMEPAD: "实体手柄与虚拟手柄共存测试",
-                self.CONF_GAMEPAD_TEST: "开=虚拟Xbox手柄每隔数秒按一次A；不接管、不隐藏实体手柄",
-                self.CONF_GAMEPAD_INTERVAL: "虚拟手柄两次A键测试脉冲之间的秒数",
+            }
+        )
+        self.name = "安魂曲配置"
+        configure_activity(self)  # [lw] Independent top-level activity group.
+        # 配置档位组放在最后(活动配置之后)。
+        self.default_config.update({self.CONF_GROUP_PRESET: False, self.CONF_PRESET_SLOT: "1"})
+        self.config_type.update(
+            {
+                self.CONF_GROUP_PRESET: config_group([
+                    self.CONF_PRESET_SLOT, self.CONF_PRESET_OPS, self.CONF_PRESET_FILE,
+                ]),
+                self.CONF_PRESET_SLOT: {
+                    "type": "drop_down",
+                    "options": ["1", "2", "3", "4"],
+                },
+                self.CONF_PRESET_OPS: {
+                    "buttons": [
+                        {"text": "保存到该档位", "callback": self._preset_save},
+                        {"text": "载入该档位", "callback": self._preset_load},
+                    ],
+                },
+                self.CONF_PRESET_FILE: {
+                    "buttons": [
+                        {"text": "导出到文件", "callback": self._preset_export},
+                        {"text": "从文件导入", "callback": self._preset_import},
+                    ],
+                },
+            }
+        )
+        self.config_description.update(
+            {
+                self.CONF_GROUP_PRESET: "保存/载入 1~4 号配置档位, 或导出/导入配置文件",
                 self.CONF_PRESET_SLOT: "选择配置档位(1~4), 存取/导入导出都对该档位",
                 self.CONF_PRESET_OPS: "保存=当前配置存到该档位; 载入=把该档位配置读回界面",
                 self.CONF_PRESET_FILE: "导出=当前配置存成json; 从文件导入=读json回界面",
             }
         )
-        self.name = "安魂曲配置"
-        configure_activity(self)  # [lw] Independent top-level activity group.
         self._activity = ActivityController(self)  # [lw]
-        self.description = "安魂曲4A跳A宏 / 实战闪避反击等配置; 含闪避反击测试开关"
+        self.description = "安魂曲光速4a宏 / 实战闪双4a等配置; 含闪避反击测试开关"
         self._submitted = False
         self._key_was_down = False
         self._macro_running = False
@@ -665,14 +502,12 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         self._last_seen_dodge = None  # 闪避反击测试: 上次已处理的声音闪避时刻
         self._in_dodge_test = False   # 正在跑闪避反击测试序列(此时 combo 跑满, 不看触发键)
         self._manual_key_triggers_armed = False
-        self._fk_was_down = False     # 闪避后首平A测试键的前态(边沿检测)
         self._dtk_was_down = False    # 闪避反击模拟测试键(7)的前态(边沿检测)
         self._fbk_was_down = False    # 免费技能后接combo测试键的前态(边沿检测)
         self._coaxis_key_was_down = False  # [lw] Pair-axis toggle edge state.
         self._coaxis_running = False       # [lw] Standalone axis test state.
-        self._gamepad_tester = None     # [lw] 延迟创建，默认关闭时不加载 vgamepad
-        self._next_gamepad_pulse_at = 0.0
-        self._gamepad_error_reported = False
+        self._itx = None     # 框架 interaction, _prepare_input 时取
+        self._click_pos = 0  # 点击坐标(屏幕中心)的 lParam, _prepare_input 时算
 
     def load_config(self):
         """首次改名时沿用旧类名对应的用户配置，已有新配置时不覆盖。"""
@@ -703,8 +538,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     def _loop(self):
         if not self.enabled:
             self._activity.stop()  # [lw]
-            self._close_gamepad_test()
-            self._gamepad_error_reported = False
             self._submitted = False
             self._manual_key_triggers_armed = False
             self._reset_manual_key_trigger_state()
@@ -715,11 +548,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
 
         if self._activity.poll():  # [lw] Activity has its own enable switch.
             return True
-        self._poll_gamepad_test()
         if self._poll_manual_key_triggers():
             return True
 
-        # 闪避反击测试模式: 专门等声音闪避, 触发后执行[强制平A→主动闪避→后摇等待→N轮combo]。忽略触发键宏。
+        # 闪避反击测试模式: 专门等声音闪避, 触发后执行[双4a→尾段跳A→补平A→N轮combo]。忽略触发键宏。
         if self.config.get(self.CONF_DODGE_TEST):
             self._poll_dodge_counter_test()
             return True
@@ -745,7 +577,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             self._poll_coaxis_trigger,
             self._poll_dodge_test_trigger,
             self._poll_free_skill_combo_test_trigger,
-            self._poll_first_attack_test_trigger,
             self._poll_macro_trigger,
         ):
             if poller():
@@ -756,7 +587,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         self._key_was_down = False
         self._tk_was_down = False
         self._toggle_stop = False
-        self._fk_was_down = False
         self._dtk_was_down = False
         self._fbk_was_down = False
         self._coaxis_key_was_down = False
@@ -764,7 +594,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     def _arm_manual_key_triggers(self):
         self._key_was_down = self._is_key_pressed(self.config.get(self.CONF_TRIGGER_KEY))
         self._tk_was_down = self._key_was_down
-        self._fk_was_down = self._is_key_pressed(self.config.get(self.CONF_FIRST_ATTACK_TEST_KEY))
         self._dtk_was_down = self._is_key_pressed(self.config.get(self.CONF_DODGE_TEST_KEY))
         self._fbk_was_down = self._is_key_pressed(self.config.get(self.CONF_FREE_BREAK_TEST_KEY))
         self._coaxis_key_was_down = self._is_key_pressed(
@@ -804,33 +633,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             return True
         return False
 
-    def _poll_first_attack_test_trigger(self):
-        """Run the first-attack timing test only on its configured press edge."""
-
-        key = self.config.get(self.CONF_FIRST_ATTACK_TEST_KEY)
-        if not key:
-            self._fk_was_down = False
-            return False
-        key_down = self._is_key_pressed(key)
-        edge = key_down and not self._fk_was_down
-        self._fk_was_down = key_down
-        if edge and not self._macro_running:
-            self._run_first_attack_test()
-            return True
-        return False
-
     def _poll_macro_trigger(self):
         """Run the 4A macro from the shared manual-key listener."""
 
         if self.config.get(self.CONF_DODGE_TEST):
-            return False
-        bg_mode = (
-            self.config.get(self.CONF_MACRO_MODE) in (
-                self.MODE_SCHEME_A, self.MODE_SCHEME_LS)
-            and self.config.get(self.CONF_INPUT_MODE) == self.INPUT_BG
-        )
-        if not bg_mode and not self.is_foreground():
-            self._key_was_down = False
             return False
 
         key_down = self._is_key_pressed(self.config.get(self.CONF_TRIGGER_KEY))
@@ -878,11 +684,6 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     def _run_coaxis_test(self):
         """[lw] Run the input-only tester; no combat planner or character state is used."""
 
-        bg_mode = self.config.get(self.CONF_INPUT_MODE) == self.INPUT_BG
-        if not bg_mode and not self.is_foreground():
-            self.log_info("安魂曲残虹合轴测试: 前台输入模式要求游戏位于前台")
-            return False
-
         requiem_switch_key = str(
             self.config.get(self.CONF_COAXIS_REQUIEM_SWITCH_KEY, "1")
         ).strip() or "1"
@@ -923,66 +724,14 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             self._coaxis_key_was_down = self._is_key_pressed(settings.trigger_key)
 
     def _coaxis_send_key(self, key):
-        """[lw] Send a configured switch key through the selected input mode."""
+        """[lw] Send a configured switch key through the framework interaction."""
 
-        if getattr(self, "_bg", False):
-            self._itx.send_key_down(key)
-            try:
-                time.sleep(0.02)
-            finally:
-                self._itx.send_key_up(key)
-            return True
-
-        vk_code = self._get_vk_code(key)
-        if vk_code is None:
-            self.log_info(f"安魂曲残虹合轴测试: 无法识别切换键 {key}")
-            return False
-        win32api.keybd_event(vk_code, 0, 0, 0)
+        self._itx.send_key_down(key)
         try:
             time.sleep(0.02)
         finally:
-            win32api.keybd_event(vk_code, 0, win32con.KEYEVENTF_KEYUP, 0)
+            self._itx.send_key_up(key)
         return True
-
-    def _poll_gamepad_test(self):
-        """[lw] 周期发送虚拟 A 键；实体手柄完全由游戏直接读取。"""
-        if not self.config.get(self.CONF_GAMEPAD_TEST, False):
-            self._close_gamepad_test()
-            self._gamepad_error_reported = False
-            return
-
-        now = time.monotonic()
-        if now < self._next_gamepad_pulse_at:
-            return
-
-        interval = max(0.5, self._conf_num(self.CONF_GAMEPAD_INTERVAL, 3.0))
-        try:
-            starting = self._gamepad_tester is None
-            if self._gamepad_tester is None:
-                self._gamepad_tester = VirtualGamepadPulseTester()
-            self._gamepad_tester.pulse_a(self.GAMEPAD_TEST_HOLD_SECONDS)
-            if starting:
-                self.log_info("虚拟手柄共存测试已启动: 摇杆中立，仅周期发送A键")
-            self._next_gamepad_pulse_at = time.monotonic() + interval
-            self._gamepad_error_reported = False
-        except (VirtualGamepadUnavailableError, OSError, RuntimeError) as exc:
-            self._close_gamepad_test()
-            self._next_gamepad_pulse_at = time.monotonic() + interval
-            if not self._gamepad_error_reported:
-                self.log_error(f"虚拟手柄共存测试不可用: {exc}", notify=True)
-                self._gamepad_error_reported = True
-
-    def _close_gamepad_test(self):
-        """[lw] 复位所有虚拟输入并释放控制器句柄。"""
-        tester = self._gamepad_tester
-        self._gamepad_tester = None
-        self._next_gamepad_pulse_at = 0.0
-        if tester is None:
-            return
-        try:
-            tester.close()
-        except (OSError, RuntimeError) as exc:
-            self.log_error(f"释放虚拟手柄失败: {type(exc).__name__}")
 
     def _conf_num(self, key, default):
         try:
@@ -1126,71 +875,35 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             jump_tail_ms=self._conf_num(self.CONF_LS_TAIL, 218),
         )
 
-    def scheme_round_seconds(self, mode=None):
-        """当前"4A宏模式"下一轮 combo 的预计时长(秒), 供实战估 combo 进度(为技能大招让路用)。
-        方案四(光速4a)按配置的跳A时机+按住+收尾算; 其余(方案一/原始录制/未知)用方案一固定时长。"""
-        mode = mode or self.config.get(self.CONF_MACRO_MODE, self.MODE_SCHEME_A)
-        if mode == self.MODE_SCHEME_LS:
-            p = self._scheme_ls_params()
-            return (p["jump_at_ms"] + p["jump_hold_ms"] + p["jump_tail_ms"]) / 1000.0
-        return requiem_combo.scheme_a_round_seconds()
+    def scheme_round_seconds(self):
+        """光速4a一轮 combo 的预计时长(秒), 按配置的跳A时机+按住+收尾算; 供实战估 combo 进度。"""
+        p = self._scheme_ls_params()
+        return (p["jump_at_ms"] + p["jump_hold_ms"] + p["jump_tail_ms"]) / 1000.0
 
-    def _scheme_runner(self, mode, io):
-        """mode → (跑一轮的可调用, 显示名)。方案四的时序由配置实时决定。"""
-        if mode == self.MODE_SCHEME_A:
-            return (lambda: requiem_combo.run_scheme_a(io)), "安魂曲(方案一)"
-        if mode == self.MODE_SCHEME_LS:
-            params = self._scheme_ls_params()
-            return (lambda: requiem_combo.run_scheme_lightspeed(io, **params)), "光速4a(方案四)"
-        return None
-
-    def _directional_dodge(self):
-        """带方向的闪避: 像跳A那样两键一起按——先按住W、再按闪避, 稍顿再一起松开闪避和W。
-        W给闪避一个前冲方向(不是原地闪)。"""
-        self.send_key_down(self.DODGE_DIR_KEY)  # 按住W
-        self.send_key_down(self.DODGE_KEY)      # 再按闪避
-        time.sleep(0.05)
-        self.send_key_up(self.DODGE_KEY)        # 松闪避
-        self.send_key_up(self.DODGE_DIR_KEY)    # 松W
+    def run_combo_once(self, io):
+        """按配置跑一轮光速4a combo(宏/测试/实战主C共用)。"""
+        requiem_combo.run_scheme_lightspeed(io, **self._scheme_ls_params())
 
     def _run_combo_rounds(self, io, rounds):
-        """按"4A宏模式"的当前选择+配置跑 rounds 轮 combo(方案一/二/三/四共用同一处选择);
-        原始录制/未知模式回退方案一。返回所用方案的显示名, 便于日志。"""
-        mode = self.config.get(self.CONF_MACRO_MODE, self.MODE_SCHEME_A)
-        runner = self._scheme_runner(mode, io)
-        if runner is None:
-            run_once, name = (lambda: requiem_combo.run_scheme_a(io)), "方案一(回退)"
-        else:
-            run_once, name = runner
         for _ in range(rounds):
-            run_once()
-        return name
+            self.run_combo_once(io)
 
     def _run_macro(self):
         self._macro_running = True
-        mode = self.config.get(self.CONF_MACRO_MODE, self.MODE_SCHEME_A)
         self._toggle_mode = self.config.get(self.CONF_TRIGGER_MODE) == self.TRIGGER_TOGGLE
-        self.log_info(f"requiem jump attack macro start mode={mode} toggle={self._toggle_mode}")
+        self.log_info(f"requiem jump attack macro start toggle={self._toggle_mode}")
         start = time.perf_counter()
         # 提高系统定时器精度到1ms, 否则 time.sleep 的几十ms被Windows默认~15ms粒度取整, 打乱连招节奏。
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
-            if mode in (self.MODE_SCHEME_A, self.MODE_SCHEME_LS):
-                self._prepare_input()
-                io = _MacroIO(self)
-                run_once, name = self._scheme_runner(mode, io)
-                loop = self._run_scheme_loop_toggle if self._toggle_mode else self._run_scheme_loop
-                loop(run_once, name)
-            elif self._toggle_mode:
-                # 原始录制 + 按一下开关循环: 循环回放直到再按一下。
-                self._run_scheme_loop_toggle(
-                    lambda: self._run_recorded_macro(time.perf_counter()), "原始录制")
-            else:
-                self._run_recorded_macro(start)
+            self._prepare_input()
+            io = _MacroIO(self)
+            loop = self._run_scheme_loop_toggle if self._toggle_mode else self._run_scheme_loop
+            loop(lambda: self.run_combo_once(io), "光速4a")
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
             elapsed = time.perf_counter() - start
-            self.log_info(f"requiem jump attack macro end mode={mode} elapsed={elapsed:.3f}s")
+            self.log_info(f"requiem jump attack macro end elapsed={elapsed:.3f}s")
             self._macro_running = False
 
     def _macro_should_continue(self):
@@ -1217,10 +930,9 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             self._last_seen_dodge = SoundCombatContext().last_dodge_time()
 
     def _run_dodge_counter_test(self, initial_dodge=False):
-        """一次完整测试序列(和实战 on_dodge_counter 同流程, 中途不打断): [可选:模拟初始闪避] →
-        强制平A反击 → 主动闪避(按一下shift)取消反击后摇 → 等 combo前后摇等待 → DODGE_TEST_COMBO_ROUNDS
-        轮 combo(方案一)。全实时读配置。整轮期间暂停声音自动闪避, 免得 SoundTriggerTask 对真·敌人
-        攻击的闪避插进来把这一轮搅乱(只暂停这一小段, 实战不受影响)。
+        """一次完整测试序列(和实战闪双4a同一份配置, 中途不打断): [可选:模拟初始闪避] → 双4a(前段平A →
+        跳A → 后段平A) → 尾段跳A → 补平A → combo轮数 轮光速4a。全实时读配置。整轮期间暂停声音自动
+        闪避, 免得 SoundTriggerTask 对真·敌人攻击的闪避插进来把这一轮搅乱(只暂停这一小段, 实战不受影响)。
         initial_dodge=True(按7模拟声音): 先自己按一下 shift 当作声音触发的那次初始闪避。"""
         from src.sound_trigger.SoundCombatContext import SoundCombatContext
 
@@ -1236,58 +948,24 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             if initial_dodge:
                 self.send_key(self.DODGE_KEY, down_time=0.02)  # 模拟声音触发的初始闪避
                 time.sleep(0.1)
-            style = self.config.get(self.CONF_DODGE_STYLE, self.STYLE_CURRENT)
-            wait = self._conf_num(self.CONF_DODGE_COMBO_WAIT, 0.3)
-            if style == self.STYLE_SCHEME_B:
-                # 双4a(声音闪避版): 前段平A(打第一个4a) → 跳A(空格+左键同按)代替第二次闪避、续段 →
-                # 后段平A(接第二个4a)。两个4a打完后, 接方案一那套尾段: 主动闪避 → 延迟(后摇等待) →
-                # combo × rounds。combo 复用"4A宏模式"的选择+配置, 轮数复用"combo轮数"。
-                p = self._scheme_d4_params()
-                requiem_combo.run_scheme_double_4a(io, **p)
-                # 尾段闪避替代: W+闪避 或 跳+左键同按(复用光速4a的跳A按住)
-                if self.config.get(self.CONF_D4_TAIL_DODGE, self.D4_DODGE_W) == self.D4_DODGE_JUMP:
-                    jh = self._conf_num(self.CONF_LS_JUMP_HOLD, 18)
-                    io.space_down()
-                    io.mouse_down()
-                    io.sleep_ms(jh)
-                    io.mouse_up()
-                    io.space_up()
-                    dodge_name = f"跳+左键{jh:.0f}ms"
-                else:
-                    self._directional_dodge()                   # 按住W再按闪避
-                    dodge_name = "W+闪避"
-                # 闪避后补平A(替换旧的死等延迟): 时长可配, 平A节拍复用光速4a连点按住/抬起
-                fill = self._conf_num(self.CONF_D4_TAIL_FILL, 350)
-                requiem_combo._fill_attacks(io, fill,
-                                            self._conf_num(self.CONF_LS_CLICK_HOLD, 40),
-                                            self._conf_num(self.CONF_LS_CLICK_GAP, 8))
-                name = self._run_combo_rounds(io, rounds)       # combo × rounds(按4A宏模式)
-                self.log_info(
-                    f"闪避反击测试(双4a): 前段{p['front_ms']}→跳A{p['jump_hold_ms']}→后段{p['back_ms']}ms "
-                    f"→ {dodge_name} → 补平A{fill:.0f}ms → {name}×{rounds}")
-            else:
-                # 当前(方案一): [强制平A(反击, 打出一个高伤4a) → 主动闪避] 重复 N 次(N=主动闪避次数),
-                # 每次白嫖一个4a; 最后一次闪避把连段重置 → 后摇等待 → rounds轮方案一combo(从a1起手对齐)。
-                dur = self._conf_num(self.CONF_DODGE_COUNTER, 0.3)
-                count = max(1, int(self._conf_num(self.CONF_DODGE_COUNT, 1)))
-                gap = self._conf_num(self.CONF_DODGE_GAP, 0.3)
-                for i in range(count):
-                    n = 0
-                    start = time.time()
-                    while time.time() - start < dur:
-                        io.mouse_down()
-                        time.sleep(0.015)
-                        io.mouse_up()
-                        n += 1
-                        time.sleep(0.1)
-                    self.send_key(self.DODGE_KEY, down_time=0.02)  # 主动闪避(按一下shift)
-                    if i < count - 1 and gap > 0:
-                        time.sleep(gap)  # 等这个4a打出来再进下一段[强制平A→主动闪避]
-                self.log_info(f"闪避反击测试: [强制平A{dur:.2f}s→主动闪避]×{count} → 后摇{wait:.2f}s → {rounds}轮combo")
-                if wait > 0:
-                    time.sleep(wait)
-                for _ in range(rounds):
-                    requiem_combo.run_scheme_a(io)
+            p = self._scheme_d4_params()
+            requiem_combo.run_scheme_double_4a(io, **p)
+            # 尾段: 跳A(空格+左键同按, 复用光速4a的跳A按住)代替闪避
+            jh = self._conf_num(self.CONF_LS_JUMP_HOLD, 18)
+            io.space_down()
+            io.mouse_down()
+            io.sleep_ms(jh)
+            io.mouse_up()
+            io.space_up()
+            # 跳A后补平A: 时长可配, 平A节拍复用光速4a连点按住/抬起
+            fill = self._conf_num(self.CONF_D4_TAIL_FILL, 350)
+            requiem_combo._fill_attacks(io, fill,
+                                        self._conf_num(self.CONF_LS_CLICK_HOLD, 40),
+                                        self._conf_num(self.CONF_LS_CLICK_GAP, 8))
+            self._run_combo_rounds(io, rounds)
+            self.log_info(
+                f"闪避反击测试(双4a): 前段{p['front_ms']}→跳A{p['jump_hold_ms']}→后段{p['back_ms']}ms "
+                f"→ 跳+左键{jh:.0f}ms → 补平A{fill:.0f}ms → 光速4a×{rounds}")
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
             SoundCombatContext.set_dodge_paused(False)  # 恢复声音自动闪避
@@ -1296,27 +974,19 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             self.log_info("闪避反击测试: 一次序列完成")
 
     def _run_free_skill_combo_test(self):
-        """免费技能后接combo测试: 发技能键放(免费)技能 → delay → 打断拖沓低伤的a5 → wait → combo(按4A宏模式)。
-        打断方式两套(选哪套读哪套参数): 方案一=闪避(lshift), 方案二=跳A(空格+左键同按)。需在游戏里把技能
-        设成免费技能(可反复放, 不受16s真技能CD限制)。期间暂停声音自动闪避, 便于反复调 delay/hold。
-        时序与实战侧(Requiem._free_skill_break_a5)同一份配置。"""
+        """免费技能后接combo测试: 发技能键放(免费)技能 → delay → 闪避打断拖沓低伤的a5 → wait → combo。
+        需在游戏里把技能设成免费技能(可反复放, 不受16s真技能CD限制)。期间暂停声音自动闪避, 便于反复调
+        delay/hold。时序与实战侧(Requiem._free_skill_break_a5)同一份配置。"""
         from src.sound_trigger.SoundCombatContext import SoundCombatContext
 
         self._macro_running = True
         self._in_dodge_test = True
         SoundCombatContext.set_dodge_paused(True)
-        jump_mode = self.config.get(self.CONF_FREE_BREAK_MODE, self.FREE_BREAK_MODE_DODGE) == self.FREE_BREAK_MODE_JUMP
-        if jump_mode:
-            delay = self._conf_num(self.CONF_FREE_BREAK2_DELAY, 250)
-            hold = self._conf_num(self.CONF_FREE_BREAK2_JUMP_HOLD, 20)
-            wait = self._conf_num(self.CONF_FREE_BREAK2_WAIT, 0)
-        else:
-            delay = self._conf_num(self.CONF_FREE_BREAK_DELAY, 200)
-            hold = self._conf_num(self.CONF_FREE_BREAK_JUMP_HOLD, 20)
-            wait = self._conf_num(self.CONF_FREE_BREAK_WAIT, 0)
+        delay = self._conf_num(self.CONF_FREE_BREAK_DELAY, 200)
+        hold = self._conf_num(self.CONF_FREE_BREAK_JUMP_HOLD, 20)
+        wait = self._conf_num(self.CONF_FREE_BREAK_WAIT, 0)
         skill_key = self.config.get(self.CONF_FREE_SKILL_KEY, "e")
-        action = "跳A" if jump_mode else "闪避"
-        self.log_info(f"免费技能后接combo测试: 触发 (技能键={skill_key}, 打断={action})")
+        self.log_info(f"免费技能后接combo测试: 触发 (技能键={skill_key})")
         ctypes.windll.winmm.timeBeginPeriod(1)
         try:
             self._prepare_input()
@@ -1325,51 +995,19 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.send_key(str(skill_key), down_time=0.02)  # 放(免费)技能
             if delay > 0:
                 time.sleep(delay / 1000.0)
-            if jump_mode:
-                io.space_down()   # 跳A打断a5: 空格+左键同按(光速4a/双4a那个跳A)
-                io.mouse_down()
-                io.sleep_ms(hold)
-                io.mouse_up()
-                io.space_up()
-            else:
-                self.send_key_down(self.DODGE_KEY)   # 闪避打断a5
-                io.sleep_ms(hold)
-                self.send_key_up(self.DODGE_KEY)
+            self.send_key_down(self.DODGE_KEY)   # 闪避打断a5
+            io.sleep_ms(hold)
+            self.send_key_up(self.DODGE_KEY)
             if wait > 0:
                 io.sleep_ms(wait)
             rounds = max(1, int(self._conf_num(self.CONF_COMBO_ROUNDS, self.DODGE_TEST_COMBO_ROUNDS)))
-            name = self._run_combo_rounds(io, rounds)   # 打断后接 combo(按4A宏模式), 轮数复用"combo轮数"
+            self._run_combo_rounds(io, rounds)   # 打断后接光速4a, 轮数复用"combo轮数"
             self.log_info(
-                f"免费技能后接combo测试: 放技能→等{delay:.0f}→{action}{hold:.0f}→等{wait:.0f}ms → {rounds}轮{name}")
+                f"免费技能后接combo测试: 放技能→等{delay:.0f}→闪避{hold:.0f}→等{wait:.0f}ms → {rounds}轮光速4a")
         finally:
             ctypes.windll.winmm.timeEndPeriod(1)
             SoundCombatContext.set_dodge_paused(False)
             self._in_dodge_test = False
-            self._macro_running = False
-
-    def _run_first_attack_test(self):
-        """专测"闪避后接第一个平A所需时间": 闪避(按一下shift) → 等 combo前后摇等待秒 → 打一个平A。
-        调 CONF_DODGE_COMBO_WAIT 到刚好能接上平A, 就是实战闪避后到首平A的等待。
-        期间暂停声音自动闪避, 免得 SoundTriggerTask 插进来搅乱。"""
-        from src.sound_trigger.SoundCombatContext import SoundCombatContext
-
-        self._macro_running = True
-        wait = self._conf_num(self.CONF_DODGE_COMBO_WAIT, 0.3)
-        self.log_info(f"闪避后首平A测试: 闪避 → 等 {wait:.2f}s → 一个平A")
-        SoundCombatContext.set_dodge_paused(True)
-        ctypes.windll.winmm.timeBeginPeriod(1)
-        try:
-            self._prepare_input()
-            io = _MacroIO(self)
-            self.send_key(self.DODGE_KEY, down_time=0.02)  # 闪避(按一下shift)
-            if wait > 0:
-                time.sleep(wait)
-            io.mouse_down()
-            time.sleep(0.015)
-            io.mouse_up()
-        finally:
-            ctypes.windll.winmm.timeEndPeriod(1)
-            SoundCombatContext.set_dodge_paused(False)
             self._macro_running = False
 
     def _check_toggle_stop(self):
@@ -1399,29 +1037,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             time.sleep(self.SCHEME_LOOP_GAP)
         self.log_info(f"requiem {name} toggle loop end rounds={rounds}")
 
-    # ---------- 原始录制(PostMessage 后台点击) ----------
-    def _run_recorded_macro(self, start):
-        for step_index, step in enumerate(self.RECORDED_MACRO, start=1):
-            action = step[0]
-            if action == "click":
-                down_time = step[1]
-                self.log_info(
-                    f"requiem jump attack macro step={step_index} click "
-                    f"at {time.perf_counter() - start:.3f}s down_time={down_time:.3f}s"
-                )
-                self.click(down_time=down_time)
-            elif action == "key":
-                key, down_time = step[1], step[2]
-                self.log_info(
-                    f"requiem jump attack macro step={step_index} key={key} "
-                    f"at {time.perf_counter() - start:.3f}s down_time={down_time:.3f}s"
-                )
-                self.send_key(key, down_time=down_time)
-            else:
-                time.sleep(step[1])
-        time.sleep(self.END_RECOVERY)
-
-    # ---------- 方案一/二(硬件输入, 长按循环, 松手即停) ----------
+    # ---------- 光速4a宏(框架输入, 长按循环, 松手即停) ----------
     def _trigger_held(self):
         """触发键是否仍被按住(且任务仍启用)。松手/停用即返回 False → 中止当前宏。"""
         return (
@@ -1431,43 +1047,27 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         )
 
     def _prepare_input(self):
-        """按配置决定方案一/二走硬件还是后台发消息。后台预取一次点击坐标(屏幕中心)的 lParam。"""
-        self._bg = self.config.get(self.CONF_INPUT_MODE, self.INPUT_HW) == self.INPUT_BG
-        self._itx = None
-        self._bg_pos = 0
-        if self._bg:
-            self._itx = self.executor.interaction
-            try:
-                cx = round(self._itx.capture.width * 0.5)
-                cy = round(self._itx.capture.height * 0.5)
-                self._bg_pos = self._itx.update_mouse_pos(cx, cy)
-            except Exception as e:
-                self.log_info(f"bg input prepare pos failed, fallback center: {e}")
-                self._bg_pos = self._itx.update_mouse_pos(-1, -1)
+        """取框架 interaction(和自动战斗同一路输入), 预取一次点击坐标(屏幕中心)的 lParam。"""
+        self._itx = self.executor.interaction
+        try:
+            cx = round(self._itx.capture.width * 0.5)
+            cy = round(self._itx.capture.height * 0.5)
+            self._click_pos = self._itx.update_mouse_pos(cx, cy)
+        except Exception as e:
+            self.log_info(f"input prepare pos failed, fallback center: {e}")
+            self._click_pos = self._itx.update_mouse_pos(-1, -1)
 
     def _mouse_down(self):
-        if getattr(self, "_bg", False):
-            self._itx.post(win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, self._bg_pos)
-        else:
-            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+        self._itx.post(win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, self._click_pos)
 
     def _mouse_up(self):
-        if getattr(self, "_bg", False):
-            self._itx.post(win32con.WM_LBUTTONUP, 0, self._bg_pos)
-        else:
-            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+        self._itx.post(win32con.WM_LBUTTONUP, 0, self._click_pos)
 
     def _space_down(self):
-        if getattr(self, "_bg", False):
-            self._itx.send_key_down("space")
-        else:
-            win32api.keybd_event(win32con.VK_SPACE, 0, 0, 0)
+        self._itx.send_key_down("space")
 
     def _space_up(self):
-        if getattr(self, "_bg", False):
-            self._itx.send_key_up("space")
-        else:
-            win32api.keybd_event(win32con.VK_SPACE, 0, win32con.KEYEVENTF_KEYUP, 0)
+        self._itx.send_key_up("space")
 
     def _run_scheme_loop(self, scheme, name):
         """长按触发键→循环执行一轮方案, 松手即停(对齐参考 MacroEngineThread)。

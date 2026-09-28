@@ -3,6 +3,7 @@
 import unittest
 from unittest import mock
 
+from src.lw.activity import GROUP as ACTIVITY_GROUP
 from src.lw.config_group import config_group, config_group_keys, is_config_group
 from src.tasks.BaseNTETask import BaseNTETask
 from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
@@ -45,11 +46,19 @@ class TestRequiemConfigGroups(unittest.TestCase):
                 task.CONF_LS_EXPAND, task.CONF_FREE_BREAK_EXPAND, task.CONF_GROUP_TRIGGER,
                 task.CONF_GROUP_SUPPORT_PREEMPTION, task.CONF_GROUP_COAXIS,
                 task.CONF_GROUP_DODGE, task.CONF_GROUP_TUNING, task.CONF_GROUP_TEST,
-                task.CONF_GROUP_GAMEPAD,
+                task.CONF_GROUP_PRESET, ACTIVITY_GROUP,
             },
         )
         # 功能开关带子项时仍是普通开关, 不能被当成折叠分组
         self.assertFalse(is_config_group(task.config_type[task.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL]))
+
+    def test_preset_controls_share_one_group(self):
+        task = self.make_task()
+
+        self.assertEqual(
+            task.config_type[task.CONF_GROUP_PRESET]["sub_configs"][True],
+            [task.CONF_PRESET_SLOT, task.CONF_PRESET_OPS, task.CONF_PRESET_FILE],
+        )
 
     def test_presets_skip_group_expand_state(self):
         task = self.make_task()

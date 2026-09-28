@@ -1,6 +1,6 @@
 """安魂曲 4A跳A combo 的唯一数据源与执行器。
 
-时序移植自 YiHuan-Macro 参考实现(方案一/方案二), 单位毫秒。安魂曲战斗配置任务
+单位毫秒。现役 combo 为光速4a(站场/宏)和闪双4a(声音闪避后)。安魂曲战斗配置任务
 (RequiemCombatConfigTask)和实战主C(Requiem)共用这里的时序与执行器, 改一处两边同步。
 
 执行器 run_scheme_* 只依赖一个 io 适配器(鸭子类型), 由调用方提供不同的底层收发:
@@ -14,52 +14,6 @@
 阶段边界计, 不进毫秒级点击循环, 不影响节奏。
 """
 import time
-
-# 方案一(安魂曲): 14 次逐点 (按住ms, 抬起ms), 然后左键+空格同时按住起跳、一起松、停一拍, 收尾补一下。
-SCHEME_A_CLICKS = [
-    (79, 62), (78, 78), (63, 62), (47, 47), (63, 62), (47, 62), (47, 78),
-    (47, 47), (78, 32), (62, 172), (62, 79), (93, 78), (79, 78), (47, 62),
-]
-SCHEME_A_JUMP_HOLD_MS = 78
-SCHEME_A_JUMP_GAP_MS = 78
-SCHEME_A_END_CLICK = (40, 40)
-
-def scheme_a_round_seconds():
-    """方案一一整轮的理论时长(秒)。用于把主C idle 的 2.5s 改成"刚好打一轮"。"""
-    total_ms = (
-        sum(d + u for d, u in SCHEME_A_CLICKS)
-        + SCHEME_A_JUMP_HOLD_MS
-        + SCHEME_A_JUMP_GAP_MS
-        + sum(SCHEME_A_END_CLICK)
-    )
-    return total_ms / 1000.0
-
-
-def _click(io, down_ms, up_ms):
-    """一次离散左键点击, 起手前查 should_continue。返回 False=已中止。"""
-    if not io.should_continue():
-        return False
-    io.mouse_down()
-    io.sleep_ms(down_ms)
-    io.mouse_up()
-    io.sleep_ms(up_ms)
-    return True
-
-
-def run_scheme_a(io):
-    """跑一轮方案一(安魂曲 4A跳A)。任意一步 should_continue 变 False 立即返回。"""
-    for down_ms, up_ms in SCHEME_A_CLICKS:
-        if not _click(io, down_ms, up_ms):
-            return
-    if not io.should_continue():
-        return
-    io.mouse_down()
-    io.space_down()
-    io.sleep_ms(SCHEME_A_JUMP_HOLD_MS)
-    io.mouse_up()
-    io.space_up()
-    io.sleep_ms(SCHEME_A_JUMP_GAP_MS)
-    _click(io, *SCHEME_A_END_CLICK)
 
 
 def _fill_attacks(io, dur_ms, down_ms, up_ms):
@@ -125,11 +79,11 @@ def run_scheme_double_4a(io, front_ms=None, jump_hold_ms=None, back_ms=None, cli
     return rep
 
 
-# 方案四(光速4a, 时间驱动): 评论区实战版, 方案一的进化。左键以固定节拍连点到"跳A时机(ms)",
+# 光速4a(方案四, 时间驱动): 评论区实战版。左键以固定节拍连点到"跳A时机(ms)",
 # 到点左键+空格同时按住(=跳A那下, 随时机一起移动、不用单独配) → 松开 → 收尾延迟。
 # 参考 hebi98: 40-50ms一组连点到1470ms(大世界1390) → 左键+空格18ms → 218ms延迟。
 # 核心: 必须先把第一个4a完整打出再跳才接第二个4a, 跳早了接出的是1a; 容错窗口极窄(~6ms, 吃网速),
-# 靠 jump_at_ms 精调。相比方案一的14下固定表, 这里改 jump_at_ms 时跳A那下左键自动跟着移动。
+# 靠 jump_at_ms 精调。改 jump_at_ms 时跳A那下左键自动跟着移动。
 SCHEME_LS_CLICK = (40, 8)          # 连点每下(按住ms, 抬起ms), 一组约40-50ms
 SCHEME_LS_JUMP_AT_MS = 1470        # 跳A时机: 连点累计到这个时刻就左键+空格同跳(大世界用1390)
 SCHEME_LS_JUMP_HOLD_MS = 18        # 跳A那下左键+空格同时按住时长
