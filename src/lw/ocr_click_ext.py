@@ -4,7 +4,7 @@ import math
 import re
 import time
 
-WORD_SPLIT_RE = re.compile(r"[/,，、;；\n]")
+WORD_SPLIT_RE = re.compile(r"[/,\uFF0C\u3001;\uFF1B\n]")
 
 
 def _normalize(text) -> str:
@@ -60,24 +60,30 @@ class OcrClickTaskMixin:
         return min(high, max(low, value)) if math.isfinite(value) else default
 
     def ocr_click_run(self):
-        words = parse_words(self.config.get(self.CONF_WORDS, ""))
-        if not words:
+        """Re-read config every scan so words/intervals edited mid-run apply immediately."""
+        if not parse_words(self.config.get(self.CONF_WORDS, "")):
             self.log_error("未配置点击文字, 请在任务设置中填写后再启动", notify=True)
             return
-        scan_interval = self._ocr_click_float(self.CONF_SCAN_INTERVAL, 0.4, 0.1, 10.0)
-        click_interval = self._ocr_click_float(self.CONF_CLICK_INTERVAL, 2.0, 0.5, 60.0)
-        max_minutes = self._ocr_click_float(self.CONF_MAX_MINUTES, 0.0, 0.0, 24 * 60.0)
-        deadline = time.monotonic() + max_minutes * 60 if max_minutes > 0 else math.inf
-        self.log_info(f"OCR识别点击启动, 优先级: {' > '.join(words)}")
+        started = time.monotonic()
         self.info_set("点击次数", 0)
         clicks = 0
         next_click = 0.0
-        while time.monotonic() < deadline:
+        last_words = None
+        while True:
+            words = parse_words(self.config.get(self.CONF_WORDS, ""))
+            if words != last_words:
+                self.log_info(f"OCR识别点击优先级: {' > '.join(words) or '(空)'}")
+                last_words = words
+            scan_interval = self._ocr_click_float(self.CONF_SCAN_INTERVAL, 0.4, 0.1, 10.0)
+            click_interval = self._ocr_click_float(self.CONF_CLICK_INTERVAL, 2.0, 0.5, 60.0)
+            max_minutes = self._ocr_click_float(self.CONF_MAX_MINUTES, 0.0, 0.0, 24 * 60.0)
+            if max_minutes > 0 and time.monotonic() - started >= max_minutes * 60:
+                break
             self.next_frame()
-            boxes = self.ocr(threshold=self.OCR_THRESHOLD) or []
+            boxes = (self.ocr(threshold=self.OCR_THRESHOLD) or []) if words else []
             picked = pick_text([box.name for box in boxes], words)
             if picked is None:
-                self.info_set("状态", "未识别到配置文字")
+                self.info_set("状态", "未识别到配置文字" if words else "点击文字为空, 等待配置")
             elif time.monotonic() >= next_click:
                 index, word = picked
                 result = self.operate_click(boxes[index], action_name="ocr_click_word")

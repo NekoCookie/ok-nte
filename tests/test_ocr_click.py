@@ -1,8 +1,37 @@
 """[lw] OCR click task word parsing and priority selection."""
 
 import unittest
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
-from src.lw.ocr_click_ext import parse_words, pick_text
+from src.lw.ocr_click_ext import OcrClickTaskMixin, parse_words, pick_text
+
+
+class _Stop(Exception):
+    pass
+
+
+class _FakeTask(OcrClickTaskMixin):
+    def __init__(self, words, screens):
+        self.default_config, self.config_description = {}, {}
+        self.configure_ocr_click()
+        self.config = dict(self.default_config, **{self.CONF_CLICK_INTERVAL: 0.5})
+        self.config[self.CONF_WORDS] = words
+        self.screens = iter(screens)
+        self.edits = {}
+        self.sleeps = 0
+        self.operate_click = MagicMock(return_value=True)
+        self.log_info = self.log_error = self.info_set = MagicMock()
+        self.next_frame = MagicMock()
+
+    def ocr(self, threshold):
+        return [SimpleNamespace(name=name) for name in next(self.screens)]
+
+    def sleep(self, seconds):
+        self.sleeps += 1
+        self.config.update(self.edits.pop(self.sleeps, {}))
+        if self.sleeps >= 3:
+            raise _Stop
 
 
 class TestOcrClick(unittest.TestCase):
@@ -19,6 +48,14 @@ class TestOcrClick(unittest.TestCase):
 
     def test_no_match_returns_none(self):
         self.assertIsNone(pick_text(["设置", "返回"], ["开始挑战"]))
+
+    def test_words_added_mid_run_take_effect(self):
+        task = _FakeTask("下一关", [["开始挑战"], ["开始挑战"], ["开始挑战"]])
+        task.edits = {1: {task.CONF_WORDS: "下一关/开始挑战"}}
+        with self.assertRaises(_Stop):
+            task.ocr_click_run()
+        clicked = [call.args[0].name for call in task.operate_click.call_args_list]
+        self.assertEqual(clicked, ["开始挑战"])
 
 
 if __name__ == "__main__":
