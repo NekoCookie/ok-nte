@@ -42,6 +42,7 @@ def make_task():
     t.scene = mock.MagicMock()
     t.scene.cd_refreshed = False
     t.SKILL_CD_DIAG = False  # 关诊断, 免去截图/对照日志依赖
+    t.SKILL_CD_TRUTH_DIAG = False
     char = mock.MagicMock()
     char.index = IDX
     t.get_current_char = mock.MagicMock(return_value=char)

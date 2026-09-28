@@ -206,6 +206,23 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         self.assertTrue(c._execute_support_skill(None))
         c._cast_skill_if_about_ready.assert_called_once()
 
+    def test_skill_action_runs_on_field_when_skill_is_about_ready(self):
+        # 在场差不到 1s: 技能动作要执行, 才能进入 _cast_skill_if_about_ready 留场等放。
+        c = make_buff(skill_ready=False)
+        c.needs_resource_probe = mock.MagicMock(return_value=False)
+        c.is_current_char = True
+        c.task = mock.MagicMock()
+        c.lw_skills_disabled_for_test = lambda: False
+        c.task.get_cd = mock.MagicMock(return_value=0.6)
+        skill = actions_by_slot(c.combat_plan(None))[ActionSlot.SKILL]
+
+        self.assertTrue(skill.can_execute(None))
+        c.task.get_cd.return_value = 1.5
+        self.assertFalse(skill.can_execute(None))
+        c.task.get_cd.return_value = 0.6
+        c.is_current_char = False
+        self.assertFalse(skill.can_execute(None))
+
     def test_disabled_support_skill_preemption_keeps_normal_claim(self):
         c = make_buff(ult_ready=False, skill_ready=True, buff_pending=False)
         c.task = mock.MagicMock()

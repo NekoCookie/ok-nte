@@ -49,6 +49,9 @@ class CombatExtMixin(_TaskProxy):
     # CD 诊断开关: 平时 False(不影响实战); 想观察"切早/切晚/空切"或采技能样本时翻成 True。
     # 开启后会打 cd-truth 切上场对照日志, 并把技能图标存到 logs/box_debug(含同步磁盘写)。
     SKILL_CD_DIAG = False
+    # 纯文字诊断(无截图): 记录大招冻结扣除, 以及切上场时"下场推算 vs 在场实读"对照,
+    # 用来测量冻结扣时偏差。测完关掉。
+    SKILL_CD_TRUTH_DIAG = True
 
     LOAD_CHARS_WEAK_RETRY = 2
     LOAD_CHARS_WEAK_RETRY_INTERVAL = 0.25
@@ -103,7 +106,7 @@ class CombatExtMixin(_TaskProxy):
             if recorded_start <= retention_start:
                 causes.pop(recorded_start, None)
 
-        if self.SKILL_CD_DIAG:
+        if self.SKILL_CD_DIAG or self.SKILL_CD_TRUTH_DIAG:
             deduct = 0 if freeze_time == -100 else duration
             self.log_info(
                 f"freeze record: cause={cause or '?'} duration={duration:.2f}s "
@@ -353,7 +356,8 @@ class CombatExtMixin(_TaskProxy):
             cds = {}
             self.cds[index] = cds
         # 诊断(SKILL_CD_DIAG):切上场瞬间(覆盖锚点前)记下"下场最后推算",待在场首次读到真实CD对照。
-        if self.SKILL_CD_DIAG and getattr(self, "_last_refresh_index", None) != index:
+        cd_truth_diag = self.SKILL_CD_DIAG or self.SKILL_CD_TRUTH_DIAG
+        if cd_truth_diag and getattr(self, "_last_refresh_index", None) != index:
             self._capture_switch_in_estimate(index, cds)
         now = time.time()
         cds["time"] = now  # 兼容旧字段; 实际推算用每个 box 独立的 <box>_time
@@ -428,7 +432,7 @@ class CombatExtMixin(_TaskProxy):
                 cds[box] = self.UNKNOWN_CD_SECONDS
                 cds[box + "_time"] = now
             # else: 保留 cds[box] / cds[box+"_time"] 不变, 继续按上次锚点倒计时
-        if self.SKILL_CD_DIAG:
+        if cd_truth_diag:
             self._report_switch_in_cd_truth(index, cds, now)
             self._last_refresh_index = index
         self.scene.cd_refreshed = True

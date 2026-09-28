@@ -99,6 +99,14 @@ class ResourceSupportMixin:
             self.logger.info("support skill used while ultimate remains available")
         self.resource_cache_confirmed = self.has_resource()
 
+    def skill_about_ready_on_field(self):
+        """在场且技能差不到 SKILL_ABOUT_READY_WAIT 就绪: 值得执行技能动作留场等放。"""
+
+        get_cd = getattr(self.task, "get_cd", None)
+        if not getattr(self, "is_current_char", False) or not callable(get_cd):
+            return False
+        return 0 < get_cd("skill", self.index) <= self.SKILL_ABOUT_READY_WAIT
+
     def _cast_skill_if_about_ready(self):
         """技能即将就绪时短暂留场平A，放出后再离场。"""
 
@@ -164,7 +172,10 @@ class ResourceSupportMixin:
             execute=self._execute_support_skill,
             name=f"{self}_skill",
             reason="support skill ready",
-            can_execute=lambda _: self.skill_available() or needs_probe,
+            # 差一点就绪也执行: _execute_support_skill 会留场平A等到放出(否则等待分支永远走不到)。
+            can_execute=lambda _: (
+                self.skill_available() or needs_probe or self.skill_about_ready_on_field()
+            ),
             priority_ready=lambda _: self.skill_priority_ready(),
         )
         claims = self.resource_field_claims(needs_probe)
