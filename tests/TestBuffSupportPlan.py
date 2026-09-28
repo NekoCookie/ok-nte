@@ -206,6 +206,28 @@ class TestBuffSupportPlannerMigration(unittest.TestCase):
         self.assertTrue(c._execute_support_skill(None))
         c._cast_skill_if_about_ready.assert_called_once()
 
+    def _probe_candidate(self, has_record, ult_ready=False):
+        c = BuffSupport.__new__(BuffSupport)
+        c.index = 1
+        c.team_has_main_dps = lambda: True
+        c.lw_skills_disabled_for_test = lambda: False
+        c.is_current_char = False
+        c.recently_used_resource = lambda: False
+        c.has_confirmed_resource = lambda: ult_ready
+        c.has_cd_cache = lambda: has_record
+        c.last_resource_probe = 0.0  # 新一场战斗新建角色, 从未探测过
+        return c
+
+    def test_resource_probe_only_runs_before_the_skill_has_a_cd_record(self):
+        # 开局还没见过技能: 探测, 保证辅助没大招也会上场放技能。
+        self.assertTrue(ResourceSupportMixin.needs_resource_probe(self._probe_candidate(False)))
+        # 已有 CD 记录: 交给推算与"技能就绪"诉求, 不再周期盲探。
+        self.assertFalse(ResourceSupportMixin.needs_resource_probe(self._probe_candidate(True)))
+        # 大招就绪: 走大招诉求, 不需要探测。
+        self.assertFalse(
+            ResourceSupportMixin.needs_resource_probe(self._probe_candidate(False, ult_ready=True))
+        )
+
     def test_skill_action_runs_on_field_when_skill_is_about_ready(self):
         # 在场差不到 1s: 技能动作要执行, 才能进入 _cast_skill_if_about_ready 留场等放。
         c = make_buff(skill_ready=False)

@@ -83,6 +83,10 @@ class ResourceSupportMixin:
             return False
         if self.is_current_char or self.has_confirmed_resource() or self.recently_used_resource():
             return False
+        if self.has_cd_cache():
+            # 本场已有技能 CD 记录: 交给下场推算, 就绪时走"技能就绪"诉求, 不再周期盲探。
+            return False
+        # 本场还没见过该技能(开局无记录): 上场看一眼, 就绪当场放, 否则锚定真实 CD。
         return time.time() - self.last_resource_probe >= self.RESOURCE_PROBE_INTERVAL
 
     def update_resource_after_perform(self, used_ultimate, used_skill):
