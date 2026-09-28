@@ -787,7 +787,11 @@ class CombatPlanner(CombatPlannerExtMixin):  # [lw]
             )
             if score <= -10000:
                 continue
-            if char != current_char and self._switch_on_cooldown(char, has_intro):
+            if (
+                char != current_char
+                and self._switch_on_cooldown(char, has_intro)
+                and not self.lw_ignores_switch_cooldown(current_char, char)  # [lw]
+            ):
                 score -= 1000
                 breakdown.add("switch_cooldown", -1000)
                 reason = "switch cooldown"

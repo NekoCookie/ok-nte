@@ -12,6 +12,7 @@ from src.Labels import Labels
 from src.lw.requiem_zankou_axis import (
     REQUIEM_IMPL_ID,
     ZANKOU_MAIN_DPS_IMPL_ID,
+    clear_coaxis_handoff,
     coordinated_axis_partner,
     coordinated_axis_settings,
     perform_requiem_combat_axis,
@@ -361,6 +362,12 @@ class Requiem(MainDps):
         return time.time() < getattr(self, "skill_off_field_until", 0.0) or getattr(
             self, "_coaxis_switch_pending", False
         )
+
+    def switch_next_char(self, post_action=None, free_intro=False):  # [lw]
+        super().switch_next_char(post_action=post_action, free_intro=free_intro)
+        if self.is_current_char:
+            # Nobody could take the axis handoff; resume Requiem's own entry flow.
+            clear_coaxis_handoff(self)
 
     def lw_sound_dodge_block_reason(self):  # [lw]
         """Block automatic sound dodge while a real-skill departure is pending."""
@@ -794,6 +801,7 @@ class Requiem(MainDps):
     def switch_out(self):  # [lw]
         """Discard an unconsumed ordinary-dodge restart after leaving the field."""
 
+        clear_coaxis_handoff(self)
         self._coaxis_ordinary_dodge_restart_pending = False
         self._real_skill_sound_dodge_blocked = False  # [lw]
         super().switch_out()

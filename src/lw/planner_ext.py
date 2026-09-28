@@ -26,6 +26,13 @@ class CombatPlannerExtMixin:
         except (AttributeError, RuntimeError, TypeError):
             return True
 
+    def lw_ignores_switch_cooldown(self, current_char, target) -> bool:
+        """A finished coordinated-axis turn returns to its partner without re-entry cooldown."""
+
+        from src.lw.requiem_zankou_axis import coaxis_handoff_target
+
+        return target is not None and coaxis_handoff_target(current_char) is target
+
     def lw_switch_target_has_intro(self, current_char, target, intro_available: bool) -> bool:
         """Return whether this target is the current element-ring entry target."""
 

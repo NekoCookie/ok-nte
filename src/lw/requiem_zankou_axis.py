@@ -288,7 +288,7 @@ def _try_zankou_gold_skill_interrupt(
         if not find_one(Labels.zankou_skill_gold):
             if callable(log_info):
                 log_info("zankou coordinated axis gold skill confirmed")
-            _finish_zankou_axis(char, context, partner, reason="zankou gold skill complete")
+            _finish_zankou_axis(char, partner, reason="zankou gold skill complete")
             return True
         if now >= attempt.confirmation_deadline:
             attempt.finished = True
@@ -323,7 +323,7 @@ def _try_zankou_gold_skill_interrupt(
     if not find_one(Labels.zankou_skill_gold):
         if callable(log_info):
             log_info("zankou coordinated axis gold skill confirmed")
-        _finish_zankou_axis(char, context, partner, reason="zankou gold skill complete")
+        _finish_zankou_axis(char, partner, reason="zankou gold skill complete")
         return True
     return False
 
@@ -428,7 +428,7 @@ def _try_zankou_gold_skill_after_dodge(
             log_info("zankou post-dodge gold skill not confirmed; restarting original axis")
         return False
 
-    _finish_zankou_axis(char, context, partner, reason="zankou gold skill complete")
+    _finish_zankou_axis(char, partner, reason="zankou gold skill complete")
     return True
 
 
@@ -790,32 +790,42 @@ def perform_requiem_combat_axis(
     if interrupted:
         return _resume_requiem_axis_after_interrupt(char, context, partner)
 
-    _request_requiem_axis_handoff(
+    _hand_off_axis(
         char,
-        context,
         partner,
         reason="requiem coordinated axis complete",
     )
     return True
 
 
-def _request_requiem_axis_handoff(
-    char: "BaseChar",
-    context: "CombatContext",
-    partner: "BaseChar",
-    *,
-    reason: str,
-) -> None:
-    """End Requiem's field turn while preserving normal planner preemption."""
+def _hand_off_axis(char: "BaseChar", partner: "BaseChar", *, reason: str) -> None:
+    """End an axis turn and let ordinary planner scoring choose who comes next.
 
-    # MainDps normally keeps the current character until its field-time limit. Mark this
-    # completed axis as an explicit departure until the public planner request resolves.
+    The axis is no-resource field time, so it publishes no switch request: the partner
+    normally wins as main-DPS field time, while any teammate with a real resource
+    (ultimate, skill claim, support buff) outranks it without a per-role whitelist.
+    ``coaxis_handoff_target`` only exempts the partner from the re-entry cooldown.
+    """
+
+    # MainDps normally keeps the current character; the flag clears when it leaves.
     char._coaxis_switch_pending = True
-    context.request_switch(
-        partner,
-        reason=reason,
-        on_finish=lambda: setattr(char, "_coaxis_switch_pending", False),
-    )
+    char._coaxis_handoff_to = partner
+    log_info = getattr(getattr(char, "logger", None), "info", None)
+    if callable(log_info):
+        log_info(f"{reason}; handing off to planner (axis partner {partner})")
+
+
+def coaxis_handoff_target(char: "BaseChar | None") -> "BaseChar | None":
+    """Return the partner of a finished axis turn that is still waiting to switch."""
+
+    if char is None or not getattr(char, "_coaxis_switch_pending", False):
+        return None
+    return getattr(char, "_coaxis_handoff_to", None)
+
+
+def clear_coaxis_handoff(char: "BaseChar") -> None:
+    char._coaxis_switch_pending = False
+    char._coaxis_handoff_to = None
 
 
 def _requiem_axis_interrupt_pending(char: "BaseChar") -> bool:
@@ -875,9 +885,8 @@ def perform_requiem_ordinary_dodge_coaxis(
             continue
         break
 
-    _request_requiem_axis_handoff(
+    _hand_off_axis(
         char,
-        context,
         partner,
         reason="requiem ordinary-dodge coordinated axis complete",
     )
@@ -904,10 +913,9 @@ def perform_requiem_double_4a_coaxis(
     logger = getattr(char, "logger", None)
     log_info = getattr(logger, "info", None)
     if callable(log_info):
-        log_info("requiem perfect-dodge double-4a complete; requesting axis handoff")
-    _request_requiem_axis_handoff(
+        log_info("requiem perfect-dodge double-4a complete; ending axis turn")
+    _hand_off_axis(
         char,
-        context,
         partner,
         reason="requiem perfect-dodge double-4a complete",
     )
@@ -930,29 +938,8 @@ def perform_requiem_free_skill_coaxis(
     )
     if interrupted:
         return _resume_requiem_axis_after_interrupt(char, context, partner)
-    if _support_ultimate_pending(char):
-        logger = getattr(char, "logger", None)
-        log_info = getattr(logger, "info", None)
-        if callable(log_info):
-            log_info("requiem free skill axis yields to pending support ultimate")
-        return True
-    char._coaxis_switch_pending = True
-    context.request_switch(
-        partner,
-        reason="requiem free skill coordinated axis complete",
-        on_finish=lambda: setattr(char, "_coaxis_switch_pending", False),
-    )
+    _hand_off_axis(char, partner, reason="requiem free skill coordinated axis complete")
     return True
-
-
-def _support_ultimate_pending(char: "BaseChar") -> bool:
-    for teammate in getattr(getattr(char, "task", None), "chars", ()):
-        if teammate is None or teammate is char or bool(getattr(teammate, "is_dead", False)):
-            continue
-        pending = getattr(teammate, "ultimate_buff_pending", None)
-        if callable(pending) and pending():
-            return True
-    return False
 
 
 def _partner_switch_in_ready(partner: "BaseChar") -> bool:
@@ -975,7 +962,6 @@ def _zankou_should_yield_to_planner(char: "BaseChar") -> bool:
 
 def _finish_zankou_axis(
     char: "BaseChar",
-    context: "CombatContext",
     partner: "BaseChar",
     *,
     reason: str,
@@ -997,9 +983,7 @@ def _finish_zankou_axis(
             log_info("zankou axis yields to planner before requiem real skill ends")
         return
 
-    if waited:
-        char._coaxis_switch_pending = True
-    context.request_switch(partner, reason=reason)
+    _hand_off_axis(char, partner, reason=reason)
 
 
 def perform_zankou_combat_axis(
@@ -1063,7 +1047,7 @@ def perform_zankou_combat_axis(
             if skill_interrupted:
                 return True
         if not dodged:
-            _finish_zankou_axis(char, context, partner, reason="zankou coordinated axis complete")
+            _finish_zankou_axis(char, partner, reason="zankou coordinated axis complete")
             return True
 
         _log_zankou_sound_dodge_recovery(

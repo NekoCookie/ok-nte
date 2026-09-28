@@ -8,6 +8,7 @@ from src.lw.combat_test_policy import LWCombatTestPolicyMixin
 from src.lw.requiem_zankou_axis import (
     REQUIEM_IMPL_ID,
     ZANKOU_MAIN_DPS_IMPL_ID,
+    clear_coaxis_handoff,
     coordinated_axis_partner,
     coordinated_axis_settings,
     perform_zankou_combat_axis,
@@ -51,7 +52,7 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
         return bool(getattr(self, "_coaxis_switch_pending", False))
 
     def switch_out(self):
-        self._coaxis_switch_pending = False
+        clear_coaxis_handoff(self)
         super().switch_out()
 
     def prepare_for_sound_dodge(self):

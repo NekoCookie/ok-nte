@@ -15,6 +15,8 @@ from src.lw.requiem_zankou_axis import (
     REQUIEM_IMPL_ID,
     RequiemZankouAxisTester,
     ZANKOU_MAIN_DPS_IMPL_ID,
+    clear_coaxis_handoff,
+    coaxis_handoff_target,
     coordinated_axis_settings,
     perform_requiem_combat_axis,
     perform_requiem_double_4a_coaxis,
@@ -105,6 +107,7 @@ class FakeCombatChar:
         self._gold_skill_inputs = 0
         self.has_intro = False
         self._cycle_full = cycle_full
+        self.logger = mock.MagicMock()
         self._heavy_started_at = None
 
     def now(self):
@@ -319,6 +322,14 @@ def make_combat_pair(combat_enabled=True):
 
 
 class TestRequiemZankouAxis(unittest.TestCase):
+    def assertAxisHandoff(self, char, partner, reason):
+        """An axis turn ends by leaving to planner scoring, never by a switch request."""
+
+        self.assertIs(coaxis_handoff_target(char), partner)
+        self.assertTrue(char._coaxis_switch_pending)
+        messages = [call.args[0] for call in char.logger.info.call_args_list]
+        self.assertIn(f"{reason}; handing off to planner (axis partner {partner})", messages)
+
     def test_standard_intro_duration_uses_auto_combat_config_or_ru_default(self):
         char = BaseChar.__new__(BaseChar)
         char.task = SimpleNamespace(
@@ -889,7 +900,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         config_task = make_config_task()
         zankou = FakeCombatChar(config_task)
         partner = SimpleNamespace(lw_can_switch_in=lambda: zankou.now() >= 2.4)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
 
         self.assertTrue(perform_zankou_combat_axis(zankou, context, partner))
 
@@ -901,21 +912,18 @@ class TestRequiemZankouAxis(unittest.TestCase):
         tap_times = [event[1] for event in zankou.events if event[0] == "tap"]
         self.assertGreaterEqual(len(tap_times), 7)
         self.assertGreaterEqual(tap_times[-1], 2.35)
-        context.request_switch.assert_called_once_with(
-            partner,
-            reason="zankou coordinated axis complete",
-        )
+        self.assertAxisHandoff(zankou, partner, "zankou coordinated axis complete")
 
     def test_zankou_axis_yields_to_planner_when_support_resource_appears_during_handoff(self):
         config_task = make_config_task()
         zankou = FakeCombatChar(config_task)
         zankou.should_yield_to_support = lambda: True
         partner = SimpleNamespace(lw_can_switch_in=lambda: False)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
 
         self.assertTrue(perform_zankou_combat_axis(zankou, context, partner))
 
-        context.request_switch.assert_not_called()
+        self.assertIsNone(coaxis_handoff_target(zankou))
         self.assertFalse(getattr(zankou, "_coaxis_switch_pending", False))
 
     def test_one_round_uses_configured_keys_and_attack_sequence(self):
@@ -989,21 +997,17 @@ class TestRequiemZankouAxis(unittest.TestCase):
         config_task = make_config_task()
         requiem = FakeCombatChar(config_task)
         zankou = FakeCombatChar(config_task)
-        requiem_context = SimpleNamespace(request_switch=mock.MagicMock())
-        zankou_context = SimpleNamespace(request_switch=mock.MagicMock())
+        requiem_context = SimpleNamespace()
+        zankou_context = SimpleNamespace()
 
         self.assertTrue(perform_requiem_combat_axis(requiem, requiem_context, zankou))
         self.assertEqual(
             [(name, round(at, 1)) for name, at in requiem.events if name == "tap"],
             [("tap", 0.0), ("tap", 0.1), ("tap", 0.2), ("tap", 0.3), ("tap", 0.4)],
         )
-        requiem_context.request_switch.assert_called_once()
-        args, kwargs = requiem_context.request_switch.call_args
-        self.assertEqual(args, (zankou,))
-        self.assertEqual(kwargs["reason"], "requiem coordinated axis complete")
-        self.assertTrue(requiem._coaxis_switch_pending)
-        kwargs["on_finish"]()
-        self.assertFalse(requiem._coaxis_switch_pending)
+        self.assertAxisHandoff(requiem, zankou, "requiem coordinated axis complete")
+        clear_coaxis_handoff(requiem)
+        self.assertIsNone(coaxis_handoff_target(requiem))
 
         self.assertTrue(perform_zankou_combat_axis(zankou, zankou_context, requiem))
         self.assertEqual(
@@ -1014,16 +1018,13 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [(name, round(at, 1)) for name, at in zankou.events if name == "tap"],
             [("tap", 1.8), ("tap", 1.9), ("tap", 2.0), ("tap", 2.1), ("tap", 2.2)],
         )
-        zankou_context.request_switch.assert_called_once_with(
-            requiem,
-            reason="zankou coordinated axis complete",
-        )
+        self.assertAxisHandoff(zankou, requiem, "zankou coordinated axis complete")
 
     def test_requiem_axis_finishes_pending_double_4a_before_handoff(self):
         config_task = make_config_task()
         requiem = FakeCombatChar(config_task)
         zankou = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
         requiem._pending_double_4a = None
 
         original_sleep = requiem.sleep
@@ -1045,17 +1046,14 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [("tap", 0.0)],
         )
         requiem._run_double_4a_outside.assert_called_once_with()
-        context.request_switch.assert_called_once()
-        args, kwargs = context.request_switch.call_args
-        self.assertEqual(args, (zankou,))
-        self.assertEqual(kwargs["reason"], "requiem perfect-dodge double-4a complete")
+        self.assertAxisHandoff(requiem, zankou, "requiem perfect-dodge double-4a complete")
         self.assertTrue(requiem._coaxis_switch_pending)
 
     def test_requiem_ordinary_dodge_restarts_full_axis_duration(self):
         config_task = make_config_task()
         requiem = FakeCombatChar(config_task)
         zankou = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
         requiem._pending_double_4a = None
         requiem._coaxis_ordinary_dodge_restart_pending = False
         requiem.logger = mock.MagicMock()
@@ -1076,10 +1074,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         tap_times = [round(at, 2) for name, at in requiem.events if name == "tap"]
         self.assertEqual(tap_times, [0.0, 0.1, 0.2, 0.3, 0.4, 0.5])
         self.assertAlmostEqual(requiem.clock, 0.55)
-        self.assertEqual(
-            context.request_switch.call_args.kwargs["reason"],
-            "requiem ordinary-dodge coordinated axis complete",
-        )
+        self.assertAxisHandoff(requiem, zankou, "requiem ordinary-dodge coordinated axis complete")
         self.assertFalse(requiem._coaxis_ordinary_dodge_restart_pending)
 
     def test_requiem_pending_double_4a_action_uses_axis_handoff(self):
@@ -1102,7 +1097,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         config_task = make_config_task()
         requiem = FakeCombatChar(config_task)
         zankou = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
         requiem._pending_double_4a = object()
         continuations = iter((object(), None))
         requiem._run_double_4a_outside = mock.MagicMock(
@@ -1113,17 +1108,13 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertTrue(perform_requiem_double_4a_coaxis(requiem, context, zankou))
 
         self.assertEqual(requiem._run_double_4a_outside.call_count, 2)
-        context.request_switch.assert_called_once()
-        self.assertEqual(
-            context.request_switch.call_args.kwargs["reason"],
-            "requiem perfect-dodge double-4a complete",
-        )
+        self.assertAxisHandoff(requiem, zankou, "requiem perfect-dodge double-4a complete")
 
     def test_requiem_double_4a_interrupted_by_ordinary_dodge_restarts_plain_axis(self):
         config_task = make_config_task()
         requiem = FakeCombatChar(config_task)
         zankou = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
         requiem._pending_double_4a = object()
         requiem._coaxis_ordinary_dodge_restart_pending = False
 
@@ -1140,10 +1131,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [round(at, 2) for name, at in requiem.events if name == "tap"],
             [0.0, 0.1, 0.2, 0.3, 0.4],
         )
-        self.assertEqual(
-            context.request_switch.call_args.kwargs["reason"],
-            "requiem ordinary-dodge coordinated axis complete",
-        )
+        self.assertAxisHandoff(requiem, zankou, "requiem ordinary-dodge coordinated axis complete")
         self.assertFalse(
             any(
                 "perfect-dodge double-4a complete" in call.args[0]
@@ -1157,7 +1145,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         )
         requiem = FakeCombatChar(config_task)
         zankou = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
 
         self.assertTrue(perform_requiem_free_skill_coaxis(requiem, context, zankou))
 
@@ -1165,10 +1153,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [(name, round(at, 2)) for name, at in requiem.events if name == "tap"],
             [("tap", 0.0), ("tap", 0.1), ("tap", 0.2)],
         )
-        context.request_switch.assert_called_once()
-        args, kwargs = context.request_switch.call_args
-        self.assertEqual(args, (zankou,))
-        self.assertEqual(kwargs["reason"], "requiem free skill coordinated axis complete")
+        self.assertAxisHandoff(requiem, zankou, "requiem free skill coordinated axis complete")
         self.assertTrue(requiem._coaxis_switch_pending)
 
     def test_requiem_free_skill_axis_finishes_pending_double_4a_before_handoff(self):
@@ -1177,7 +1162,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         )
         requiem = FakeCombatChar(config_task)
         zankou = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
         requiem._pending_double_4a = None
 
         original_sleep = requiem.sleep
@@ -1199,10 +1184,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [("tap", 0.0)],
         )
         requiem._run_double_4a_outside.assert_called_once_with()
-        self.assertEqual(
-            context.request_switch.call_args.kwargs["reason"],
-            "requiem perfect-dodge double-4a complete",
-        )
+        self.assertAxisHandoff(requiem, zankou, "requiem perfect-dodge double-4a complete")
 
     def test_requiem_free_skill_ordinary_dodge_uses_standard_full_axis_duration(self):
         config_task = make_config_task(
@@ -1210,7 +1192,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         )
         requiem = FakeCombatChar(config_task)
         zankou = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
         requiem._pending_double_4a = None
         requiem._coaxis_ordinary_dodge_restart_pending = False
         requiem.logger = mock.MagicMock()
@@ -1229,12 +1211,9 @@ class TestRequiemZankouAxis(unittest.TestCase):
         self.assertTrue(perform_requiem_free_skill_coaxis(requiem, context, zankou))
 
         self.assertAlmostEqual(requiem.clock, 0.55)
-        self.assertEqual(
-            context.request_switch.call_args.kwargs["reason"],
-            "requiem ordinary-dodge coordinated axis complete",
-        )
+        self.assertAxisHandoff(requiem, zankou, "requiem ordinary-dodge coordinated axis complete")
 
-    def test_requiem_free_skill_axis_defers_to_pending_support_ultimate(self):
+    def test_requiem_free_skill_axis_hands_off_without_support_whitelist(self):
         config_task = make_config_task(
             **{RequiemCombatConfigTask.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: 0.2}
         )
@@ -1242,7 +1221,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         zankou = FakeCombatChar(config_task)
         support = SimpleNamespace(is_dead=False, ultimate_buff_pending=lambda: True)
         requiem.task.chars = [requiem, zankou, support]
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
 
         self.assertTrue(perform_requiem_free_skill_coaxis(requiem, context, zankou))
 
@@ -1250,8 +1229,8 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [(name, round(at, 2)) for name, at in requiem.events if name == "tap"],
             [("tap", 0.0), ("tap", 0.1)],
         )
-        context.request_switch.assert_not_called()
-        self.assertFalse(hasattr(requiem, "_coaxis_switch_pending"))
+        # A pending support ultimate wins through its own planner claim, not a whitelist.
+        self.assertAxisHandoff(requiem, zankou, "requiem free skill coordinated axis complete")
 
     def test_zankou_sound_dodge_recovers_then_restarts_axis(self):
         config_task = make_config_task(
@@ -1261,7 +1240,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         )
         zankou = FakeCombatChar(config_task, dodge_times=(0.4,))
         requiem = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
 
         self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
 
@@ -1285,10 +1264,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
                 ("tap", 3.06),
             ],
         )
-        context.request_switch.assert_called_once_with(
-            requiem,
-            reason="zankou coordinated axis complete",
-        )
+        self.assertAxisHandoff(zankou, requiem, "zankou coordinated axis complete")
 
     def test_zankou_perfect_dodge_keeps_minimum_gap_before_restarted_heavy(self):
         config_task = make_config_task(
@@ -1298,7 +1274,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         )
         zankou = FakeCombatChar(config_task, dodge_times=(0.4,))
         requiem = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
 
         self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
 
@@ -1320,7 +1296,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
             gold_skill_times=(0.6,),
         )
         requiem = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
 
         self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
 
@@ -1332,10 +1308,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [event[2] for event in zankou.events if event[0] == "gold_skill"],
             ["zankou_post_dodge_gold_skill"],
         )
-        context.request_switch.assert_called_once_with(
-            requiem,
-            reason="zankou gold skill complete",
-        )
+        self.assertAxisHandoff(zankou, requiem, "zankou gold skill complete")
 
     def test_zankou_failed_post_dodge_gold_skill_restarts_original_heavy(self):
         config_task = make_config_task(
@@ -1350,7 +1323,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
             gold_skill_times=(0.6,),
         )
         requiem = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
 
         def reject_gold_skill(action_name=None, **_kwargs):
             zankou.events.append(("gold_skill", zankou.clock, action_name))
@@ -1365,10 +1338,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [(event[0], round(event[1], 2)) for event in zankou.events if event[0] == "hold"],
             [("hold", 0.4), ("hold", 1.8)],
         )
-        context.request_switch.assert_called_once_with(
-            requiem,
-            reason="zankou coordinated axis complete",
-        )
+        self.assertAxisHandoff(zankou, requiem, "zankou coordinated axis complete")
 
     def test_zankou_releases_held_coaxis_attack_for_sound_dodge(self):
         zankou = ZankouMainDps.__new__(ZankouMainDps)
@@ -1401,7 +1371,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         zankou = FakeCombatChar(config_task)
         zankou.has_intro = True
         requiem = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
 
         self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
 
@@ -1416,7 +1386,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         )
         zankou = FakeCombatChar(config_task, gold_skill_times=(1.85,))
         requiem = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
 
         self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
 
@@ -1429,10 +1399,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
             [(event[0], round(event[1], 1)) for event in zankou.events if event[0] == "gold_skill"],
             [("gold_skill", 1.9)],
         )
-        context.request_switch.assert_called_once_with(
-            requiem,
-            reason="zankou gold skill complete",
-        )
+        self.assertAxisHandoff(zankou, requiem, "zankou gold skill complete")
 
     def test_zankou_gold_skill_failure_keeps_the_axis_on_its_original_deadline(self):
         config_task = make_config_task(
@@ -1444,7 +1411,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
             gold_skill_consumed=False,
         )
         requiem = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
 
         self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
 
@@ -1472,10 +1439,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
                 ("tap", 2.21),
             ],
         )
-        context.request_switch.assert_called_once_with(
-            requiem,
-            reason="zankou coordinated axis complete",
-        )
+        self.assertAxisHandoff(zankou, requiem, "zankou coordinated axis complete")
 
     def test_zankou_gold_skill_retries_until_confirmed_within_axis_deadline(self):
         config_task = make_config_task(
@@ -1487,7 +1451,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
             gold_skill_consumed_after=4,
         )
         requiem = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
 
         self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
 
@@ -1504,10 +1468,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
                 ("gold_skill", 2.21, "zankou_gold_skill_retry_4"),
             ],
         )
-        context.request_switch.assert_called_once_with(
-            requiem,
-            reason="zankou gold skill complete",
-        )
+        self.assertAxisHandoff(zankou, requiem, "zankou gold skill complete")
 
     def test_zankou_coaxis_intro_wait_is_silent_and_uses_its_own_duration(self):
         config_task = make_config_task()
@@ -1556,7 +1517,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
         )
         zankou = FakeCombatChar(config_task, dodge_times=(1.9,))
         requiem = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
 
         self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
 
@@ -1577,10 +1538,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
                 ("tap", 4.56),
             ],
         )
-        context.request_switch.assert_called_once_with(
-            requiem,
-            reason="zankou coordinated axis complete",
-        )
+        self.assertAxisHandoff(zankou, requiem, "zankou coordinated axis complete")
 
     def test_zankou_ordinary_dodge_restarts_heavy_without_recovery_normals(self):
         config_task = make_config_task(
@@ -1594,7 +1552,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
             dodge_results=(False,),
         )
         requiem = FakeCombatChar(config_task)
-        context = SimpleNamespace(request_switch=mock.MagicMock())
+        context = SimpleNamespace()
 
         self.assertTrue(perform_zankou_combat_axis(zankou, context, requiem))
 
@@ -1609,10 +1567,7 @@ class TestRequiemZankouAxis(unittest.TestCase):
                 ("tap", 4.12),
             ],
         )
-        context.request_switch.assert_called_once_with(
-            requiem,
-            reason="zankou coordinated axis complete",
-        )
+        self.assertAxisHandoff(zankou, requiem, "zankou coordinated axis complete")
 
 
 if __name__ == "__main__":
