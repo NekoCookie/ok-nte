@@ -223,10 +223,10 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.default_config = {"_enabled": False}
+        self.default_config = {"_enabled": True}
         self.default_config.update(
             {
-                # 默认值 = longwei 实测调优后的最优解(2026-07-05)。别的机器哪怕微调, 也从这套起,
+                # 默认值 = longwei 本机实际生效的配置(2026-09-29 同步)。别的机器哪怕微调, 也从这套起,
                 # 而不是最初那套(如光速4a跳A时机1470根本触发不了)。
                 # 顶层分区(折叠), 顺序即界面顺序
                 self.CONF_SECTION_GENERAL: False,
@@ -244,35 +244,35 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 # 辅助资源调度组: 默认保持当前行为; 可关闭 E 主动切人或 Q/E 环合前抢占。
                 self.CONF_GROUP_SUPPORT_PREEMPTION: False,
                 self.CONF_SUPPORT_SKILL_SWITCH: True,
-                self.CONF_SUPPORT_SKILL_PREEMPTION: True,
+                self.CONF_SUPPORT_SKILL_PREEMPTION: False,
                 self.CONF_SUPPORT_ULTIMATE_PREEMPTION: True,
                 # [lw] Pair-axis testing and default-off automatic-combat integration.
-                self.CONF_COAXIS_COMBAT_ENABLE: False,
-                self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT: False,
+                self.CONF_COAXIS_COMBAT_ENABLE: True,
+                self.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT: True,
                 self.CONF_COAXIS_REQUIEM_REAL_SKILL_SWITCH_SLOT: "关闭",
                 self.CONF_COAXIS_TRIGGER_KEY: "8",
                 self.CONF_COAXIS_REQUIEM_SWITCH_KEY: "1",
                 self.CONF_COAXIS_ZANKOU_SWITCH_KEY: "2",
                 self.CONF_COAXIS_REQUIEM_DURATION: 2.0,
-                self.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: 2.0,
-                self.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.5,
-                self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION: 1.5,
-                self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: False,
-                self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: False,
-                self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS: True,
-                self.CONF_COAXIS_ZANKOU_HOLD_DURATION: 2.0,
-                self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 2.0,
-                self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.5,
-                self.CONF_ORDINARY_DODGE_WAIT: 0.5,
-                self.CONF_REQUIEM_ORDINARY_DODGE_WAIT: 0.5,
+                self.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION: 1.0,
+                self.CONF_COAXIS_ZANKOU_SWITCH_DELAY: 0.3,
+                self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION: 1.3,
+                self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: True,
+                self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: True,
+                self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS: False,
+                self.CONF_COAXIS_ZANKOU_HOLD_DURATION: 1.0,
+                self.CONF_COAXIS_ZANKOU_NORMAL_DURATION: 0.6,
+                self.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.6,
+                self.CONF_ORDINARY_DODGE_WAIT: 0.6,
+                self.CONF_REQUIEM_ORDINARY_DODGE_WAIT: 0.6,
                 # 闪避反击设置组(折叠): 闪双4a时序
                 self.CONF_GROUP_DODGE: False,
-                self.CONF_D4_FRONT: 1800,
+                self.CONF_D4_FRONT: 1280,
                 self.CONF_D4_JUMP_HOLD: 20,
-                self.CONF_D4_BACK: 700,
+                self.CONF_D4_BACK: 20,
                 self.CONF_D4_CLICK_HOLD: 20,
                 self.CONF_D4_CLICK_GAP: 20,
-                self.CONF_D4_TAIL_FILL: 250,
+                self.CONF_D4_TAIL_FILL: 200,
                 # 光速4a时序(折叠)
                 self.CONF_LS_EXPAND: False,
                 self.CONF_LS_JUMP_AT: 1800,
@@ -282,16 +282,16 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_LS_TAIL: 200,
                 # 免费技能后闪避打断时序(折叠)
                 self.CONF_FREE_BREAK_EXPAND: False,
-                self.CONF_FREE_BREAK_DELAY: 250,
+                self.CONF_FREE_BREAK_DELAY: 230,
                 self.CONF_FREE_BREAK_JUMP_HOLD: 20,
-                self.CONF_FREE_BREAK_WAIT: 450,
+                self.CONF_FREE_BREAK_WAIT: 150,
                 # 实战调优参数(折叠, 默认收起)
                 self.CONF_GROUP_TUNING: False,
                 self.CONF_COMBO_ROUNDS: 2,
-                self.CONF_ENGAGE_ATTACK: 0.15,
+                self.CONF_ENGAGE_ATTACK: 0.0,
                 self.CONF_COMBO_COMBAT_CHECK: 0.5,
                 self.CONF_COMBO_BREAK_FOR_SKILL: 0.5,
-                self.CONF_G_SKILL_ENABLE: False,
+                self.CONF_G_SKILL_ENABLE: True,
                 self.CONF_G_SKILL_DELAY: 300,
                 # 测试开关与测试键(折叠, 默认收起)
                 self.CONF_GROUP_DODGE_TEST: False,
@@ -299,7 +299,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_DODGE_TEST: False,
                 self.CONF_DISABLE_SKILLS: False,
                 self.CONF_DODGE_TEST_KEY: "7",
-                self.CONF_FREE_BREAK_TEST_KEY: "9",
+                self.CONF_FREE_BREAK_TEST_KEY: "8",
                 self.CONF_FREE_SKILL_KEY: "e",
             }
         )
@@ -474,7 +474,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_COAXIS_ZANKOU_SWITCH_DELAY: "仅按键测试: 按下残虹切换键后等待这么久再长按普攻; 实战由切人识别和环合结算",
                 self.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION: (
                     "实战合轴中, 残虹通过环合切入后静默等待这么久, "
-                    "不进行普攻输入, 再从重击开始; 默认1.5s"
+                    "不进行普攻输入, 再从重击开始; 默认1.3s"
                 ),
                 self.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: (
                     "开=合轴中识别到残虹黄色强化E时中断当前动作, "

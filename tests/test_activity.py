@@ -528,8 +528,8 @@ class TestActivity(unittest.TestCase):
         task = SimpleNamespace(default_config={}, config_type={}, config_description={})
         configure_activity(task)
         self.assertFalse(task.default_config[ENABLE])
-        self.assertEqual(task.default_config[HOTKEY], "5")
-        self.assertEqual(task.default_config[PRIORITY], "")
+        self.assertEqual(task.default_config[HOTKEY], "6")
+        self.assertEqual(task.default_config[PRIORITY], "下一关/开始挑战")
         self.assertEqual(task.config_type[GROUP]["sub_configs"][True],
                          [ENABLE, HOTKEY, MOVE_SECONDS,
                           PRIORITY, FOOT_X, FOOT_Y])

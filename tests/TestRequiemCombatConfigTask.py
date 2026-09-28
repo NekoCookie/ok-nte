@@ -54,7 +54,7 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
 
         self.assertFalse(task.default_config[task.CONF_GROUP_SUPPORT_PREEMPTION])
         self.assertTrue(task.default_config[task.CONF_SUPPORT_SKILL_SWITCH])
-        self.assertTrue(task.default_config[task.CONF_SUPPORT_SKILL_PREEMPTION])
+        self.assertFalse(task.default_config[task.CONF_SUPPORT_SKILL_PREEMPTION])
         self.assertTrue(task.default_config[task.CONF_SUPPORT_ULTIMATE_PREEMPTION])
         self.assertEqual(
             task.config_type[task.CONF_GROUP_SUPPORT_PREEMPTION]["sub_configs"][True],
@@ -73,8 +73,8 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         with mock.patch.object(BaseNTETask, "__init__", return_value=None):
             RequiemCombatConfigTask.__init__(task)
 
-        self.assertEqual(task.default_config[task.CONF_ORDINARY_DODGE_WAIT], 0.5)
-        self.assertEqual(task.default_config[task.CONF_REQUIEM_ORDINARY_DODGE_WAIT], 0.5)
+        self.assertEqual(task.default_config[task.CONF_ORDINARY_DODGE_WAIT], 0.6)
+        self.assertEqual(task.default_config[task.CONF_REQUIEM_ORDINARY_DODGE_WAIT], 0.6)
         self.assertNotIn(
             task.CONF_ORDINARY_DODGE_WAIT,
             task.config_type[task.CONF_GROUP_DODGE]["sub_configs"][True],
@@ -114,8 +114,8 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
             RequiemCombatConfigTask.__init__(task)
 
         self.assertFalse(task.default_config[task.CONF_SECTION_ZANKOU])
-        self.assertFalse(task.default_config[task.CONF_COAXIS_COMBAT_ENABLE])
-        self.assertFalse(task.default_config[task.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT])
+        self.assertTrue(task.default_config[task.CONF_COAXIS_COMBAT_ENABLE])
+        self.assertTrue(task.default_config[task.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT])
         self.assertIn(
             "关=保持RU的切人和环合普攻逻辑",
             task.config_description[task.CONF_COAXIS_EARLY_ENTRY_ABILITY_INPUT],
@@ -141,22 +141,22 @@ class TestRequiemCombatConfigTaskMigration(unittest.TestCase):
         self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_SWITCH_KEY], "1")
         self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_SWITCH_KEY], "2")
         self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_DURATION], 2.0)
-        self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION], 2.0)
-        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_SWITCH_DELAY], 0.5)
-        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION], 1.5)
-        self.assertFalse(task.default_config[task.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT])
-        self.assertFalse(task.default_config[task.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL])
-        self.assertTrue(task.default_config[task.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS])
+        self.assertEqual(task.default_config[task.CONF_COAXIS_REQUIEM_FREE_SKILL_ATTACK_DURATION], 1.0)
+        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_SWITCH_DELAY], 0.3)
+        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_INTRO_WAIT_DURATION], 1.3)
+        self.assertTrue(task.default_config[task.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT])
+        self.assertTrue(task.default_config[task.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL])
+        self.assertFalse(task.default_config[task.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS])
         self.assertEqual(
             task.config_type[task.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL]["sub_configs"][True],
             [task.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL_NON_BOSS],
         )
-        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_HOLD_DURATION], 2.0)
-        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_NORMAL_DURATION], 2.0)
-        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION], 0.5)
-        self.assertEqual(task.default_config[task.CONF_ORDINARY_DODGE_WAIT], 0.5)
-        self.assertEqual(task.default_config[task.CONF_REQUIEM_ORDINARY_DODGE_WAIT], 0.5)
-        self.assertEqual(task.default_config[task.CONF_FREE_BREAK_TEST_KEY], "9")
+        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_HOLD_DURATION], 1.0)
+        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_NORMAL_DURATION], 0.6)
+        self.assertEqual(task.default_config[task.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION], 0.6)
+        self.assertEqual(task.default_config[task.CONF_ORDINARY_DODGE_WAIT], 0.6)
+        self.assertEqual(task.default_config[task.CONF_REQUIEM_ORDINARY_DODGE_WAIT], 0.6)
+        self.assertEqual(task.default_config[task.CONF_FREE_BREAK_TEST_KEY], "8")
         self.assertEqual(
             task.config_type[task.CONF_SECTION_ZANKOU]["sub_configs"][True],
             [

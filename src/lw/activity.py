@@ -37,8 +37,8 @@ def activity_key_pressed(task, key):
 
 def configure_activity(task):
     task.default_config.update({
-        GROUP: False, ENABLE: False, HOTKEY: "5", PRIORITY: "",
-        FOOT_X: 0.5, FOOT_Y: 0.565, MOVE_SECONDS: 0.2,
+        GROUP: False, ENABLE: False, HOTKEY: "6", PRIORITY: "下一关/开始挑战",
+        FOOT_X: 0.5, FOOT_Y: 0.565, MOVE_SECONDS: 0.5,
     })
     task.config_type[GROUP] = config_group([ENABLE, HOTKEY, MOVE_SECONDS,
                                             PRIORITY, FOOT_X, FOOT_Y])
@@ -49,7 +49,7 @@ def configure_activity(task):
         PRIORITY: "任意界面按文字从左到右优先点击, 支持/、逗号和换行; 如无尽挑战/开始挑战; 同一文字持续出现最多每2秒点击一次",
         FOOT_X: "角色脚底横坐标/画面宽度, 默认0.5; 不是地图中心; 镜头变化需校准",
         FOOT_Y: "角色脚底纵坐标/画面高度, 默认0.565; 不是地图中心或人物身体中心",
-        MOVE_SECONDS: "每次移动按住多久, 默认0.2秒; 范围0.05~1.0秒; 越长位移越大但重新识别越慢; 可随时按热键停止",
+        MOVE_SECONDS: "每次移动按住多久, 默认0.5秒; 范围0.05~1.0秒; 越长位移越大但重新识别越慢; 可随时按热键停止",
     })
 
 

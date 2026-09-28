@@ -40,7 +40,7 @@ LEGACY_KEY_MAP = {
 
 def configure_nanally_super_jump(task):
     task.default_config.update({
-        ENABLE: False,
+        ENABLE: True,
         HOTKEY: "mouse4",
         JUMP_DELAY: DEFAULT_JUMP_DELAY,
         SECOND_JUMP_DELAY: DEFAULT_SECOND_JUMP_DELAY,
