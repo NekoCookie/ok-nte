@@ -74,7 +74,8 @@ class TestCharacterConfigSections(unittest.TestCase):
             top_level,
             [
                 task.CONF_SECTION_GENERAL, task.CONF_SECTION_REQUIEM,
-                task.CONF_SECTION_ZANKOU, task.CONF_SECTION_NANALLY,
+                task.CONF_SECTION_ZANKOU, task.CONF_SECTION_BLACKBIRD,
+                task.CONF_SECTION_NANALLY,
                 ACTIVITY_GROUP, task.CONF_GROUP_PRESET,
             ],
         )

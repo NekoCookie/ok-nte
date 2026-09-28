@@ -1,90 +1,184 @@
 import unittest
-from types import SimpleNamespace
 from unittest import mock
 
 from src.char.core.CharRegistry import char_registry
+from src.combat.planner.types import ActionIntent
 from src.lw.blackbird_sub_dps import (
-    CONF_ULT_FIELD_TIME_LIMIT,
-    DEFAULT_ULT_FIELD_TIME_LIMIT,
+    DARK_STAR_HOLD,
+    DEFAULTS,
     BlackbirdSubDps,
+    dark_star_hold_seconds,
 )
 
 
-class _Context:
-    def is_action_allowed(self, char, action):
-        return action.is_allowed(self)
+class _Task:
+    def __init__(self):
+        self.freeze = 0.0
+
+    def wait_until(self, *args, **kwargs):
+        return False
+
+    def find_one(self, feature):
+        return False
+
+    def time_elapsed_accounting_for_freeze(self, start):
+        if start < 0:
+            return 10000
+        return _Task.clock - start - self.freeze
 
 
-def _make_char(skill_ready_at=None, config=None):
+_Task.clock = 0.0
+
+
+def _make_char(ult_ready=True, second_ult_ready=True, skill_ready=True, config=None):
     char = object.__new__(BlackbirdSubDps)
-    clock = [0.0]
-    events = []
+    char.task = _Task()
     char.logger = mock.Mock()
-    char.now = lambda: clock[0]
-
-    def sleep(duration):
-        clock[0] += duration
-
-    def click_skill():
-        events.append(("skill", clock[0]))
-        return True
-
-    char.sleep = sleep
-    char.normal_attack = lambda: events.append(("attack", clock[0]))
-    char.skill_available = lambda: skill_ready_at is not None and clock[0] >= skill_ready_at
-    char.click_skill = click_skill
-    char.ultimate_available = lambda check_color=True: True
+    char.in_ult = False
+    char.is_current_char = True
+    char.left_field_time = -1.0
     char.lw_skills_disabled_for_test = lambda: False
     char._lw_config = lambda: config
-    return char, clock, events
+    state = {"ult": ult_ready, "skill": skill_ready}
+    casts = []
+
+    def click_ultimate():
+        if not state["ult"]:
+            return False
+        casts.append("Q2" if char.in_ult else "Q1")
+        state["ult"] = second_ult_ready and not char.in_ult
+        return True
+
+    def click_skill():
+        if not state["skill"]:
+            return False
+        casts.append("E")
+        state["skill"] = False
+        return True
+
+    char.ultimate_available = lambda check_color=True: state["ult"]
+    char.skill_available = lambda: state["skill"]
+    char.click_ultimate = click_ultimate
+    char.click_skill = lambda down_time=0.01: click_skill()
+    char.normal_attack = lambda: None
+    char.now = lambda: _Task.clock
+    char.sleep = lambda duration: setattr(_Task, "clock", _Task.clock + duration)
+    return char, casts, state
 
 
-def _cycle_full_ru_skill():
-    """RU's skill intent refuses to run while the cycle is full and a reaction mate exists."""
+def _run_entry(char):
+    """Drive the entry generator like the planner: execute each allowed action."""
 
-    return SimpleNamespace(is_allowed=lambda _: False)
+    plan = char.combat_plan(None)
+    flow = plan.entry()
+    result = None
+    try:
+        action = flow.send(None)
+        while True:
+            assert isinstance(action, ActionIntent)
+            result = bool(action.is_allowed(None) and action.execute(None))
+            action = flow.send(result)
+    except StopIteration:
+        pass
+    return plan
 
 
-class TestBlackbirdSubDps(unittest.TestCase):
-    def test_enhanced_skill_fires_and_hands_off_even_with_full_cycle(self):
-        char, clock, events = _make_char(skill_ready_at=1.5)
+class TestBlackbirdSubDpsEntry(unittest.TestCase):
+    def setUp(self):
+        _Task.clock = 0.0
 
-        char.perform_in_ult(_Context(), _cycle_full_ru_skill())
+    def test_entry_casts_q1_then_q2_then_skill(self):
+        char, casts, _ = _make_char()
 
-        skills = [time for kind, time in events if kind == "skill"]
-        self.assertEqual(len(skills), 1)
-        self.assertAlmostEqual(skills[0], 1.5, delta=0.11)
-        self.assertLess(clock[0], 2.0)
+        _run_entry(char)
 
-    def test_witch_field_time_is_capped_when_enhanced_skill_never_unlocks(self):
-        char, clock, events = _make_char(skill_ready_at=None)
+        self.assertEqual(casts, ["Q1", "Q2", "E"])
+        self.assertFalse(char.in_ult)
 
-        char.perform_in_ult(_Context(), _cycle_full_ru_skill())
+    def test_entry_without_ultimate_energy_only_casts_skill(self):
+        char, casts, _ = _make_char(ult_ready=False)
 
-        self.assertNotIn("skill", [kind for kind, _ in events])
-        self.assertGreaterEqual(clock[0], DEFAULT_ULT_FIELD_TIME_LIMIT)
-        self.assertLess(clock[0], DEFAULT_ULT_FIELD_TIME_LIMIT + 0.2)
+        _run_entry(char)
 
-    def test_test_mode_blocks_enhanced_skill(self):
-        char, clock, events = _make_char(skill_ready_at=0.0)
+        self.assertEqual(casts, ["E"])
+
+    def test_missing_second_ultimate_still_casts_skill_and_keeps_witch_state(self):
+        char, casts, _ = _make_char(second_ult_ready=False)
+
+        _run_entry(char)
+
+        self.assertEqual(casts, ["Q1", "E"])
+        self.assertTrue(char.in_ult)
+        self.assertLessEqual(_Task.clock, BlackbirdSubDps.SECOND_ULTIMATE_WAIT + 0.11)
+
+    def test_leftover_witch_state_finishes_with_q2_then_skill(self):
+        char, casts, _ = _make_char()
+        char.in_ult = True
+
+        _run_entry(char)
+
+        self.assertEqual(casts, ["Q2", "E"])
+        self.assertFalse(char.in_ult)
+
+    def test_test_mode_casts_nothing_and_claims_nothing(self):
+        char, casts, _ = _make_char()
         char.lw_skills_disabled_for_test = lambda: True
 
-        char.perform_in_ult(_Context(), _cycle_full_ru_skill())
+        plan = _run_entry(char)
 
-        self.assertNotIn("skill", [kind for kind, _ in events])
+        self.assertEqual(casts, [])
+        self.assertEqual(plan.claims, [])
 
-    def test_field_time_limit_reads_config_and_stays_within_witch_duration(self):
+
+class TestBlackbirdSubDpsReturn(unittest.TestCase):
+    def setUp(self):
+        _Task.clock = 100.0
+
+    def _off_field(self, skill_ready=True, config=None, freeze=0.0):
+        char, _, state = _make_char(skill_ready=skill_ready, config=config)
+        char.is_current_char = False
+        char.left_field_time = _Task.clock
+        char.task.freeze = freeze
+        return char, state
+
+    def test_blocked_during_dark_star_windows_even_with_skill_ready(self):
+        char, _ = self._off_field()
+
+        _Task.clock += DEFAULTS[DARK_STAR_HOLD] - 0.5
+        self.assertFalse(char.lw_can_switch_in())
+        _Task.clock += 1.0
+        self.assertTrue(char.lw_can_switch_in())
+
+    def test_ultimate_animation_time_extends_the_hold(self):
+        char, _ = self._off_field(freeze=4.0)
+
+        _Task.clock += DEFAULTS[DARK_STAR_HOLD] + 1.0
+        self.assertFalse(char.lw_can_switch_in())
+
+    def test_waits_for_skill_after_the_windows(self):
+        char, state = self._off_field(skill_ready=False)
+
+        _Task.clock += DEFAULTS[DARK_STAR_HOLD] + 3.0
+        self.assertFalse(char.lw_can_switch_in())
+        state["skill"] = True
+        self.assertTrue(char.lw_can_switch_in())
+
+    def test_first_entry_and_current_field_are_never_blocked(self):
+        char, _, _ = _make_char()
+        self.assertTrue(char.lw_can_switch_in())
+        char.is_current_char = False
+        self.assertTrue(char.lw_can_switch_in())
+
+    def test_hold_reads_config_with_default_fallback(self):
         cases = [
-            (None, DEFAULT_ULT_FIELD_TIME_LIMIT),
-            ({CONF_ULT_FIELD_TIME_LIMIT: 2.5}, 2.5),
-            ({CONF_ULT_FIELD_TIME_LIMIT: "bad"}, DEFAULT_ULT_FIELD_TIME_LIMIT),
-            ({CONF_ULT_FIELD_TIME_LIMIT: 99}, BlackbirdSubDps.ULT_DURATION),
-            ({CONF_ULT_FIELD_TIME_LIMIT: -1}, 0.0),
+            (None, DEFAULTS[DARK_STAR_HOLD]),
+            ({DARK_STAR_HOLD: 6}, 6.0),
+            ({DARK_STAR_HOLD: "bad"}, DEFAULTS[DARK_STAR_HOLD]),
+            ({DARK_STAR_HOLD: -3}, 0.0),
         ]
         for config, expected in cases:
             with self.subTest(config=config):
-                char, _, _ = _make_char(config=config)
-                self.assertEqual(char.ult_field_time_limit(), expected)
+                self.assertEqual(dark_star_hold_seconds(config), expected)
 
     def test_template_is_registered(self):
         entry = char_registry.get("builtin:blackbird_sub_dps")

@@ -13,6 +13,7 @@ from ok.util.file import get_relative_path
 from src.combat import requiem_combo
 from src.lw.activity import ActivityController, configure_activity  # [lw]
 from src.lw.config_group import config_group, config_group_keys  # [lw]
+from src.lw import blackbird_sub_dps as blackbird  # [lw]
 from src.lw import nanally_super_jump as nanally  # [lw]
 from src.lw.requiem_zankou_axis import (
     RequiemZankouAxisTester,
@@ -152,6 +153,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
     CONF_SECTION_GENERAL = "通用配置"
     CONF_SECTION_REQUIEM = "安魂曲配置"
     CONF_SECTION_ZANKOU = "残虹配置"     # 含安魂曲残虹合轴
+    CONF_SECTION_BLACKBIRD = "黑羽配置"  # [lw] 黑羽副C模板
     CONF_SECTION_NANALLY = "娜娜莉配置"
     CONF_GROUP_TRIGGER = "4A宏触发设置"   # 折叠分组: 触发键/触发方式
     CONF_GROUP_SUPPORT_PREEMPTION = "辅助资源提权"
@@ -228,6 +230,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
         CONF_SECTION_GENERAL: False,
         CONF_SECTION_REQUIEM: False,
         CONF_SECTION_ZANKOU: False,
+        CONF_SECTION_BLACKBIRD: False,
         CONF_SECTION_NANALLY: False,
         CONF_GROUP_REQUIEM_COAXIS: False,
         CONF_GROUP_ZANKOU_ATTACK: False,
@@ -373,6 +376,8 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                     self.CONF_COAXIS_ZANKOU_SWITCH_KEY,
                     self.CONF_COAXIS_ZANKOU_SWITCH_DELAY,
                 ]),
+                # [lw] 黑羽: 副C模板的黯星期间不回场时长。
+                self.CONF_SECTION_BLACKBIRD: config_group(blackbird.KEYS),
                 # [lw] 娜娜莉: 超级跳宏(原独立任务"娜娜莉超级跳"合并进来)。
                 self.CONF_SECTION_NANALLY: config_group(nanally.KEYS),
                 self.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: {
@@ -447,6 +452,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_GROUP_ZANKOU_ATTACK: "合轴中残虹的环合静默等待, 长按/普攻/声音闪避后普攻时长",
                 self.CONF_GROUP_ZANKOU_GOLD_SKILL: "合轴中强化E(黄E)打断, 开局黄E后切辅助",
                 self.CONF_GROUP_COAXIS_KEY_TEST: "按合轴触发键开始/停止的独立按键测试(需开通用里的手动按键总开关)",
+                self.CONF_SECTION_BLACKBIRD: "黑羽副C模板: 黯星期间不切回黑羽的时长",
                 self.CONF_SECTION_NANALLY: "娜娜莉超级跳宏",
                 self.CONF_GROUP_TRIGGER: "侧键4A宏的触发键/触发方式",
                 self.CONF_GROUP_SUPPORT_PREEMPTION: "辅助技能切人以及 Q/E 资源提权开关",
@@ -511,6 +517,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
             }
         )
         self.name = "角色自定义配置"
+        blackbird.configure_blackbird_sub_dps(self)  # [lw]
         nanally.configure_nanally_super_jump(self)  # [lw] Former standalone task.
         configure_activity(self)  # [lw] Independent top-level activity group.
         # 配置档位组放在最后(活动配置之后)。
