@@ -34,6 +34,8 @@ class OcrClickTaskMixin:
     CONF_SCAN_INTERVAL = "识别间隔(秒)"
     CONF_CLICK_INTERVAL = "点击间隔(秒)"
     CONF_MAX_MINUTES = "最长运行(分钟)"
+    CONF_AUTO_COMBAT = "进入战斗自动战斗"
+    CONF_USE_ULT = "使用终结技"
     OCR_THRESHOLD = 0.8
 
     def configure_ocr_click(self):
@@ -42,6 +44,8 @@ class OcrClickTaskMixin:
             self.CONF_SCAN_INTERVAL: 0.4,
             self.CONF_CLICK_INTERVAL: 2.0,
             self.CONF_MAX_MINUTES: 0,
+            self.CONF_AUTO_COMBAT: True,
+            self.CONF_USE_ULT: True,
         })
         self.config_description.update({
             self.CONF_WORDS: "全屏OCR, 按文字从左到右优先点击, 支持/、逗号和换行; "
@@ -50,6 +54,8 @@ class OcrClickTaskMixin:
             self.CONF_CLICK_INTERVAL: "两次点击之间的最短间隔, 默认2秒; 范围0.5~60秒; "
                                       "文字持续出现时按此间隔重复点击",
             self.CONF_MAX_MINUTES: "到时自动停止, 0为不限, 手动停止任务即可结束",
+            self.CONF_AUTO_COMBAT: "本任务运行时框架不调度自动战斗, 开启后识别到战斗由本任务接管战斗, "
+                                   "脱战后继续OCR点击",
         })
 
     def _ocr_click_float(self, key, default, low, high) -> float:
@@ -80,6 +86,12 @@ class OcrClickTaskMixin:
             if max_minutes > 0 and time.monotonic() - started >= max_minutes * 60:
                 break
             self.next_frame()
+            if self.config.get(self.CONF_AUTO_COMBAT, True) and self.in_combat():
+                self.info_set("状态", "战斗中")
+                self.log_info("OCR识别点击: 进入战斗, 开始自动战斗")
+                self.lw_combat_run()
+                self.log_info("OCR识别点击: 脱离战斗, 继续识别")
+                continue
             boxes = (self.ocr(threshold=self.OCR_THRESHOLD) or []) if words else []
             picked = pick_text([box.name for box in boxes], words)
             if picked is None:
