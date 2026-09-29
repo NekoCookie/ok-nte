@@ -537,18 +537,28 @@ class TestZankouGoldSkillWaitsForFirstDarkStar(unittest.TestCase):
 
 
 class TestMainDpsRelayTheRoundSetup(unittest.TestCase):
-    def test_relay_only_attacks_until_the_switch_cooldown(self):
+    def test_relay_leaves_without_attacking(self):
         char = mock.Mock()
-        char.time_elapsed_accounting_for_freeze.return_value = 0.3
 
         self.assertTrue(perform_dark_star_relay(char))
 
-        char.continues_normal_attack.assert_called_once()
-        self.assertAlmostEqual(char.continues_normal_attack.call_args.args[0], 0.7)
-        char.time_elapsed_accounting_for_freeze.return_value = 2.0
-        char.continues_normal_attack.reset_mock()
-        perform_dark_star_relay(char)
         char.continues_normal_attack.assert_not_called()
+
+    def test_relay_entry_skips_intro_attacks_and_switch_cooldown(self):
+        requiem, zankou, _context = make_combat_pair(combat_enabled=True)
+        for char, target in ((requiem, "src.char.Requiem.dark_star_relay"),
+                             (zankou, "src.lw.zankou_main_dps.dark_star_relay")):
+            char.has_intro = True
+            char.logger = mock.Mock()
+            char.continues_normal_attack = mock.Mock()
+            char.sleep = mock.Mock()
+            char.task.time_elapsed_accounting_for_freeze = mock.Mock(return_value=0.2)
+            char.last_perform = 0.0
+            with self.subTest(char=char), mock.patch(target, return_value=True),                     mock.patch("src.lw.zankou_main_dps.round_step", return_value=Step.OPEN):
+                char.wait_intro()
+                char.wait_switch_cd()
+                char.continues_normal_attack.assert_not_called()
+                char.sleep.assert_not_called()
 
     def test_requiem_skips_its_axis_and_leaves_during_round_setup(self):
         requiem, _zankou, context = make_combat_pair(combat_enabled=True)

@@ -118,16 +118,10 @@ def dark_star_relay(char) -> bool:
     return getattr(char, "is_current_char", False) and dark_star_setup_pending(char)
 
 
-RELAY_MIN_FIELD_TIME = 1.0  # the game's switch cooldown
-
-
 def perform_dark_star_relay(char) -> bool:
-    """Attack only until the switch cooldown allows leaving."""
+    """Leave right away: the switch cooldown only blocks returning to the char just left."""
 
     char.logger.info(f"{char} relays the dark star round without field time")
-    elapsed = char.time_elapsed_accounting_for_freeze(char.last_perform)
-    if elapsed < RELAY_MIN_FIELD_TIME:
-        char.continues_normal_attack(RELAY_MIN_FIELD_TIME - elapsed)
     return True
 
 

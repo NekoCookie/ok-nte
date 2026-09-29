@@ -64,6 +64,9 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
     def wait_intro(self, time_out=-1, click=True):
         """Keep Zankou's coordinated-axis entry silent until its heavy attack."""
 
+        if self.has_intro and self._relays_dark_star_round():
+            self.logger.info("zankou relay entry skips intro wait")
+            return
         if not self._has_coordinated_axis_partner():
             return super().wait_intro(time_out=time_out, click=click)
         if not self.has_intro:
@@ -75,6 +78,13 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
 
     def should_force_off_field(self):
         return bool(getattr(self, "_coaxis_switch_pending", False))
+
+    def wait_switch_cd(self):
+        """The game only blocks switching back to the char just left; a relay leaves now."""
+
+        if self._relays_dark_star_round():
+            return
+        super().wait_switch_cd()
 
     def switch_out(self):
         clear_coaxis_handoff(self)

@@ -358,6 +358,21 @@ class Requiem(MainDps):
             return True
         return False
 
+    def wait_intro(self, time_out=-1, click=True):  # [lw]
+        """A relay entry keeps the ring reaction but skips the intro normal attacks."""
+
+        if self.has_intro and dark_star_relay(self):
+            self.logger.info("requiem relay entry skips intro normal attacks")
+            return
+        super().wait_intro(time_out=time_out, click=click)
+
+    def wait_switch_cd(self):  # [lw]
+        """The game only blocks switching back to the char just left; a relay leaves now."""
+
+        if dark_star_relay(self):
+            return
+        super().wait_switch_cd()
+
     def should_force_off_field(self):
         return (
             time.time() < getattr(self, "skill_off_field_until", 0.0)
