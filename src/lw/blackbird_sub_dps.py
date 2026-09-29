@@ -22,7 +22,6 @@ from enum import Enum
 
 from src.char.Blackbird import Blackbird
 from src.combat.planner import FieldClaim, Planner
-from src.Labels import Labels
 from src.lw.combat_test_policy import LWCombatTestPolicyMixin
 
 DARK_STAR_HOLD = "黯星期间不回黑羽(s)"
@@ -192,15 +191,9 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
             claims.append(FieldClaim.normal(reason="sub dps dark star cycle"))
 
         def entry():
+            # Every turn is Q1 -> Q2 -> E, so the Witch form only lingers when Q2 did not
+            # come out; the turn remembers that instead of reading the screen.
             self.stint_cast_skill = False
-            if self.in_ult is None:
-                self.in_ult = bool(
-                    self.task.wait_until(
-                        lambda: self.task.find_one(Labels.blackbird_ult_2),
-                        post_action=self.click_with_interval,
-                        time_out=0.5,
-                    )
-                )
             if not self.in_ult and (yield ultimate):
                 self.in_ult = True
                 self._wait_for_second_ultimate()
@@ -210,6 +203,14 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
                 self.stint_cast_skill = True
 
         return self.plan(skill, ultimate, claims=claims, entry=entry)
+
+    def wait_intro(self, time_out=-1, click=True):
+        """Cast Q1 right after the ring entry instead of the intro normal attacks."""
+
+        if self.has_intro and self.dark_star_step() is not Step.INACTIVE:
+            self.logger.info("blackbird ring entry goes straight to ultimate")
+            return
+        super().wait_intro(time_out=time_out, click=click)
 
     def _wait_for_second_ultimate(self) -> bool:
         deadline = self.now() + self.SECOND_ULTIMATE_WAIT
@@ -340,6 +341,7 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
         self._reset_dark_star_state()
 
     def _reset_dark_star_state(self):
+        self.in_ult = False
         self.left_field_time = -1.0
         self.skill_ready_since = -1.0
         self.round_start = -1.0

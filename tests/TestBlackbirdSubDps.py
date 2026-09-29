@@ -201,6 +201,27 @@ class TestBlackbirdEntry(unittest.TestCase):
         self.assertEqual(casts, [])
         self.assertEqual(plan.claims, [])
 
+    def test_entry_does_not_read_the_witch_form_from_screen(self):
+        char, casts, _ = _make_blackbird()
+        char.task.wait_until = mock.Mock()
+        char.task.find_one = mock.Mock()
+
+        _run_entry(char)
+
+        char.task.wait_until.assert_not_called()
+        char.task.find_one.assert_not_called()
+        self.assertEqual(casts, ["Q1", "Q2", "E"])
+
+    def test_ring_entry_skips_intro_attacks(self):
+        char, _, _ = _make_blackbird()
+        char.has_intro = True
+        char.round_start = _Clock.now
+        char.continues_normal_attack = mock.Mock()
+
+        char.wait_intro()
+
+        char.continues_normal_attack.assert_not_called()
+
     def test_template_is_registered(self):
         entry = char_registry.get("builtin:blackbird_sub_dps")
 
