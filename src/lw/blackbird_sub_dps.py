@@ -54,16 +54,7 @@ ROUND_SETUP = "黯星轮准备最长(s)"
 SAKIRI_CHARGE = "早雾攒大招最长(s)"
 ZANKOU_FLAME = "残虹大招前先拿蓄焰(2觉)"
 WITCH_FIELD_LIMIT = "黑羽魔女形态站场上限(s)"
-RELAY_INTRO_WAIT = "环合进场接力前等援护(s)"
-KEYS = [
-    MODE,
-    DARK_STAR_HOLD,
-    ROUND_SETUP,
-    SAKIRI_CHARGE,
-    ZANKOU_FLAME,
-    WITCH_FIELD_LIMIT,
-    RELAY_INTRO_WAIT,
-]
+KEYS = [MODE, DARK_STAR_HOLD, ROUND_SETUP, SAKIRI_CHARGE, ZANKOU_FLAME, WITCH_FIELD_LIMIT]
 # 黑羽副C配置的唯一默认值来源: 界面默认值和读不到配置时的兜底都读这里。
 DEFAULTS = {
     MODE: MODE_ZANKOU_OPENING,
@@ -72,8 +63,6 @@ DEFAULTS = {
     SAKIRI_CHARGE: 8.0,
     ZANKOU_FLAME: True,
     WITCH_FIELD_LIMIT: 5.0,
-    # Estimate: the ring-entry support attack ends within the old 1.3s intro window.
-    RELAY_INTRO_WAIT: 1.0,
 }
 SAKIRI_BUFF_DURATION = 20.0  # Sakiri Q: team ATK buff for 20s, paused by ultimate time stops
 # Switching and Blackbird's E still take a few seconds before the ultimates go out.
@@ -91,10 +80,6 @@ def configure_blackbird_sub_dps(task):
             "残虹黄E起手受'开局残虹黄E后切辅助'和'黄E入场小怪也触发'开关控制"
         ),
         WITCH_FIELD_LIMIT: "E+魔女强化E: 魔女形态里放出1发强化E就走, 放不出来时最多站场这么久",
-        RELAY_INTRO_WAIT: (
-            "被环合进场只为接力的角色, 先等援护动画这么久(不平A)再切走; "
-            "援护中切人游戏不接, 之后的按键会落到这个角色身上(安魂曲被误开大)"
-        ),
         DARK_STAR_HOLD: (
             "黑羽触发黯星下场后至少这么久不再切回(扣除大招时停), 让主C打满两段黯星"
         ),
@@ -185,20 +170,6 @@ def dark_star_relay(char) -> bool:
     if step not in ROUTED_STEPS:
         return False
     return step is not Step.FLAME or bool(char.is_cycle_full())
-
-
-def wait_relay_intro(char) -> None:
-    """Let the ring-entry support attack finish, silently, before a relay switches out.
-
-    The game ignores a switch during that animation while the switch check falls back to
-    the slot index, so the next character's inputs would land on this one.
-    """
-
-    blackbird = team_blackbird(char)
-    config = blackbird._lw_config() if blackbird is not None else None
-    duration = config_seconds(config, RELAY_INTRO_WAIT)
-    char.logger.info(f"{char} relay entry waits {duration:.2f}s for the support attack")
-    char.sleep(duration)
 
 
 def perform_dark_star_relay(char) -> bool:
@@ -340,11 +311,7 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
     def wait_intro(self, time_out=-1, click=True):
         """Cast Q1 right after the ring entry instead of the intro normal attacks."""
 
-        step = self.dark_star_step() if self.has_intro else Step.INACTIVE
-        if step is Step.SAKIRI:
-            wait_relay_intro(self)  # only passing the round on to Sakiri
-            return
-        if step is not Step.INACTIVE:
+        if self.has_intro and self.dark_star_step() is not Step.INACTIVE:
             self.logger.info("blackbird ring entry goes straight to ultimate")
             return
         super().wait_intro(time_out=time_out, click=click)

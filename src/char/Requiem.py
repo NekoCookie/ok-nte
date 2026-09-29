@@ -11,7 +11,6 @@ from src.lw.blackbird_sub_dps import (
     opening_burst_held,
     perform_dark_star_relay,
     round_allows_switch_in,
-    wait_relay_intro,
 )
 from src.lw.combat_templates import MainDps
 from src.combat import requiem_combo
@@ -363,7 +362,7 @@ class Requiem(MainDps):
         """A relay entry keeps the ring reaction but skips the intro normal attacks."""
 
         if self.has_intro and dark_star_relay(self):
-            wait_relay_intro(self)
+            self.logger.info("requiem relay entry skips intro normal attacks")
             return
         super().wait_intro(time_out=time_out, click=click)
 
