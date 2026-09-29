@@ -518,14 +518,10 @@ def run_zankou_opening_gold_skill(task) -> bool:
     )
     if partner is None:
         return False
-    from src.lw.blackbird_sub_dps import dark_star_setup_pending
+    from src.lw.blackbird_sub_dps import round_step, Step
 
-    if dark_star_setup_pending(zankou):
-        # The Dark Star round runs the opening; the axis casts gold E inside Dark Star.
-        log_info = getattr(getattr(task, "logger", None), "info", None)
-        if callable(log_info):
-            log_info("combat opening zankou gold skill deferred to blackbird dark star")
-        return False
+    # A Blackbird sub-DPS team leaves the rest of the opening to its Dark Star round.
+    dark_star_team = round_step(zankou) is not Step.INACTIVE
 
     opening_decision = planner.decide_combat_start_char(current_char)
     opening_target = opening_decision.target
@@ -563,6 +559,23 @@ def run_zankou_opening_gold_skill(task) -> bool:
             phase_deadline=zankou.now() + GOLD_SKILL_CONFIRM_TIMEOUT,
             action_name="zankou_opening_gold_skill",
         )
+
+    if dark_star_team:
+        ring_target = _opening_ring_target(task, planner, zankou)
+        if ring_target is not None:
+            if callable(log_info):
+                log_info(
+                    f"combat opening zankou gold skill triggers ring reaction on {ring_target}; "
+                    "dark star round continues"
+                )
+            switch_to_char(
+                ring_target,
+                current_char=zankou,
+                has_intro=True,
+                log_prefix="lw opening zankou gold skill ring",
+                send_switch_attack=False,
+            )
+        return True
 
     # Zankou-started openings only need to leave Zankou; the Requiem fallback
     # is dropped when a ring switch already does that.

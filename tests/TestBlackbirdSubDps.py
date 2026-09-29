@@ -399,11 +399,36 @@ class TestDarkStarRoundRouting(unittest.TestCase):
     def test_sakiri_step_only_lets_sakiri_in(self):
         self.team.zankou.lw_stored_flame = True
         self.team.put_on_field(self.team.requiem)
+        self.team.requiem.is_cycle_full = lambda: False
         _Clock.now += 30.0
 
         self.assertEqual(
             self.allowed(), {"sakiri": True, "blackbird": False, "zankou": False}
         )
+
+    def test_full_requiem_swaps_into_blackbird_before_sakiri_q(self):
+        self.team.zankou.lw_stored_flame = True
+        self.team.put_on_field(self.team.requiem)
+        self.team.requiem.is_cycle_full = lambda: True
+        _Clock.now += 30.0
+
+        self.assertEqual(
+            self.allowed(), {"sakiri": False, "blackbird": True, "zankou": False}
+        )
+        self.assertIs(preferred_reaction_target(self.team.requiem), self.team.blackbird)
+
+    def test_blackbird_entered_before_sakiri_q_passes_on_without_casting(self):
+        self.team.zankou.lw_stored_flame = True
+        _Clock.now += 30.0
+        self.team.put_on_field(self.team.blackbird)
+        self.team.blackbird.round_start = _Clock.now
+
+        first = next(self.team.blackbird.combat_plan(None).entry())
+
+        self.assertEqual(first.name, "BlackbirdSubDps_dark_star_relay")
+        self.team.sakiri.last_ultimate_time = _Clock.now
+        first = next(self.team.blackbird.combat_plan(None).entry())
+        self.assertEqual(first.name, "BlackbirdSubDps_ultimate")
 
     def test_open_step_sends_blackbird_then_blackbird_into_requiem(self):
         self.team.zankou.lw_stored_flame = True
@@ -580,20 +605,31 @@ class TestMainDpsHoldWiring(unittest.TestCase):
 class TestZankouGoldSkillWaitsForFirstDarkStar(unittest.TestCase):
     HELD = "src.lw.blackbird_sub_dps.opening_burst_held"
 
-    def test_opening_gold_skill_is_left_to_the_dark_star_round(self):
+    def test_opening_gold_skill_then_ring_into_requiem_hands_over_to_the_round(self):
         config_task = make_config_task(
             **{RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: True}
         )
         requiem = FakeCombatChar(config_task)
         requiem.impl_id = REQUIEM_IMPL_ID
-        zankou = FakeCombatChar(config_task, gold_skill_times=(1.0,))
+        zankou = FakeCombatChar(config_task, gold_skill_times=(1.0,), cycle_full=True)
         zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
-        task = FakeOpeningTask(config_task, requiem, zankou, FakeCombatChar(config_task))
+        sakiri = FakeCombatChar(config_task)
+        task = FakeOpeningTask(config_task, sakiri, zankou, requiem, reaction_target=requiem)
 
-        with mock.patch("src.lw.blackbird_sub_dps.dark_star_setup_pending", return_value=True):
-            self.assertFalse(run_zankou_opening_gold_skill(task))
+        with mock.patch("src.lw.blackbird_sub_dps.round_step", return_value=Step.FLAME):
+            self.assertTrue(run_zankou_opening_gold_skill(task))
 
-        self.assertEqual(task.switches, [])
+        self.assertEqual(
+            task.switches,
+            [
+                (sakiri, zankou, False, "lw opening zankou gold skill"),
+                (zankou, requiem, True, "lw opening zankou gold skill ring"),
+            ],
+        )
+        self.assertEqual(
+            [event[2] for event in zankou.events if event[0] == "gold_skill"],
+            ["zankou_opening_gold_skill"],
+        )
 
     def test_axis_keeps_the_first_gold_skill(self):
         config_task = make_config_task(

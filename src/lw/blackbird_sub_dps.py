@@ -157,10 +157,14 @@ def preferred_reaction_target(source):
     blackbird = team_blackbird(source)
     if blackbird is None or source is not blackbird.team_requiem():
         return None
+    step = blackbird.dark_star_step()
+    if step is Step.SAKIRI:
+        # Requiem's full cycle belongs to Blackbird (Dark Star) before Sakiri's Q.
+        return blackbird
     # First round: Zankou's combat-entry cycle gives the flame, Requiem's goes to Blackbird.
     if not blackbird.dark_star_opened:
         return None
-    if blackbird.dark_star_step() in (Step.INACTIVE, Step.SAKIRI, Step.OPEN):
+    if step in (Step.INACTIVE, Step.OPEN):
         return None
     if not config_enabled(blackbird._lw_config(), ZANKOU_FLAME):
         return None
@@ -180,7 +184,8 @@ def round_allows_switch_in(char) -> bool:
     if step not in ROUTED_STEPS:
         return True
     if char is blackbird.team_sakiri():
-        return step is Step.SAKIRI
+        # A full Requiem swaps into Blackbird first; switching to Sakiri would spend it.
+        return step is Step.SAKIRI and not blackbird.requiem_cycle_full_on_field()
     if char is blackbird.team_zankou():
         return step is Step.FLAME
     if char is blackbird.team_requiem():
@@ -215,6 +220,14 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
             add_tags=Planner.ActionTag.HIGH_PRIORITY,
             can_execute=lambda _: not self.lw_skills_disabled_for_test(),
         )
+        relay = self.planner_action(
+            tags={Planner.ActionTag.LEGACY_COMBO},
+            slot=Planner.ActionSlot.LEGACY_COMBO,
+            execute=lambda _: perform_dark_star_relay(self),
+            name=f"{self}_dark_star_relay",
+            reason="blackbird passes the round on to sakiri",
+            priority_ready=lambda _: False,
+        )
         claims = []
         if self.skill_available() and not self.lw_skills_disabled_for_test():
             claims.append(FieldClaim.normal(reason="sub dps dark star cycle"))
@@ -223,6 +236,10 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
             # Every turn is Q1 -> Q2 -> E, so the Witch form only lingers when Q2 did not
             # come out; the turn remembers that instead of reading the screen.
             self.stint_cast_skill = False
+            if self.dark_star_step() is Step.SAKIRI:
+                # Entered on Requiem's cycle: Q/E wait until Sakiri's buff is up.
+                yield relay
+                return
             if not self.in_ult and (yield ultimate):
                 self.in_ult = True
                 self._wait_for_second_ultimate()
@@ -259,7 +276,25 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
         step = self.dark_star_step()
         if step is Step.INACTIVE:
             return True
+        if step is Step.SAKIRI:
+            # Take a full Requiem's cycle (Dark Star) before Sakiri's Q.
+            return self.requiem_cycle_full_on_field()
         return step in (Step.IDLE, Step.OPEN, Step.LATE) and bool(self.skill_available())
+
+    def requiem_cycle_full_on_field(self) -> bool:
+        requiem = self.team_requiem()
+        return (
+            requiem is not None
+            and getattr(requiem, "is_current_char", False)
+            and bool(requiem.is_cycle_full())
+        )
+
+    def wait_switch_cd(self):
+        """The game only blocks switching back to the char just left; a relay leaves now."""
+
+        if self.is_current_char and self.dark_star_step() is Step.SAKIRI:
+            return
+        super().wait_switch_cd()
 
     def dark_star_step(self) -> Step:
         """Current step of the team's Dark Star round, derived from what is observable."""
@@ -267,9 +302,11 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
         if getattr(self, "is_dead", False) or self.lw_skills_disabled_for_test():
             return Step.INACTIVE
         config = self._lw_config()
-        if self.is_current_char:
-            return Step.OPEN if self.round_start >= 0 else Step.IDLE
-        in_window = self._elapsed(self.left_field_time) < config_seconds(config, DARK_STAR_HOLD)
+        if self.is_current_char and self.round_start < 0:
+            return Step.IDLE
+        in_window = not self.is_current_char and self._elapsed(
+            self.left_field_time
+        ) < config_seconds(config, DARK_STAR_HOLD)
         # Both main DPS ultimates need cooldown and energy; the icon covers both.
         if not self._main_dps_ultimate_ready():
             self.round_start = -1.0
