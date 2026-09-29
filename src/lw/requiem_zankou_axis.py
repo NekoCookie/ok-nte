@@ -223,6 +223,14 @@ def _sound_dodge_since(
     return dodged, max(recorded_at, current_at), outcome
 
 
+def _gold_skill_held_for_dark_star(char: "BaseChar") -> bool:
+    """Keep a lit gold E for the Dark Star window Blackbird is about to open."""
+
+    from src.lw.blackbird_sub_dps import dark_star_setup_pending
+
+    return dark_star_setup_pending(char)
+
+
 def _try_zankou_gold_skill_interrupt(
     char: "BaseChar",
     context: "CombatContext",
@@ -246,7 +254,7 @@ def _try_zankou_gold_skill_interrupt(
         next_frame()
     now = char.now()
     if not attempt.attempted:
-        if not find_one(Labels.zankou_skill_gold):
+        if not find_one(Labels.zankou_skill_gold) or _gold_skill_held_for_dark_star(char):
             return False
         attempt.attempted = True
         attempt.confirmation_deadline = min(now + GOLD_SKILL_CONFIRM_TIMEOUT, phase_deadline)
@@ -382,7 +390,7 @@ def _try_zankou_gold_skill_after_dodge(
     next_frame = getattr(task, "next_frame", None)
     if callable(next_frame):
         next_frame()
-    if not find_one(Labels.zankou_skill_gold):
+    if not find_one(Labels.zankou_skill_gold) or _gold_skill_held_for_dark_star(char):
         return False
 
     logger = getattr(char, "logger", None)
@@ -509,6 +517,12 @@ def run_zankou_opening_gold_skill(task) -> bool:
         partner_impl_id=REQUIEM_IMPL_ID,
     )
     if partner is None:
+        return False
+    if _gold_skill_held_for_dark_star(zankou):
+        # The coordinated axis casts the lit gold E after Blackbird opens Dark Star.
+        log_info = getattr(getattr(task, "logger", None), "info", None)
+        if callable(log_info):
+            log_info("combat opening zankou gold skill deferred to blackbird dark star")
         return False
 
     opening_decision = planner.decide_combat_start_char(current_char)

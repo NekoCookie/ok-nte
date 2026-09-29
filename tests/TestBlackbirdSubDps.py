@@ -12,7 +12,19 @@ from src.lw.blackbird_sub_dps import (
     config_seconds,
     dark_star_setup_pending,
 )
-from tests.TestRequiemZankouAxis import make_combat_pair
+from src.lw.requiem_zankou_axis import (
+    REQUIEM_IMPL_ID,
+    ZANKOU_MAIN_DPS_IMPL_ID,
+    perform_zankou_combat_axis,
+    run_zankou_opening_gold_skill,
+)
+from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
+from tests.TestRequiemZankouAxis import (
+    FakeCombatChar,
+    FakeOpeningTask,
+    make_combat_pair,
+    make_config_task,
+)
 
 
 class _Clock:
@@ -293,6 +305,53 @@ class TestMainDpsHoldWiring(unittest.TestCase):
             actions = {action.name: action for action in plan.actions}
             self.assertTrue(actions["Requiem_ultimate"].is_allowed(context))
             self.assertTrue(actions["Requiem_real_skill"].is_allowed(context))
+
+
+class TestZankouGoldSkillWaitsForDarkStar(unittest.TestCase):
+    HELD = "src.lw.blackbird_sub_dps.dark_star_setup_pending"
+
+    def test_opening_gold_skill_is_deferred_while_blackbird_is_coming(self):
+        config_task = make_config_task(
+            **{RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: True}
+        )
+        requiem = FakeCombatChar(config_task)
+        requiem.impl_id = REQUIEM_IMPL_ID
+        zankou = FakeCombatChar(config_task, gold_skill_times=(1.0,))
+        zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
+        task = FakeOpeningTask(config_task, requiem, zankou, FakeCombatChar(config_task))
+
+        with mock.patch(self.HELD, return_value=True):
+            self.assertFalse(run_zankou_opening_gold_skill(task))
+
+        self.assertEqual(task.switches, [])
+        self.assertEqual([event for event in zankou.events if event[0] == "hold"], [])
+
+    def test_axis_keeps_lit_gold_skill_until_dark_star(self):
+        config_task = make_config_task(
+            **{RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: True}
+        )
+        zankou = FakeCombatChar(config_task, gold_skill_times=(1.85,))
+        requiem = FakeCombatChar(config_task)
+
+        with mock.patch(self.HELD, return_value=True):
+            self.assertTrue(perform_zankou_combat_axis(zankou, object(), requiem))
+
+        self.assertEqual([event for event in zankou.events if event[0] == "gold_skill"], [])
+
+    def test_post_dodge_gold_skill_also_waits_for_dark_star(self):
+        config_task = make_config_task(
+            **{
+                RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: True,
+                RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_DODGE_NORMAL_DURATION: 0.45,
+            }
+        )
+        zankou = FakeCombatChar(config_task, dodge_times=(0.4,), gold_skill_times=(0.6,))
+        requiem = FakeCombatChar(config_task)
+
+        with mock.patch(self.HELD, return_value=True):
+            self.assertTrue(perform_zankou_combat_axis(zankou, object(), requiem))
+
+        self.assertEqual([event for event in zankou.events if event[0] == "gold_skill"], [])
 
 
 if __name__ == "__main__":
