@@ -36,7 +36,7 @@ KEYS = [DARK_STAR_HOLD, ROUND_SETUP, SAKIRI_CHARGE, ZANKOU_FLAME]
 # 黑羽副C配置的唯一默认值来源: 界面默认值和读不到配置时的兜底都读这里。
 DEFAULTS = {
     DARK_STAR_HOLD: 10.0,
-    ROUND_SETUP: 20.0,
+    ROUND_SETUP: 12.0,
     SAKIRI_CHARGE: 8.0,
     ZANKOU_FLAME: True,
 }
