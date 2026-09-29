@@ -628,6 +628,14 @@ class TestRequiemBanksZankouFlame(unittest.TestCase):
     def setUp(self):
         _Clock.now = 100.0
         self.team = _team()
+        self.team.blackbird.dark_star_opened = True
+
+    def test_first_round_keeps_requiem_cycle_for_blackbird(self):
+        team = self.team
+        team.blackbird.dark_star_opened = False
+        team.state["main_ult"] = False
+
+        self.assertIsNone(preferred_reaction_target(team.requiem))
 
     def test_full_requiem_cycle_goes_to_zankou_without_flame_outside_opening(self):
         team = self.team

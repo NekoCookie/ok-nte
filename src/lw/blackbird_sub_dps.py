@@ -145,15 +145,18 @@ def sakiri_ultimate_held(char) -> bool:
 
 
 def preferred_reaction_target(source):
-    """Requiem banks Zankou's stored flame with her full cycle, except when opening.
+    """After the first round, Requiem banks Zankou's stored flame with her full cycle.
 
     Stored flame can be gathered before Zankou's ultimate is ready and one stack is
-    enough, so a full Requiem cycle goes to Zankou whenever he has none; only while
-    Blackbird opens Dark Star does the cycle belong to Blackbird.
+    enough, so a full Requiem cycle goes to Zankou whenever he has none; while
+    Blackbird opens Dark Star the cycle still belongs to Blackbird.
     """
 
     blackbird = team_blackbird(source)
     if blackbird is None or source is not blackbird.team_requiem():
+        return None
+    # First round: Zankou's combat-entry cycle gives the flame, Requiem's goes to Blackbird.
+    if not blackbird.dark_star_opened:
         return None
     if blackbird.dark_star_step() in (Step.INACTIVE, Step.OPEN, Step.SAKIRI):
         return None
