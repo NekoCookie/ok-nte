@@ -259,9 +259,16 @@ class TestDarkStarRoundSteps(unittest.TestCase):
         self.team.zankou.lw_stored_flame = True
         self.assertIs(self.blackbird.dark_star_step(), Step.OPEN)
 
-    def test_flame_is_skipped_when_zankou_has_no_ultimate_this_round(self):
+    def test_first_round_always_takes_flame(self):
         self.team.sakiri.last_ultimate_time = _Clock.now
         self.team.state["zankou_ult"] = False
+
+        self.assertIs(self.blackbird.dark_star_step(), Step.FLAME)
+
+    def test_later_rounds_skip_flame_when_zankou_has_no_ultimate(self):
+        self.team.sakiri.last_ultimate_time = _Clock.now
+        self.team.state["zankou_ult"] = False
+        self.blackbird.dark_star_opened = True
 
         self.assertIs(self.blackbird.dark_star_step(), Step.OPEN)
 
@@ -649,7 +656,7 @@ class TestRequiemBanksZankouFlame(unittest.TestCase):
         team = self.team
         self.assertIsNone(preferred_reaction_target(team.requiem))  # SAKIRI step
         team.sakiri.last_ultimate_time = _Clock.now
-        team.state["zankou_ult"] = False
+        team.zankou.lw_stored_flame = True
         self.assertIs(team.blackbird.dark_star_step(), Step.OPEN)
         self.assertIsNone(preferred_reaction_target(team.requiem))
 

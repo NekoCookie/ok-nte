@@ -289,14 +289,17 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
         return cast_at < self.round_start - SAKIRI_RECENT_ULTIMATE
 
     def _flame_needed(self) -> bool:
-        """Stored flame only pays off when Zankou casts his ultimate in this round."""
+        """Whether this round stops for Zankou's stored flame.
+
+        The first round always takes it: Zankou's combat-entry cycle makes it one swap,
+        and his off-field ultimate is not reliably readable right after combat starts.
+        Later rounds only stop for it when Zankou casts his ultimate in the round.
+        """
 
         zankou = self.team_zankou()
-        return (
-            zankou is not None
-            and not getattr(zankou, "lw_stored_flame", False)
-            and bool(zankou.ultimate_available())
-        )
+        if zankou is None or getattr(zankou, "lw_stored_flame", False):
+            return False
+        return not self.dark_star_opened or bool(zankou.ultimate_available())
 
     def _main_dps_ultimate_ready(self) -> bool:
         # The round is evaluated many times per planner pass; read the portraits once a frame.
