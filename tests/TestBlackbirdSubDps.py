@@ -11,9 +11,9 @@ from src.combat.planner.types import ActionIntent
 from src.lw.blackbird_sub_dps import (
     MODE,
     MODE_SAKIRI_OPENING,
-    MODE_SAKIRI_OPENING_RU,
+    MODE_SAKIRI_OPENING_WITCH,
     MODE_ZANKOU_OPENING,
-    MODE_ZANKOU_OPENING_RU,
+    MODE_ZANKOU_OPENING_WITCH,
     WITCH_FIELD_LIMIT,
     config_mode,
     DARK_STAR_HOLD,
@@ -178,7 +178,7 @@ class TestBlackbirdEntry(unittest.TestCase):
 
         self.assertEqual(casts, ["Q1", "Q2", "E"])
         self.assertFalse(char.in_ult)
-        self.assertTrue(char.stint_cast_skill)
+        self.assertTrue(char.stint_opens_dark_star)
 
     def test_entry_without_ultimate_energy_only_casts_skill(self):
         char, casts, _ = _make_blackbird(ult_ready=False)
@@ -327,7 +327,7 @@ class TestDarkStarRoundSteps(unittest.TestCase):
 
     def test_skill_swap_opens_the_dark_star_window(self):
         self.team.state["main_ult"] = False
-        self.blackbird.stint_cast_skill = True
+        self.blackbird.stint_opens_dark_star = True
         self.blackbird.switch_out()
 
         self.assertTrue(self.blackbird.dark_star_opened)
@@ -823,29 +823,50 @@ class TestBlackbirdModes(unittest.TestCase):
         _Clock.now = 100.0
         self.team = _team()
 
-    def _mode(self, mode):
-        self.team.blackbird._lw_config = lambda: {MODE: mode}
-
-    def test_mode_defaults_to_zankou_opening_rounds(self):
+    def test_mode_defaults_to_zankou_opening_quick_turn(self):
         self.assertEqual(config_mode(None), MODE_ZANKOU_OPENING)
         self.assertEqual(config_mode({MODE: "bogus"}), MODE_ZANKOU_OPENING)
-        self.assertEqual(config_mode({MODE: MODE_SAKIRI_OPENING_RU}), MODE_SAKIRI_OPENING_RU)
+        self.assertEqual(
+            config_mode({MODE: MODE_SAKIRI_OPENING_WITCH}), MODE_SAKIRI_OPENING_WITCH
+        )
 
-    def test_ru_modes_turn_the_rounds_off(self):
-        for mode in (MODE_SAKIRI_OPENING_RU, MODE_ZANKOU_OPENING_RU):
+    def test_every_mode_keeps_the_round_routing(self):
+        for mode in MODES_UNDER_TEST:
             with self.subTest(mode=mode):
-                self._mode(mode)
-                self.assertIs(self.team.blackbird.dark_star_step(), Step.INACTIVE)
-                self.assertFalse(dark_star_setup_pending(self.team.requiem))
-                self.assertTrue(round_allows_switch_in(self.team.zankou))
+                self.team.blackbird._lw_config = lambda m=mode: {MODE: m}
+                self.assertIs(self.team.blackbird.dark_star_step(), Step.FLAME)
 
-    def test_ru_mode_uses_the_ru_rotation(self):
-        self._mode(MODE_SAKIRI_OPENING_RU)
-        with mock.patch.object(
-            BlackbirdSubDps.__mro__[2], "combat_plan", return_value="ru-plan"
-        ) as ru_plan:
-            self.assertEqual(self.team.blackbird.combat_plan("ctx"), "ru-plan")
-        ru_plan.assert_called_once_with("ctx")
+    def _witch_blackbird(self, cycle_full=False, in_ult=False):
+        char, casts, state = _make_blackbird()
+        char._lw_config = lambda: {MODE: MODE_ZANKOU_OPENING_WITCH}
+        char.is_cycle_full = lambda: cycle_full
+        char.in_ult = in_ult
+        char.perform_in_ult = lambda context, skill: casts.append("witch")
+        return char, casts
+
+    def test_witch_turn_opens_with_normal_skill_for_a_free_full_cycle(self):
+        char, casts = self._witch_blackbird()
+
+        _run_entry(char)
+
+        self.assertEqual(casts, ["E", "Q1", "witch"])
+        self.assertTrue(char.in_ult)
+        self.assertTrue(char.stint_opens_dark_star)
+
+    def test_witch_turn_skips_normal_skill_when_the_cycle_is_already_full(self):
+        char, casts = self._witch_blackbird(cycle_full=True)
+
+        _run_entry(char)
+
+        self.assertEqual(casts, ["Q1", "witch"])
+        self.assertTrue(char.stint_opens_dark_star)
+
+    def test_kept_witch_form_is_closed_with_q2_first(self):
+        char, casts = self._witch_blackbird(in_ult=True)
+
+        _run_entry(char)
+
+        self.assertEqual(casts[:2], ["Q2", "E"])
 
     def test_witch_turn_casts_enhanced_skill_even_with_a_full_cycle(self):
         char, casts, state = _make_blackbird()
@@ -879,6 +900,14 @@ class TestBlackbirdModes(unittest.TestCase):
         self.assertAlmostEqual(_Clock.now - start, DEFAULTS[WITCH_FIELD_LIMIT], delta=0.11)
 
 
+MODES_UNDER_TEST = (
+    MODE_SAKIRI_OPENING,
+    MODE_ZANKOU_OPENING,
+    MODE_SAKIRI_OPENING_WITCH,
+    MODE_ZANKOU_OPENING_WITCH,
+)
+
+
 class TestOpeningFollowsTheMode(unittest.TestCase):
     def _run(self, mode):
         config_task = make_config_task(
@@ -890,30 +919,27 @@ class TestOpeningFollowsTheMode(unittest.TestCase):
         zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
         sakiri = FakeCombatChar(config_task)
         task = FakeOpeningTask(config_task, sakiri, zankou, requiem, reaction_target=requiem)
-        step = Step.INACTIVE if mode in (MODE_SAKIRI_OPENING_RU, MODE_ZANKOU_OPENING_RU) \
-            else Step.FLAME
         with mock.patch("src.lw.blackbird_sub_dps.team_mode", return_value=mode), \
-                mock.patch("src.lw.blackbird_sub_dps.round_step", return_value=step):
+                mock.patch("src.lw.blackbird_sub_dps.round_step", return_value=Step.FLAME):
             result = run_zankou_opening_gold_skill(task)
         return result, task, sakiri, zankou, requiem
 
     def test_sakiri_openings_skip_the_gold_skill_script(self):
-        for mode in (MODE_SAKIRI_OPENING, MODE_SAKIRI_OPENING_RU):
+        for mode in (MODE_SAKIRI_OPENING, MODE_SAKIRI_OPENING_WITCH):
             with self.subTest(mode=mode):
                 result, task, *_ = self._run(mode)
                 self.assertFalse(result)
                 self.assertEqual(task.switches, [])
 
-    def test_ru_zankou_opening_keeps_the_original_return(self):
-        result, task, sakiri, zankou, requiem = self._run(MODE_ZANKOU_OPENING_RU)
-
-        self.assertTrue(result)
-        # RU flow: the ring swap into the original opening target is its single return.
-        self.assertEqual(task.switches, [
-            (sakiri, zankou, False, "lw opening zankou gold skill"),
-            (zankou, requiem, True, "lw opening zankou gold skill return"),
-        ])
-
+    def test_zankou_openings_ring_into_requiem_and_hand_over(self):
+        for mode in (MODE_ZANKOU_OPENING, MODE_ZANKOU_OPENING_WITCH):
+            with self.subTest(mode=mode):
+                result, task, sakiri, zankou, requiem = self._run(mode)
+                self.assertTrue(result)
+                self.assertEqual(task.switches, [
+                    (sakiri, zankou, False, "lw opening zankou gold skill"),
+                    (zankou, requiem, True, "lw opening zankou gold skill ring"),
+                ])
 
 if __name__ == "__main__":
     unittest.main()

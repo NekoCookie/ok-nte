@@ -21,9 +21,12 @@ Requiem's skills and Zankou's gold E wait only for the first Dark Star of a comb
 (Zankou's awakening 5 fires once). The whole setup is capped.
 
 The "黑羽副C打法" setting picks the opening (Sakiri first, or Zankou's gold E first) and
-whether the rounds above run at all: the two RU modes keep RU's Blackbird rotation (E, then
-Q1 with a Witch turn, main DPS, back for Q2) with only its endless Witch turn fixed, and
-leave the rest of the team unrestricted.
+Blackbird's turn; the routing above is the same in every mode:
+
+- Q1Q2E: Q1 -> Q2 -> E.
+- E + Witch: Q2 first if the Witch form is still up; E unless her cycle is already full
+  (a free full cycle); Q1 and a Witch turn until one enhanced E (capped). She leaves in
+  Witch form, which pauses off field, and finishes it with Q2 next time.
 """
 
 import time
@@ -34,18 +37,23 @@ from src.combat.planner import FieldClaim, Planner
 from src.lw.combat_test_policy import LWCombatTestPolicyMixin
 
 MODE = "黑羽副C打法"
-MODE_SAKIRI_OPENING = "早雾起手(对齐轮)"
-MODE_ZANKOU_OPENING = "残虹黄E起手(对齐轮)"
-MODE_SAKIRI_OPENING_RU = "早雾起手(RU黑羽)"
-MODE_ZANKOU_OPENING_RU = "残虹黄E起手(RU黑羽)"
-MODES = [MODE_SAKIRI_OPENING, MODE_ZANKOU_OPENING, MODE_SAKIRI_OPENING_RU, MODE_ZANKOU_OPENING_RU]
-RU_MODES = frozenset({MODE_SAKIRI_OPENING_RU, MODE_ZANKOU_OPENING_RU})
-ZANKOU_OPENING_MODES = frozenset({MODE_ZANKOU_OPENING, MODE_ZANKOU_OPENING_RU})
+MODE_SAKIRI_OPENING = "早雾起手(黑羽Q1Q2E)"
+MODE_ZANKOU_OPENING = "残虹黄E起手(黑羽Q1Q2E)"
+MODE_SAKIRI_OPENING_WITCH = "早雾起手(黑羽E+魔女强化E)"
+MODE_ZANKOU_OPENING_WITCH = "残虹黄E起手(黑羽E+魔女强化E)"
+MODES = [
+    MODE_SAKIRI_OPENING,
+    MODE_ZANKOU_OPENING,
+    MODE_SAKIRI_OPENING_WITCH,
+    MODE_ZANKOU_OPENING_WITCH,
+]
+WITCH_MODES = frozenset({MODE_SAKIRI_OPENING_WITCH, MODE_ZANKOU_OPENING_WITCH})
+ZANKOU_OPENING_MODES = frozenset({MODE_ZANKOU_OPENING, MODE_ZANKOU_OPENING_WITCH})
 DARK_STAR_HOLD = "黯星期间不回黑羽(s)"
 ROUND_SETUP = "黯星轮准备最长(s)"
 SAKIRI_CHARGE = "早雾攒大招最长(s)"
 ZANKOU_FLAME = "残虹大招前先拿蓄焰(2觉)"
-WITCH_FIELD_LIMIT = "RU黑羽魔女形态站场上限(s)"
+WITCH_FIELD_LIMIT = "黑羽魔女形态站场上限(s)"
 KEYS = [MODE, DARK_STAR_HOLD, ROUND_SETUP, SAKIRI_CHARGE, ZANKOU_FLAME, WITCH_FIELD_LIMIT]
 # 黑羽副C配置的唯一默认值来源: 界面默认值和读不到配置时的兜底都读这里。
 DEFAULTS = {
@@ -66,11 +74,12 @@ def configure_blackbird_sub_dps(task):
     task.config_type[MODE] = {"type": "drop_down", "options": MODES}
     task.config_description.update({
         MODE: (
-            "对齐轮=主C大招对齐蓄焰/早雾buff/黯星, 黑羽E一好就放(Q1Q2E); "
-            "RU黑羽=黑羽按RU节奏(E, 回来Q1+魔女强化E, 切主C, 再回来Q2), 不做对齐; "
+            "切人路线相同, 只有黑羽上场放什么不同: Q1Q2E=Q1->Q2->E; "
+            "E+魔女强化E=残留魔女先Q2, 自己环合没满先放普通E, 再Q1+魔女平A+1发强化E, "
+            "带着魔女形态离场, 下次上场先Q2; "
             "残虹黄E起手受'开局残虹黄E后切辅助'和'黄E入场小怪也触发'开关控制"
         ),
-        WITCH_FIELD_LIMIT: "RU黑羽: 魔女形态里放出1发强化E就走, 放不出来时最多站场这么久",
+        WITCH_FIELD_LIMIT: "E+魔女强化E: 魔女形态里放出1发强化E就走, 放不出来时最多站场这么久",
         DARK_STAR_HOLD: (
             "黑羽触发黯星下场后至少这么久不再切回(扣除大招时停), 让主C打满两段黯星"
         ),
@@ -246,9 +255,6 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
         self._reset_dark_star_state()
 
     def combat_plan(self, context):
-        if self.ru_mode():
-            # RU rotation; perform_in_ult below carries the Witch turn fix.
-            return super().combat_plan(context)
         ultimate = self.click_ultimate_action(
             can_execute=lambda _: not self.lw_skills_disabled_for_test(),
         )
@@ -270,21 +276,35 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
         if self.skill_available() and not self.lw_skills_disabled_for_test():
             claims.append(FieldClaim.normal(reason="sub dps dark star cycle"))
 
-        def entry():
-            # Every turn is Q1 -> Q2 -> E, so the Witch form only lingers when Q2 did not
-            # come out; the turn remembers that instead of reading the screen.
-            self.stint_cast_skill = False
-            if self.dark_star_step() is Step.SAKIRI:
-                # Entered on Requiem's cycle: Q/E wait until Sakiri's buff is up.
-                yield relay
-                return
+        def quick_turn():
+            # Q1 -> Q2 -> E: the Witch form only lingers when Q2 did not come out, which
+            # the turn remembers instead of reading the screen.
             if not self.in_ult and (yield ultimate):
                 self.in_ult = True
                 self._wait_for_second_ultimate()
             if self.in_ult and (yield ultimate.repeat_for_entry()):
                 self.in_ult = False
             if (yield skill):
-                self.stint_cast_skill = True
+                self.stint_opens_dark_star = True
+
+        def witch_turn():
+            if self.in_ult and (yield ultimate):
+                self.in_ult = False  # Q2 closes the Witch form kept from last time
+            if self.is_cycle_full():
+                self.stint_opens_dark_star = True  # E would only refill a full cycle
+            elif (yield skill):
+                self.stint_opens_dark_star = True
+            if not self.in_ult and (yield ultimate.repeat_for_entry()):
+                self.in_ult = True
+                self.perform_in_ult(context, skill)
+
+        def entry():
+            self.stint_opens_dark_star = False
+            if self.dark_star_step() is Step.SAKIRI:
+                # Entered on Requiem's cycle: Q/E wait until Sakiri's buff is up.
+                yield relay
+                return
+            yield from (witch_turn() if self.witch_mode() else quick_turn())
 
         return self.plan(skill, ultimate, claims=claims, entry=entry)
 
@@ -296,15 +316,15 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
             return
         super().wait_intro(time_out=time_out, click=click)
 
-    def ru_mode(self) -> bool:
-        return config_mode(self._lw_config()) in RU_MODES
+    def witch_mode(self) -> bool:
+        return config_mode(self._lw_config()) in WITCH_MODES
 
     def perform_in_ult(self, context, skill):
-        """RU Witch turn without the endless stay.
+        """Witch turn: normal attacks until one enhanced E, capped.
 
         RU gates the enhanced E with the instant-cycle rule, so with a full cycle it never
         fires and Blackbird attacked for the whole Witch duration. The enhanced E is only
-        test-mode gated here, and the turn is capped.
+        test-mode gated here.
         """
 
         enhanced_skill = self.click_skill_action(
@@ -369,8 +389,6 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
         if getattr(self, "is_dead", False) or self.lw_skills_disabled_for_test():
             return Step.INACTIVE
         config = self._lw_config()
-        if config_mode(config) in RU_MODES:
-            return Step.INACTIVE
         if self.is_current_char and self.round_start < 0:
             return Step.IDLE
         in_window = not self.is_current_char and self._elapsed(
@@ -473,14 +491,14 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
 
     def switch_out(self):
         super().switch_out()
-        if self.stint_cast_skill:
+        if self.stint_opens_dark_star:
             # E filled the cycle and the swap into Requiem triggered Dark Star.
             self.left_field_time = self._stamp()
             self.round_start = -1.0
             if not self.dark_star_opened:
                 self.logger.info("first dark star of the combat opened")
             self.dark_star_opened = True
-        self.stint_cast_skill = False
+        self.stint_opens_dark_star = False
 
     def reset_state(self):
         super().reset_state()
@@ -505,7 +523,7 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
         self.left_field_time = -1.0
         self.round_start = -1.0
         self.sakiri_wait_start = -1.0
-        self.stint_cast_skill = False
+        self.stint_opens_dark_star = False
         self.dark_star_opened = False
         self._main_ult_frame = None
         self._main_ult_ready = False
