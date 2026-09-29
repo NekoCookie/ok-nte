@@ -300,6 +300,11 @@ class TestMainDpsHoldWiring(unittest.TestCase):
             self.assertFalse(actions["Requiem_ultimate"].is_allowed(context))
             self.assertFalse(actions["Requiem_real_skill"].is_allowed(context))
             self.assertFalse(requiem._skill_or_ult_ready())
+            requiem.is_real_skill_now = lambda: False
+            plan = requiem.combat_plan(context)
+            actions = {action.name: action for action in plan.actions}
+            self.assertFalse(actions["Requiem_free_skill"].is_allowed(context))
+            requiem.is_real_skill_now = lambda: True
         with mock.patch("src.char.Requiem.dark_star_setup_pending", return_value=False):
             plan = requiem.combat_plan(context)
             actions = {action.name: action for action in plan.actions}

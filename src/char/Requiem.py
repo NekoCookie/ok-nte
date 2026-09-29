@@ -242,6 +242,7 @@ class Requiem(MainDps):
                 not self._skills_disabled_for_test()
                 and self.skill_available()
                 and not self.is_real_skill_now()
+                and not dark_star_setup_pending(self)  # [lw] 留到黯星里接大招
             ),
             priority_ready=lambda _: False,  # 免费技中途放, 不主动抢切人
         )
