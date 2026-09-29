@@ -262,8 +262,14 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
         return cast_at < self.round_start - SAKIRI_RECENT_ULTIMATE
 
     def _flame_needed(self) -> bool:
+        """Stored flame only pays off when Zankou casts his ultimate in this round."""
+
         zankou = self.team_zankou()
-        return zankou is not None and not getattr(zankou, "lw_stored_flame", False)
+        return (
+            zankou is not None
+            and not getattr(zankou, "lw_stored_flame", False)
+            and bool(zankou.ultimate_available())
+        )
 
     def _main_dps_ultimate_ready(self) -> bool:
         # The round is evaluated many times per planner pass; read the portraits once a frame.

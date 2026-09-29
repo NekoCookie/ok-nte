@@ -120,11 +120,13 @@ def _team():
     task = _Task()
     blackbird, _, state = _make_blackbird(task)
     blackbird.is_current_char = False
+    state["zankou_ult"] = True
     sakiri = _mate(SakiriBuffSupport, task, Element.RED)
     sakiri.is_current_char = True
     requiem = _mate(Requiem, task, Element.PURPLE)
     zankou = _mate(ZankouMainDps, task, Element.RED)
     zankou.lw_stored_flame = False
+    zankou.ultimate_available = lambda check_color=True: state["zankou_ult"]
     task.chars = [sakiri, blackbird, requiem, zankou]
     team = SimpleNamespace(
         task=task, blackbird=blackbird, sakiri=sakiri, requiem=requiem, zankou=zankou,
@@ -254,6 +256,12 @@ class TestDarkStarRoundSteps(unittest.TestCase):
         self.assertIs(self.blackbird.dark_star_step(), Step.FLAME)
 
         self.team.zankou.lw_stored_flame = True
+        self.assertIs(self.blackbird.dark_star_step(), Step.OPEN)
+
+    def test_flame_is_skipped_when_zankou_has_no_ultimate_this_round(self):
+        self.team.sakiri.last_ultimate_time = _Clock.now
+        self.team.state["zankou_ult"] = False
+
         self.assertIs(self.blackbird.dark_star_step(), Step.OPEN)
 
     def test_sakiri_ultimate_cast_just_before_the_round_counts(self):
