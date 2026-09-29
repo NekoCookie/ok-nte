@@ -7,7 +7,9 @@ from src.char.Zankou import Zankou
 from src.combat.planner import ActionSlot, ActionTag, FieldClaim
 from src.lw.blackbird_sub_dps import (
     Step,
+    dark_star_relay,
     dark_star_setup_pending,
+    perform_dark_star_relay,
     round_allows_switch_in,
     round_step,
 )
@@ -165,11 +167,22 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
             priority_ready=lambda _: False,
         )
 
+        relay = self.planner_action(
+            tags={ActionTag.LEGACY_COMBO},
+            slot=ActionSlot.LEGACY_COMBO,
+            execute=lambda _: perform_dark_star_relay(self),
+            name=f"{self}_dark_star_relay",
+            reason="zankou relays the dark star round",
+            priority_ready=lambda _: False,
+        )
         claims = []
         if not getattr(self, "is_current_char", False) and round_step(self) is Step.FLAME:
             claims.append(FieldClaim.high(source=self, reason="dark star round stored flame"))
 
         def entry():
+            if self._relays_dark_star_round():
+                yield relay
+                return
             if not self.lw_skills_disabled_for_test():
                 ultimate_result = yield ultimate
                 if ultimate_result:
@@ -180,6 +193,13 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
             yield coaxis
 
         return self.plan(ultimate, coaxis, claims=claims, entry=entry)
+
+    def _relays_dark_star_round(self) -> bool:
+        """Pass the round on; for stored flame only once the cycle can swap into Requiem."""
+
+        if not dark_star_relay(self):
+            return False
+        return round_step(self) is not Step.FLAME or bool(self.is_cycle_full())
 
     def _combat_test_normal_attack_plan(self):
         normal_attack = self.planner_action(

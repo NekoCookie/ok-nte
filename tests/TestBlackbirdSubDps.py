@@ -20,6 +20,7 @@ from src.lw.blackbird_sub_dps import (
     config_seconds,
     dark_star_setup_pending,
     opening_burst_held,
+    perform_dark_star_relay,
     round_allows_switch_in,
     sakiri_ultimate_held,
 )
@@ -533,6 +534,46 @@ class TestZankouGoldSkillWaitsForFirstDarkStar(unittest.TestCase):
             self.assertTrue(perform_zankou_combat_axis(zankou, object(), partner))
 
         self.assertEqual([event for event in zankou.events if event[0] == "gold_skill"], [])
+
+
+class TestMainDpsRelayTheRoundSetup(unittest.TestCase):
+    def test_relay_only_attacks_until_the_switch_cooldown(self):
+        char = mock.Mock()
+        char.time_elapsed_accounting_for_freeze.return_value = 0.3
+
+        self.assertTrue(perform_dark_star_relay(char))
+
+        char.continues_normal_attack.assert_called_once()
+        self.assertAlmostEqual(char.continues_normal_attack.call_args.args[0], 0.7)
+        char.time_elapsed_accounting_for_freeze.return_value = 2.0
+        char.continues_normal_attack.reset_mock()
+        perform_dark_star_relay(char)
+        char.continues_normal_attack.assert_not_called()
+
+    def test_requiem_skips_its_axis_and_leaves_during_round_setup(self):
+        requiem, _zankou, context = make_combat_pair(combat_enabled=True)
+        requiem.is_current_char = True
+        requiem.skill_off_field_until = 0.0
+
+        with mock.patch("src.char.Requiem.dark_star_relay", return_value=True):
+            first = next(requiem.combat_plan(context).entry())
+            self.assertEqual(first.name, "Requiem_dark_star_relay")
+            self.assertTrue(requiem.should_force_off_field())
+
+    def test_zankou_relays_unless_it_still_needs_a_full_cycle_for_flame(self):
+        _requiem, zankou, context = make_combat_pair(combat_enabled=True)
+        zankou.lw_skills_disabled_for_test = lambda: False
+        zankou.is_current_char = True
+        cases = [
+            (Step.OPEN, False, "ZankouMainDps_dark_star_relay"),
+            (Step.FLAME, True, "ZankouMainDps_dark_star_relay"),
+            (Step.FLAME, False, "ZankouMainDps_ultimate"),
+        ]
+        for step, cycle_full, first_action in cases:
+            with self.subTest(step=step, cycle_full=cycle_full):
+                zankou.is_cycle_full = lambda full=cycle_full: full
+                with mock.patch("src.lw.zankou_main_dps.round_step", return_value=step),                         mock.patch("src.lw.zankou_main_dps.dark_star_relay", return_value=True):
+                    self.assertEqual(next(zankou.combat_plan(context).entry()).name, first_action)
 
 
 if __name__ == "__main__":

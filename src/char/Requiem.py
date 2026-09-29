@@ -6,8 +6,10 @@ import numpy as np
 import win32con
 
 from src.lw.blackbird_sub_dps import (
+    dark_star_relay,
     dark_star_setup_pending,
     opening_burst_held,
+    perform_dark_star_relay,
     round_allows_switch_in,
 )
 from src.lw.combat_templates import MainDps
@@ -258,6 +260,15 @@ class Requiem(MainDps):
             reason="requiem double-4a combo",
             priority_ready=lambda _: False,  # combo 靠 field_time 站场, 不主动抢切人
         )
+        # [lw] Blackbird team round setup: Requiem only passes the round on.
+        relay = self.planner_action(
+            tags={ActionTag.LEGACY_COMBO},
+            slot=ActionSlot.LEGACY_COMBO,
+            execute=lambda _: perform_dark_star_relay(self),
+            name=f"{self}_dark_star_relay",
+            reason="requiem relays the dark star round",
+            priority_ready=lambda _: False,
+        )
         field_action = double_4a
         if coaxis_partner is not None:
             field_action = self.planner_action(
@@ -291,6 +302,9 @@ class Requiem(MainDps):
         )
 
         def entry():
+            if dark_star_relay(self):  # [lw] 黯星轮准备中, 不站场直接交给下一步
+                yield relay
+                return
             # [lw] An early-entry real skill may already have committed this character to leave.
             # Do not restart the ordinary entry flow with Q or coaxis before switch_next_char().
             if self.should_force_off_field():
@@ -345,8 +359,10 @@ class Requiem(MainDps):
         return False
 
     def should_force_off_field(self):
-        return time.time() < getattr(self, "skill_off_field_until", 0.0) or getattr(
-            self, "_coaxis_switch_pending", False
+        return (
+            time.time() < getattr(self, "skill_off_field_until", 0.0)
+            or getattr(self, "_coaxis_switch_pending", False)
+            or dark_star_relay(self)  # [lw]
         )
 
     def switch_next_char(self, post_action=None, free_intro=False):  # [lw]
