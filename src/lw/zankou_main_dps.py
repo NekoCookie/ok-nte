@@ -12,6 +12,7 @@ from src.lw.blackbird_sub_dps import (
     perform_dark_star_relay,
     round_allows_switch_in,
     round_step,
+    wait_relay_intro,
 )
 from src.lw.combat_test_policy import LWCombatTestPolicyMixin
 from src.lw.requiem_zankou_axis import (
@@ -48,6 +49,31 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
     def lw_can_switch_in(self):
         return round_allows_switch_in(self)
 
+    # The cycle ring can still show the previous character right after the switch.
+    FLAME_CYCLE_SETTLE = 0.6
+    FLAME_CYCLE_POLL_INTERVAL = 0.05
+
+    def _settle_flame_cycle(self) -> bool:
+        """Re-read the cycle for a moment before falling back to the axis to fill it."""
+
+        deadline = self.now() + self.FLAME_CYCLE_SETTLE
+        reads = 0
+        while True:
+            reads += 1
+            if self.is_cycle_full():
+                self.logger.info(f"zankou stored flame step: cycle full (read {reads})")
+                return True
+            if self.now() >= deadline:
+                self.logger.info(
+                    f"zankou stored flame step: cycle not full after {reads} reads; "
+                    "filling it with the axis"
+                )
+                return False
+            next_frame = getattr(self.task, "next_frame", None)
+            if callable(next_frame):
+                next_frame()
+            self.sleep(self.FLAME_CYCLE_POLL_INTERVAL)
+
     def lw_export_combat_state(self) -> dict:
         return {"lw_stored_flame": self.lw_stored_flame}
 
@@ -71,7 +97,7 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
         """Keep Zankou's coordinated-axis entry silent until its heavy attack."""
 
         if self.has_intro and dark_star_relay(self):
-            self.logger.info("zankou relay entry skips intro wait")
+            wait_relay_intro(self)
             return
         if not self._has_coordinated_axis_partner():
             return super().wait_intro(time_out=time_out, click=click)
@@ -196,6 +222,8 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
             claims.append(FieldClaim.high(source=self, reason="dark star round stored flame"))
 
         def entry():
+            if round_step(self) is Step.FLAME:
+                self._settle_flame_cycle()
             if dark_star_relay(self):
                 yield relay
                 return
