@@ -5,7 +5,11 @@ import cv2
 import numpy as np
 import win32con
 
-from src.lw.blackbird_sub_dps import dark_star_setup_pending
+from src.lw.blackbird_sub_dps import (
+    dark_star_setup_pending,
+    opening_burst_held,
+    round_allows_switch_in,
+)
 from src.lw.combat_templates import MainDps
 from src.combat import requiem_combo
 from src.combat.planner import ActionSlot, ActionTag, FollowupStep
@@ -224,12 +228,12 @@ class Requiem(MainDps):
                 not self._skills_disabled_for_test()
                 and self.skill_available()
                 and self.is_real_skill_now()
-                and not dark_star_setup_pending(self)
+                and not opening_burst_held(self)
             ),
             priority_ready=lambda _: (
                 not self._skills_disabled_for_test()
                 and self.skill_available()
-                and not dark_star_setup_pending(self)
+                and not opening_burst_held(self)
             ),
         )
         free_skill = self.planner_action(
@@ -242,7 +246,7 @@ class Requiem(MainDps):
                 not self._skills_disabled_for_test()
                 and self.skill_available()
                 and not self.is_real_skill_now()
-                and not dark_star_setup_pending(self)  # [lw] 留到黯星里接大招
+                and not opening_burst_held(self)  # [lw] 开场留到第一次黯星里
             ),
             priority_ready=lambda _: False,  # 免费技中途放, 不主动抢切人
         )
@@ -310,9 +314,9 @@ class Requiem(MainDps):
             if self.skill_available():
                 if self.is_real_skill_now():
                     # 真技能是伤害大头: 放进CD才 overlap
-                    if (yield real_skill) or not dark_star_setup_pending(self):
+                    if (yield real_skill) or not opening_burst_held(self):
                         return
-                    # [lw] 真技能留给黑羽黯星: 本轮只打合轴/双4a。
+                    # [lw] 开场真技能留给第一次黯星: 本轮只打合轴/双4a。
                 elif bool((yield free_skill)):
                     return  # 免费技: 留场接平A
             if used_ultimate:
@@ -361,7 +365,9 @@ class Requiem(MainDps):
     def lw_can_switch_in(self):
         """Block a premature return during an enabled real-skill axis handoff."""
 
-        return time.time() >= getattr(self, "_coaxis_real_skill_handoff_until", 0.0)
+        return time.time() >= getattr(
+            self, "_coaxis_real_skill_handoff_until", 0.0
+        ) and round_allows_switch_in(self)
 
     @classmethod
     def _load_skill_templates(cls):
@@ -609,9 +615,9 @@ class Requiem(MainDps):
     def _skill_or_ult_ready(self):
         """combo 中途: 大招或技能是否已就绪(值得中断 combo 让路去开)。读缓存CD/就绪判定, 不贵。"""
         try:
-            if self.ultimate_available() or self.skill_available():
-                return not dark_star_setup_pending(self)
-            return False
+            if self.ultimate_available() and not dark_star_setup_pending(self):
+                return True
+            return self.skill_available() and not opening_burst_held(self)
         except Exception:
             return False
 

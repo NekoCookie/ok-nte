@@ -452,7 +452,7 @@ class RequiemCombatConfigTask(BaseNTETask, TriggerTask):
                 self.CONF_GROUP_ZANKOU_ATTACK: "合轴中残虹的环合静默等待, 长按/普攻/声音闪避后普攻时长",
                 self.CONF_GROUP_ZANKOU_GOLD_SKILL: "合轴中强化E(黄E)打断, 开局黄E后切辅助",
                 self.CONF_GROUP_COAXIS_KEY_TEST: "按合轴触发键开始/停止的独立按键测试(需开通用里的手动按键总开关)",
-                self.CONF_SECTION_BLACKBIRD: "黑羽副C: 黑羽E跟着主C大招触发黯星, 主C大招留到黯星里放",
+                self.CONF_SECTION_BLACKBIRD: "黑羽副C队黯星爆发轮: 早雾Q→残虹蓄焰→黑羽开黯星→主C大招",
                 self.CONF_SECTION_NANALLY: "娜娜莉超级跳宏",
                 self.CONF_GROUP_TRIGGER: "侧键4A宏的触发键/触发方式",
                 self.CONF_GROUP_SUPPORT_PREEMPTION: "辅助技能切人以及 Q/E 资源提权开关",

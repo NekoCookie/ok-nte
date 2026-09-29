@@ -1,23 +1,36 @@
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
+from src.char.BaseChar import BaseChar
 from src.char.core.CharRegistry import char_registry
+from src.char.Requiem import Requiem
+from src.combat.BaseCombatTask import BaseCombatTask
+from src.combat.planner import ActionSlot
 from src.combat.planner.types import ActionIntent
 from src.lw.blackbird_sub_dps import (
-    BURST_HOLD,
     DARK_STAR_HOLD,
     DEFAULTS,
+    ROUND_SETUP,
+    SAKIRI_CHARGE,
     SKILL_WAIT,
+    ZANKOU_FLAME,
     BlackbirdSubDps,
+    Step,
     config_seconds,
     dark_star_setup_pending,
+    opening_burst_held,
+    round_allows_switch_in,
+    sakiri_ultimate_held,
 )
+from src.lw.combat_templates import SakiriBuffSupport
 from src.lw.requiem_zankou_axis import (
     REQUIEM_IMPL_ID,
     ZANKOU_MAIN_DPS_IMPL_ID,
     perform_zankou_combat_axis,
     run_zankou_opening_gold_skill,
 )
+from src.lw.zankou_main_dps import ZankouMainDps
 from src.tasks.trigger.RequiemCombatConfigTask import RequiemCombatConfigTask
 from tests.TestRequiemZankouAxis import (
     FakeCombatChar,
@@ -25,6 +38,8 @@ from tests.TestRequiemZankouAxis import (
     make_combat_pair,
     make_config_task,
 )
+
+Element = BaseChar.ElementType
 
 
 class _Clock:
@@ -48,19 +63,17 @@ class _Task:
         return _Clock.now - start - self.freeze
 
 
-def _make_char(ult_ready=True, second_ult_ready=True, skill_ready=True, main_ult_ready=True):
+def _make_blackbird(task=None, ult_ready=True, second_ult_ready=True, skill_ready=True):
     char = object.__new__(BlackbirdSubDps)
-    char.task = _Task()
+    char.task = task or _Task()
     char.logger = mock.Mock()
     char.in_ult = False
     char.is_current_char = True
     char.is_dead = False
-    char.left_field_time = -1.0
-    char.skill_ready_since = -1.0
-    char.burst_hold_since = -1.0
+    char._reset_dark_star_state()
     char.lw_skills_disabled_for_test = lambda: False
     char._lw_config = lambda: None
-    state = {"ult": ult_ready, "skill": skill_ready, "main_ult": main_ult_ready}
+    state = {"ult": ult_ready, "skill": skill_ready, "main_ult": True}
     casts = []
 
     def click_ultimate():
@@ -77,9 +90,7 @@ def _make_char(ult_ready=True, second_ult_ready=True, skill_ready=True, main_ult
         state["skill"] = False
         return True
 
-    main_dps = mock.Mock(is_dead=False)
-    main_dps.ultimate_available = lambda: state["main_ult"]
-    char.get_teammates_by_role = lambda role: [main_dps]
+    char._main_dps_ultimate_ready = lambda: state["main_ult"]
     char.ultimate_available = lambda check_color=True: state["ult"]
     char.skill_available = lambda: state["skill"]
     char.click_ultimate = click_ultimate
@@ -89,6 +100,42 @@ def _make_char(ult_ready=True, second_ult_ready=True, skill_ready=True, main_ult
     char._stamp = lambda: _Clock.now
     char.sleep = lambda duration: setattr(_Clock, "now", _Clock.now + duration)
     return char, casts, state
+
+
+def _mate(cls, task, element):
+    char = cls.__new__(cls)
+    char.task = task
+    char.logger = mock.Mock()
+    char.element = element
+    char.is_dead = False
+    char.is_current_char = False
+    char.last_ultimate_time = -1.0
+    return char
+
+
+def _team():
+    """Blackbird off field with E and a main DPS ultimate ready; Sakiri currently on field."""
+
+    task = _Task()
+    blackbird, _, state = _make_blackbird(task)
+    blackbird.is_current_char = False
+    sakiri = _mate(SakiriBuffSupport, task, Element.RED)
+    sakiri.is_current_char = True
+    requiem = _mate(Requiem, task, Element.PURPLE)
+    zankou = _mate(ZankouMainDps, task, Element.RED)
+    zankou.lw_stored_flame = False
+    task.chars = [sakiri, blackbird, requiem, zankou]
+    team = SimpleNamespace(
+        task=task, blackbird=blackbird, sakiri=sakiri, requiem=requiem, zankou=zankou,
+        state=state,
+    )
+
+    def put_on_field(char):
+        for member in task.chars:
+            member.is_current_char = member is char
+
+    team.put_on_field = put_on_field
+    return team
 
 
 def _run_entry(char):
@@ -107,27 +154,28 @@ def _run_entry(char):
     return plan
 
 
-class TestBlackbirdSubDpsEntry(unittest.TestCase):
+class TestBlackbirdEntry(unittest.TestCase):
     def setUp(self):
         _Clock.now = 0.0
 
     def test_entry_casts_q1_then_q2_then_skill(self):
-        char, casts, _ = _make_char()
+        char, casts, _ = _make_blackbird()
 
         _run_entry(char)
 
         self.assertEqual(casts, ["Q1", "Q2", "E"])
         self.assertFalse(char.in_ult)
+        self.assertTrue(char.stint_cast_skill)
 
     def test_entry_without_ultimate_energy_only_casts_skill(self):
-        char, casts, _ = _make_char(ult_ready=False)
+        char, casts, _ = _make_blackbird(ult_ready=False)
 
         _run_entry(char)
 
         self.assertEqual(casts, ["E"])
 
     def test_missing_second_ultimate_still_casts_skill_and_keeps_witch_state(self):
-        char, casts, _ = _make_char(second_ult_ready=False)
+        char, casts, _ = _make_blackbird(second_ult_ready=False)
 
         _run_entry(char)
 
@@ -136,16 +184,15 @@ class TestBlackbirdSubDpsEntry(unittest.TestCase):
         self.assertLessEqual(_Clock.now, BlackbirdSubDps.SECOND_ULTIMATE_WAIT + 0.11)
 
     def test_leftover_witch_state_finishes_with_q2_then_skill(self):
-        char, casts, _ = _make_char()
+        char, casts, _ = _make_blackbird()
         char.in_ult = True
 
         _run_entry(char)
 
         self.assertEqual(casts, ["Q2", "E"])
-        self.assertFalse(char.in_ult)
 
     def test_test_mode_casts_nothing_and_claims_nothing(self):
-        char, casts, _ = _make_char()
+        char, casts, _ = _make_blackbird()
         char.lw_skills_disabled_for_test = lambda: True
 
         plan = _run_entry(char)
@@ -153,123 +200,244 @@ class TestBlackbirdSubDpsEntry(unittest.TestCase):
         self.assertEqual(casts, [])
         self.assertEqual(plan.claims, [])
 
-
-class TestBlackbirdSubDpsReturn(unittest.TestCase):
-    def setUp(self):
-        _Clock.now = 100.0
-
-    def _off_field(self, **kwargs):
-        char, _, state = _make_char(**kwargs)
-        char.is_current_char = False
-        char.left_field_time = _Clock.now
-        return char, state
-
-    def test_blocked_during_dark_star_windows_even_with_everything_ready(self):
-        char, _ = self._off_field()
-
-        _Clock.now += DEFAULTS[DARK_STAR_HOLD] - 0.5
-        self.assertFalse(char.lw_can_switch_in())
-        _Clock.now += 1.0
-        self.assertTrue(char.lw_can_switch_in())
-
-    def test_ultimate_time_stop_extends_the_dark_star_hold(self):
-        char, _ = self._off_field()
-        char.task.freeze = 4.0
-
-        _Clock.now += DEFAULTS[DARK_STAR_HOLD] + 1.0
-        self.assertFalse(char.lw_can_switch_in())
-
-    def test_skill_waits_for_a_main_dps_ultimate_up_to_the_cap(self):
-        char, state = self._off_field(main_ult_ready=False)
-        _Clock.now += DEFAULTS[DARK_STAR_HOLD] + 1.0
-
-        self.assertFalse(char.lw_can_switch_in())
-        state["main_ult"] = True
-        self.assertTrue(char.lw_can_switch_in())
-        state["main_ult"] = False
-        _Clock.now += DEFAULTS[SKILL_WAIT] - 0.5
-        self.assertFalse(char.lw_can_switch_in())
-        _Clock.now += 1.0
-        self.assertTrue(char.lw_can_switch_in())
-
-    def test_skill_cooldown_blocks_and_restarts_the_wait(self):
-        char, state = self._off_field(skill_ready=False, main_ult_ready=False)
-        _Clock.now += 60.0
-
-        self.assertFalse(char.lw_can_switch_in())
-        state["skill"] = True
-        self.assertFalse(char.lw_can_switch_in())
-        _Clock.now += DEFAULTS[SKILL_WAIT] + 0.1
-        self.assertTrue(char.lw_can_switch_in())
-
-    def test_first_entry_and_current_field_are_never_blocked(self):
-        char, _, _ = _make_char()
-        self.assertTrue(char.lw_can_switch_in())
-        char.is_current_char = False
-        self.assertTrue(char.lw_can_switch_in())
-
-    def test_config_values_fall_back_to_defaults(self):
-        cases = [
-            (None, DEFAULTS[SKILL_WAIT]),
-            ({SKILL_WAIT: 6}, 6.0),
-            ({SKILL_WAIT: "bad"}, DEFAULTS[SKILL_WAIT]),
-            ({SKILL_WAIT: -3}, 0.0),
-        ]
-        for config, expected in cases:
-            with self.subTest(config=config):
-                self.assertEqual(config_seconds(config, SKILL_WAIT), expected)
-
     def test_template_is_registered(self):
         entry = char_registry.get("builtin:blackbird_sub_dps")
 
-        self.assertIsNotNone(entry)
         self.assertIs(entry.char_cls, BlackbirdSubDps)
         self.assertEqual(entry.cn_name, "黑羽副C")
 
 
-class TestMainDpsBurstHold(unittest.TestCase):
+class TestDarkStarRoundSteps(unittest.TestCase):
     def setUp(self):
         _Clock.now = 100.0
+        self.team = _team()
+        self.blackbird = self.team.blackbird
 
-    def _blackbird_with_mate(self, **kwargs):
-        char, state = TestBlackbirdSubDpsReturn._off_field(self, **kwargs)
-        char.left_field_time = -1.0
-        mate = mock.Mock()
-        mate.task = char.task
-        char.task.chars = [mate, char]
-        return char, mate, state
+    def test_round_waits_for_skill_and_a_main_dps_ultimate(self):
+        self.team.state["skill"] = False
+        self.assertIs(self.blackbird.dark_star_step(), Step.IDLE)
 
-    def test_main_dps_holds_burst_while_blackbird_is_coming(self):
-        char, mate, _ = self._blackbird_with_mate()
+        self.team.state["skill"] = True
+        self.team.state["main_ult"] = False
+        self.assertIs(self.blackbird.dark_star_step(), Step.IDLE)
+        _Clock.now += DEFAULTS[SKILL_WAIT] + 0.1
+        self.assertIs(self.blackbird.dark_star_step(), Step.SAKIRI)
 
-        self.assertTrue(dark_star_setup_pending(mate))
+    def test_steps_run_sakiri_then_flame_then_open(self):
+        self.assertIs(self.blackbird.dark_star_step(), Step.SAKIRI)
 
-    def test_hold_is_capped(self):
-        char, mate, _ = self._blackbird_with_mate()
+        self.team.sakiri.last_ultimate_time = _Clock.now
+        self.assertIs(self.blackbird.dark_star_step(), Step.FLAME)
 
-        self.assertTrue(dark_star_setup_pending(mate))
-        _Clock.now += DEFAULTS[BURST_HOLD] + 0.1
-        self.assertFalse(dark_star_setup_pending(mate))
+        self.team.zankou.lw_stored_flame = True
+        self.assertIs(self.blackbird.dark_star_step(), Step.OPEN)
 
-    def test_no_hold_once_dark_star_was_triggered(self):
-        char, mate, _ = self._blackbird_with_mate()
-        char.is_current_char = True
-        self.assertFalse(dark_star_setup_pending(mate))
+    def test_sakiri_ultimate_cast_just_before_the_round_counts(self):
+        self.team.sakiri.last_ultimate_time = _Clock.now - 3.0
+        self.team.zankou.lw_stored_flame = True
 
-        char.is_current_char = False
-        char.left_field_time = _Clock.now
-        self.assertFalse(dark_star_setup_pending(mate))
+        self.assertIs(self.blackbird.dark_star_step(), Step.OPEN)
 
-    def test_no_hold_when_blackbird_skill_is_on_cooldown(self):
-        char, mate, _ = self._blackbird_with_mate(skill_ready=False)
+    def test_sakiri_charge_and_round_setup_are_capped(self):
+        self.assertIs(self.blackbird.dark_star_step(), Step.SAKIRI)
+        _Clock.now += DEFAULTS[SAKIRI_CHARGE] + 0.1
+        self.assertIs(self.blackbird.dark_star_step(), Step.FLAME)
+        _Clock.now += DEFAULTS[ROUND_SETUP]
+        self.assertIs(self.blackbird.dark_star_step(), Step.LATE)
+        self.assertFalse(dark_star_setup_pending(self.team.requiem))
 
-        self.assertFalse(dark_star_setup_pending(mate))
+    def test_flame_step_can_be_disabled(self):
+        self.team.sakiri.last_ultimate_time = _Clock.now
+        self.blackbird._lw_config = lambda: {ZANKOU_FLAME: False}
 
-    def test_no_hold_without_blackbird_template(self):
+        self.assertIs(self.blackbird.dark_star_step(), Step.OPEN)
+
+    def test_skill_swap_opens_the_dark_star_window(self):
+        self.blackbird.stint_cast_skill = True
+        self.blackbird.switch_out()
+
+        self.assertTrue(self.blackbird.dark_star_opened)
+        self.assertIs(self.blackbird.dark_star_step(), Step.WINDOW)
+        self.team.task.freeze = 4.0
+        _Clock.now += DEFAULTS[DARK_STAR_HOLD] + 1.0
+        self.assertIs(self.blackbird.dark_star_step(), Step.WINDOW)
+        _Clock.now += 4.0
+        self.assertIsNot(self.blackbird.dark_star_step(), Step.WINDOW)
+
+    def test_leaving_without_skill_does_not_open_a_window(self):
+        self.blackbird.switch_out()
+
+        self.assertFalse(self.blackbird.dark_star_opened)
+        self.assertIsNot(self.blackbird.dark_star_step(), Step.WINDOW)
+
+    def test_config_values_fall_back_to_defaults(self):
+        self.assertEqual(config_seconds(None, SKILL_WAIT), DEFAULTS[SKILL_WAIT])
+        self.assertEqual(config_seconds({SKILL_WAIT: 6}, SKILL_WAIT), 6.0)
+        self.assertEqual(config_seconds({SKILL_WAIT: "bad"}, SKILL_WAIT), DEFAULTS[SKILL_WAIT])
+        self.assertEqual(config_seconds({SKILL_WAIT: -3}, SKILL_WAIT), 0.0)
+
+
+class TestDarkStarRoundRouting(unittest.TestCase):
+    def setUp(self):
+        _Clock.now = 100.0
+        self.team = _team()
+
+    def allowed(self):
+        team = self.team
+        return {
+            name: (
+                team.blackbird.lw_can_switch_in()
+                if char is team.blackbird
+                else round_allows_switch_in(char)
+            )
+            for name, char in (
+                ("sakiri", team.sakiri),
+                ("blackbird", team.blackbird),
+                ("requiem", team.requiem),
+                ("zankou", team.zankou),
+            )
+            if not char.is_current_char
+        }
+
+    def test_sakiri_step_only_lets_sakiri_in(self):
+        self.team.put_on_field(self.team.requiem)
+
+        self.assertEqual(
+            self.allowed(), {"sakiri": True, "blackbird": False, "zankou": False}
+        )
+
+    def test_flame_step_sends_zankou_then_zankou_into_requiem(self):
+        self.team.sakiri.last_ultimate_time = _Clock.now
+
+        self.assertEqual(
+            self.allowed(), {"blackbird": False, "requiem": False, "zankou": True}
+        )
+        self.team.put_on_field(self.team.zankou)
+        self.assertEqual(
+            self.allowed(), {"sakiri": False, "blackbird": False, "requiem": True}
+        )
+
+    def test_open_step_sends_blackbird_then_blackbird_into_requiem(self):
+        self.team.sakiri.last_ultimate_time = _Clock.now
+        self.team.zankou.lw_stored_flame = True
+
+        self.assertEqual(
+            self.allowed(), {"blackbird": True, "requiem": False, "zankou": False}
+        )
+        self.team.put_on_field(self.team.blackbird)
+        self.team.blackbird.round_start = _Clock.now
+        self.assertEqual(
+            self.allowed(), {"sakiri": False, "requiem": True, "zankou": False}
+        )
+
+    def test_outside_a_round_only_blackbird_waits(self):
+        self.team.state["skill"] = False
+
+        self.assertEqual(
+            self.allowed(), {"blackbird": False, "requiem": True, "zankou": True}
+        )
+
+    def test_reaction_target_skips_teammates_the_round_keeps_out(self):
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        task.chars = self.team.task.chars
+        task.element_reaction_counts = {}
+        self.team.sakiri.last_ultimate_time = _Clock.now
+        self.team.zankou.lw_stored_flame = True
+        self.team.put_on_field(self.team.blackbird)
+        self.team.blackbird.round_start = _Clock.now
+        for index, char in enumerate(task.chars):
+            char.index = index
+            char.last_switch_time = float(index)
+
+        self.assertIs(
+            task.find_element_reaction_target(self.team.requiem), self.team.blackbird
+        )
+
+    def test_scorch_with_requiem_stores_zankou_flame(self):
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        task.element_reaction_counts = {}
+        task._update_element_reaction_info = lambda: None
+
+        self.assertTrue(task.record_element_reaction(self.team.sakiri, self.team.requiem))
+        self.assertFalse(self.team.zankou.lw_stored_flame)
+        self.assertTrue(task.record_element_reaction(self.team.zankou, self.team.requiem))
+        self.assertTrue(self.team.zankou.lw_stored_flame)
+
+
+class TestDarkStarRoundHolds(unittest.TestCase):
+    def setUp(self):
+        _Clock.now = 100.0
+        self.team = _team()
+
+    def test_main_dps_ultimates_wait_for_every_round(self):
+        self.assertTrue(dark_star_setup_pending(self.team.requiem))
+        self.team.blackbird.dark_star_opened = True
+        self.assertTrue(dark_star_setup_pending(self.team.requiem))
+
+    def test_requiem_skills_and_gold_skill_wait_only_for_the_first_dark_star(self):
+        self.assertTrue(opening_burst_held(self.team.zankou))
+        self.team.blackbird.dark_star_opened = True
+        self.assertFalse(opening_burst_held(self.team.zankou))
+
+    def test_sakiri_keeps_ultimate_for_the_round(self):
+        self.assertFalse(sakiri_ultimate_held(self.team.sakiri))
+        self.team.sakiri.last_ultimate_time = _Clock.now
+        self.assertTrue(sakiri_ultimate_held(self.team.sakiri))
+        self.team.state["skill"] = False
+        self.assertTrue(sakiri_ultimate_held(self.team.sakiri))
+
+    def test_no_holds_without_blackbird_template(self):
         mate = mock.Mock()
         mate.task = mock.Mock(chars=[mate])
 
         self.assertFalse(dark_star_setup_pending(mate))
+        self.assertFalse(opening_burst_held(mate))
+        self.assertTrue(round_allows_switch_in(mate))
+
+
+class TestSakiriChargesForTheRound(unittest.TestCase):
+    def _sakiri(self, step, on_field=True, ult_ready=True):
+        c = SakiriBuffSupport.__new__(SakiriBuffSupport)
+        c.index = 1
+        c.logger = mock.Mock()
+        c.is_current_char = on_field
+        c.team_has_main_dps = lambda: True
+        c.recently_used_resource = lambda: False
+        c.has_skill_resource = lambda: False
+        c.needs_resource_probe = lambda: False
+        c.skill_available = lambda: False
+        c.ultimate_available = lambda: ult_ready
+        c.ultimate_ready_now = lambda: ult_ready
+        c.lw_skills_disabled_for_test = lambda: False
+        patcher = mock.patch("src.lw.blackbird_sub_dps.round_step", return_value=step)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return c
+
+    def test_on_field_sakiri_charges_while_the_round_waits_on_her(self):
+        c = self._sakiri(Step.SAKIRI, ult_ready=False)
+
+        plan = c.combat_plan(None)
+
+        self.assertIn(f"{c}_charge_ultimate", [action.name for action in plan.actions])
+
+    def test_off_field_sakiri_is_called_in_by_the_round(self):
+        c = self._sakiri(Step.SAKIRI, on_field=False, ult_ready=False)
+
+        plan = c.combat_plan(None)
+
+        self.assertEqual(
+            [claim.reason for claim in plan.claims], ["dark star round sakiri ultimate"]
+        )
+
+    def test_ready_ultimate_is_kept_outside_the_sakiri_step(self):
+        c = self._sakiri(Step.IDLE)
+
+        plan = c.combat_plan(None)
+
+        ultimate = next(a for a in plan.actions if a.slot == ActionSlot.ULTIMATE)
+        self.assertFalse(ultimate.is_allowed(None))
+        self.assertEqual(plan.claims, [])
 
 
 class TestMainDpsHoldWiring(unittest.TestCase):
@@ -277,45 +445,54 @@ class TestMainDpsHoldWiring(unittest.TestCase):
         _requiem, zankou, context = make_combat_pair(combat_enabled=True)
         zankou.lw_skills_disabled_for_test = lambda: False
         zankou.ultimate_available = lambda check_color=True: True
+        zankou.lw_stored_flame = True
 
         with mock.patch("src.lw.zankou_main_dps.dark_star_setup_pending", return_value=True):
-            plan = zankou.combat_plan(context)
-            entry = plan.entry()
+            entry = zankou.combat_plan(context).entry()
             first = next(entry)
             self.assertFalse(first.is_allowed(context))
             zankou._wait_for_awakened_second_ultimate = mock.MagicMock(return_value=True)
             second = entry.send(True)
             self.assertTrue(second.is_allowed(context))
+        self.assertFalse(zankou.lw_stored_flame)
 
-    def test_requiem_keeps_ultimate_and_real_skill_for_dark_star(self):
+    def test_zankou_is_called_in_for_stored_flame(self):
+        _requiem, zankou, context = make_combat_pair(combat_enabled=True)
+        zankou.is_current_char = False
+
+        with mock.patch("src.lw.zankou_main_dps.round_step", return_value=Step.FLAME):
+            plan = zankou.combat_plan(context)
+
+        self.assertEqual(
+            [claim.reason for claim in plan.claims], ["dark star round stored flame"]
+        )
+
+    def test_requiem_ultimate_waits_every_round_but_skills_only_at_opening(self):
         requiem, _zankou, context = make_combat_pair(combat_enabled=True)
         requiem._skills_disabled_for_test = lambda *args: False
         requiem.ultimate_available = lambda check_color=True: True
         requiem.skill_available = lambda: True
-        requiem.is_real_skill_now = lambda: True
 
-        with mock.patch("src.char.Requiem.dark_star_setup_pending", return_value=True):
-            plan = requiem.combat_plan(context)
-            actions = {action.name: action for action in plan.actions}
-            self.assertFalse(actions["Requiem_ultimate"].is_allowed(context))
-            self.assertFalse(actions["Requiem_real_skill"].is_allowed(context))
+        def actions(real_skill_now):
+            requiem.is_real_skill_now = lambda: real_skill_now
+            return {a.name: a for a in requiem.combat_plan(context).actions}
+
+        pending = mock.patch("src.char.Requiem.dark_star_setup_pending", return_value=True)
+        with pending, mock.patch("src.char.Requiem.opening_burst_held", return_value=False):
+            self.assertFalse(actions(True)["Requiem_ultimate"].is_allowed(context))
+            self.assertTrue(actions(True)["Requiem_real_skill"].is_allowed(context))
+            self.assertTrue(actions(False)["Requiem_free_skill"].is_allowed(context))
+        pending = mock.patch("src.char.Requiem.dark_star_setup_pending", return_value=True)
+        with pending, mock.patch("src.char.Requiem.opening_burst_held", return_value=True):
+            self.assertFalse(actions(True)["Requiem_real_skill"].is_allowed(context))
+            self.assertFalse(actions(False)["Requiem_free_skill"].is_allowed(context))
             self.assertFalse(requiem._skill_or_ult_ready())
-            requiem.is_real_skill_now = lambda: False
-            plan = requiem.combat_plan(context)
-            actions = {action.name: action for action in plan.actions}
-            self.assertFalse(actions["Requiem_free_skill"].is_allowed(context))
-            requiem.is_real_skill_now = lambda: True
-        with mock.patch("src.char.Requiem.dark_star_setup_pending", return_value=False):
-            plan = requiem.combat_plan(context)
-            actions = {action.name: action for action in plan.actions}
-            self.assertTrue(actions["Requiem_ultimate"].is_allowed(context))
-            self.assertTrue(actions["Requiem_real_skill"].is_allowed(context))
 
 
-class TestZankouGoldSkillWaitsForDarkStar(unittest.TestCase):
-    HELD = "src.lw.blackbird_sub_dps.dark_star_setup_pending"
+class TestZankouGoldSkillWaitsForFirstDarkStar(unittest.TestCase):
+    HELD = "src.lw.blackbird_sub_dps.opening_burst_held"
 
-    def test_opening_gold_skill_is_deferred_while_blackbird_is_coming(self):
+    def test_opening_gold_skill_is_left_to_the_dark_star_round(self):
         config_task = make_config_task(
             **{RequiemCombatConfigTask.CONF_COAXIS_OPENING_ZANKOU_GOLD_SKILL: True}
         )
@@ -325,25 +502,24 @@ class TestZankouGoldSkillWaitsForDarkStar(unittest.TestCase):
         zankou.impl_id = ZANKOU_MAIN_DPS_IMPL_ID
         task = FakeOpeningTask(config_task, requiem, zankou, FakeCombatChar(config_task))
 
-        with mock.patch(self.HELD, return_value=True):
+        with mock.patch("src.lw.blackbird_sub_dps.dark_star_setup_pending", return_value=True):
             self.assertFalse(run_zankou_opening_gold_skill(task))
 
         self.assertEqual(task.switches, [])
-        self.assertEqual([event for event in zankou.events if event[0] == "hold"], [])
 
-    def test_axis_keeps_lit_gold_skill_until_dark_star(self):
+    def test_axis_keeps_the_first_gold_skill(self):
         config_task = make_config_task(
             **{RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: True}
         )
         zankou = FakeCombatChar(config_task, gold_skill_times=(1.85,))
-        requiem = FakeCombatChar(config_task)
+        partner = FakeCombatChar(config_task)
 
         with mock.patch(self.HELD, return_value=True):
-            self.assertTrue(perform_zankou_combat_axis(zankou, object(), requiem))
+            self.assertTrue(perform_zankou_combat_axis(zankou, object(), partner))
 
         self.assertEqual([event for event in zankou.events if event[0] == "gold_skill"], [])
 
-    def test_post_dodge_gold_skill_also_waits_for_dark_star(self):
+    def test_post_dodge_gold_skill_also_waits(self):
         config_task = make_config_task(
             **{
                 RequiemCombatConfigTask.CONF_COAXIS_ZANKOU_GOLD_SKILL_INTERRUPT: True,
@@ -351,10 +527,10 @@ class TestZankouGoldSkillWaitsForDarkStar(unittest.TestCase):
             }
         )
         zankou = FakeCombatChar(config_task, dodge_times=(0.4,), gold_skill_times=(0.6,))
-        requiem = FakeCombatChar(config_task)
+        partner = FakeCombatChar(config_task)
 
         with mock.patch(self.HELD, return_value=True):
-            self.assertTrue(perform_zankou_combat_axis(zankou, object(), requiem))
+            self.assertTrue(perform_zankou_combat_axis(zankou, object(), partner))
 
         self.assertEqual([event for event in zankou.events if event[0] == "gold_skill"], [])
 

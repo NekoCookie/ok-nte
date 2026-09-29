@@ -4,8 +4,13 @@ import time
 from dataclasses import replace
 
 from src.char.Zankou import Zankou
-from src.combat.planner import ActionSlot, ActionTag
-from src.lw.blackbird_sub_dps import dark_star_setup_pending
+from src.combat.planner import ActionSlot, ActionTag, FieldClaim
+from src.lw.blackbird_sub_dps import (
+    Step,
+    dark_star_setup_pending,
+    round_allows_switch_in,
+    round_step,
+)
 from src.lw.combat_test_policy import LWCombatTestPolicyMixin
 from src.lw.requiem_zankou_axis import (
     REQUIEM_IMPL_ID,
@@ -24,6 +29,22 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
     cn_name = "残虹主C"
     AWAKENED_SECOND_ULTIMATE_WAIT = 0.8
     AWAKENED_SECOND_ULTIMATE_POLL_INTERVAL = 0.1
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Awakening 2: joining a Scorch stores flame for the next ultimate (+150%).
+        self.lw_stored_flame = False
+
+    def lw_on_element_reaction(self, other):
+        """Record stored flame from a Scorch (curse + dark) this character joined."""
+
+        if getattr(other, "element", None) == self.ElementType.PURPLE:
+            if not self.lw_stored_flame:
+                self.logger.info(f"zankou stored flame from scorch with {other}")
+            self.lw_stored_flame = True
+
+    def lw_can_switch_in(self):
+        return round_allows_switch_in(self)
 
     def _has_coordinated_axis_partner(self):
         return coordinated_axis_partner(
@@ -144,16 +165,21 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
             priority_ready=lambda _: False,
         )
 
+        claims = []
+        if not getattr(self, "is_current_char", False) and round_step(self) is Step.FLAME:
+            claims.append(FieldClaim.high(source=self, reason="dark star round stored flame"))
+
         def entry():
             if not self.lw_skills_disabled_for_test():
                 ultimate_result = yield ultimate
                 if ultimate_result:
+                    self.lw_stored_flame = False
                     self.logger.info("zankou first ultimate complete; checking awakened second")
                     if self._wait_for_awakened_second_ultimate():
                         yield second_ultimate.repeat_for_entry()
             yield coaxis
 
-        return self.plan(ultimate, coaxis, entry=entry)
+        return self.plan(ultimate, coaxis, claims=claims, entry=entry)
 
     def _combat_test_normal_attack_plan(self):
         normal_attack = self.planner_action(

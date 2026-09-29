@@ -225,6 +225,25 @@ class CombatExtMixin(_TaskProxy):
 
         self.log_info("combat start support resources settle timeout, keep conservative state")
 
+    def lw_note_element_reaction(self, char_a, char_b):
+        """Tell both characters of a recorded ring reaction who their partner was."""
+
+        for char, other in ((char_a, char_b), (char_b, char_a)):
+            hook = getattr(char, "lw_on_element_reaction", None)
+            if callable(hook):
+                hook(other)
+
+    def lw_reaction_target_allowed(self, char) -> bool:
+        """A teammate that refuses switch-in is never picked as the ring reaction target."""
+
+        can_switch_in = getattr(char, "lw_can_switch_in", None)
+        if not callable(can_switch_in):
+            return True
+        try:
+            return bool(can_switch_in())
+        except (AttributeError, RuntimeError, TypeError):
+            return True
+
     def lw_prepare_combat_start(self):
         """Apply LW-only state cleanup and support observation before the RU first switch."""
 

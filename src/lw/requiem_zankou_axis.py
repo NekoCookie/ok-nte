@@ -224,11 +224,11 @@ def _sound_dodge_since(
 
 
 def _gold_skill_held_for_dark_star(char: "BaseChar") -> bool:
-    """Keep a lit gold E for the Dark Star window Blackbird is about to open."""
+    """Keep the first gold E (awakening 5 fires once) for the combat's first Dark Star."""
 
-    from src.lw.blackbird_sub_dps import dark_star_setup_pending
+    from src.lw.blackbird_sub_dps import opening_burst_held
 
-    return dark_star_setup_pending(char)
+    return opening_burst_held(char)
 
 
 def _try_zankou_gold_skill_interrupt(
@@ -518,8 +518,10 @@ def run_zankou_opening_gold_skill(task) -> bool:
     )
     if partner is None:
         return False
-    if _gold_skill_held_for_dark_star(zankou):
-        # The coordinated axis casts the lit gold E after Blackbird opens Dark Star.
+    from src.lw.blackbird_sub_dps import dark_star_setup_pending
+
+    if dark_star_setup_pending(zankou):
+        # The Dark Star round runs the opening; the axis casts gold E inside Dark Star.
         log_info = getattr(getattr(task, "logger", None), "info", None)
         if callable(log_info):
             log_info("combat opening zankou gold skill deferred to blackbird dark star")

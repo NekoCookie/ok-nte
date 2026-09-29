@@ -238,6 +238,7 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
         if pair is None:
             return False
         self.element_reaction_counts[pair] = self.element_reaction_counts.get(pair, 0) + 1
+        self.lw_note_element_reaction(char_a, char_b)  # [lw] e.g. Zankou stored flame
 
         self._update_element_reaction_info()
         return True
@@ -257,6 +258,8 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
         next_target = None
         for char in self.chars:
             if char is None or char.index == source_char.index:
+                continue
+            if not self.lw_reaction_target_allowed(char):  # [lw] skip locked-out teammates
                 continue
             if char.element == previous_element and (
                 previous_target is None or char.last_switch_time < previous_target.last_switch_time
