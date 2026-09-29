@@ -19,6 +19,11 @@ Dark Star and Sakiri's 20s ATK buff; once one of them is ready:
 
 Requiem's skills and Zankou's gold E wait only for the first Dark Star of a combat
 (Zankou's awakening 5 fires once). The whole setup is capped.
+
+The "黑羽副C打法" setting picks the opening (Sakiri first, or Zankou's gold E first) and
+whether the rounds above run at all: the two RU modes keep RU's Blackbird rotation (E, then
+Q1 with a Witch turn, main DPS, back for Q2) with only its endless Witch turn fixed, and
+leave the rest of the team unrestricted.
 """
 
 import time
@@ -28,17 +33,28 @@ from src.char.Blackbird import Blackbird
 from src.combat.planner import FieldClaim, Planner
 from src.lw.combat_test_policy import LWCombatTestPolicyMixin
 
+MODE = "黑羽副C打法"
+MODE_SAKIRI_OPENING = "早雾起手(对齐轮)"
+MODE_ZANKOU_OPENING = "残虹黄E起手(对齐轮)"
+MODE_SAKIRI_OPENING_RU = "早雾起手(RU黑羽)"
+MODE_ZANKOU_OPENING_RU = "残虹黄E起手(RU黑羽)"
+MODES = [MODE_SAKIRI_OPENING, MODE_ZANKOU_OPENING, MODE_SAKIRI_OPENING_RU, MODE_ZANKOU_OPENING_RU]
+RU_MODES = frozenset({MODE_SAKIRI_OPENING_RU, MODE_ZANKOU_OPENING_RU})
+ZANKOU_OPENING_MODES = frozenset({MODE_ZANKOU_OPENING, MODE_ZANKOU_OPENING_RU})
 DARK_STAR_HOLD = "黯星期间不回黑羽(s)"
 ROUND_SETUP = "黯星轮准备最长(s)"
 SAKIRI_CHARGE = "早雾攒大招最长(s)"
 ZANKOU_FLAME = "残虹大招前先拿蓄焰(2觉)"
-KEYS = [DARK_STAR_HOLD, ROUND_SETUP, SAKIRI_CHARGE, ZANKOU_FLAME]
+WITCH_FIELD_LIMIT = "RU黑羽魔女形态站场上限(s)"
+KEYS = [MODE, DARK_STAR_HOLD, ROUND_SETUP, SAKIRI_CHARGE, ZANKOU_FLAME, WITCH_FIELD_LIMIT]
 # 黑羽副C配置的唯一默认值来源: 界面默认值和读不到配置时的兜底都读这里。
 DEFAULTS = {
+    MODE: MODE_ZANKOU_OPENING,
     DARK_STAR_HOLD: 10.0,
     ROUND_SETUP: 12.0,
     SAKIRI_CHARGE: 8.0,
     ZANKOU_FLAME: True,
+    WITCH_FIELD_LIMIT: 5.0,
 }
 SAKIRI_BUFF_DURATION = 20.0  # Sakiri Q: team ATK buff for 20s, paused by ultimate time stops
 # Switching and Blackbird's E still take a few seconds before the ultimates go out.
@@ -47,7 +63,14 @@ SAKIRI_BUFF_MARGIN = 4.0
 
 def configure_blackbird_sub_dps(task):
     task.default_config.update(DEFAULTS)
+    task.config_type[MODE] = {"type": "drop_down", "options": MODES}
     task.config_description.update({
+        MODE: (
+            "对齐轮=主C大招对齐蓄焰/早雾buff/黯星, 黑羽E一好就放(Q1Q2E); "
+            "RU黑羽=黑羽按RU节奏(E, 回来Q1+魔女强化E, 切主C, 再回来Q2), 不做对齐; "
+            "残虹黄E起手受'开局残虹黄E后切辅助'和'黄E入场小怪也触发'开关控制"
+        ),
+        WITCH_FIELD_LIMIT: "RU黑羽: 魔女形态里放出1发强化E就走, 放不出来时最多站场这么久",
         DARK_STAR_HOLD: (
             "黑羽触发黯星下场后至少这么久不再切回(扣除大招时停), 让主C打满两段黯星"
         ),
@@ -78,6 +101,11 @@ def config_enabled(config, key) -> bool:
     return DEFAULTS[key] if value is None else bool(value)
 
 
+def config_mode(config) -> str:
+    value = config.get(MODE) if config is not None else None
+    return value if value in MODES else DEFAULTS[MODE]
+
+
 class Step(Enum):
     INACTIVE = "inactive"  # no Blackbird sub-DPS teammate, or the skill test switch is on
     IDLE = "idle"  # no main DPS ultimate ready; Blackbird casts E whenever it is ready
@@ -100,6 +128,13 @@ def team_blackbird(char) -> "BlackbirdSubDps | None":
         if isinstance(mate, BlackbirdSubDps):
             return mate
     return None
+
+
+def team_mode(char) -> str | None:
+    """The configured Blackbird sub-DPS mode, or None without that template in the team."""
+
+    blackbird = team_blackbird(char)
+    return None if blackbird is None else config_mode(blackbird._lw_config())
 
 
 def round_step(char) -> Step:
@@ -211,6 +246,9 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
         self._reset_dark_star_state()
 
     def combat_plan(self, context):
+        if self.ru_mode():
+            # RU rotation; perform_in_ult below carries the Witch turn fix.
+            return super().combat_plan(context)
         ultimate = self.click_ultimate_action(
             can_execute=lambda _: not self.lw_skills_disabled_for_test(),
         )
@@ -258,6 +296,35 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
             return
         super().wait_intro(time_out=time_out, click=click)
 
+    def ru_mode(self) -> bool:
+        return config_mode(self._lw_config()) in RU_MODES
+
+    def perform_in_ult(self, context, skill):
+        """RU Witch turn without the endless stay.
+
+        RU gates the enhanced E with the instant-cycle rule, so with a full cycle it never
+        fires and Blackbird attacked for the whole Witch duration. The enhanced E is only
+        test-mode gated here, and the turn is capped.
+        """
+
+        enhanced_skill = self.click_skill_action(
+            name=f"{self}_witch_skill",
+            add_tags=Planner.ActionTag.HIGH_PRIORITY,
+            reason="blackbird witch enhanced skill",
+            can_execute=lambda _: not self.lw_skills_disabled_for_test(),
+        )
+        limit = min(config_seconds(self._lw_config(), WITCH_FIELD_LIMIT), self.ULT_DURATION)
+        self.logger.info(f"blackbird witch turn start, limit {limit:.1f}s")
+        start = self.now()
+        while (elapsed := self.now() - start) < limit:
+            if elapsed > 1 and not self.ultimate_available(False):
+                break
+            if context.is_action_allowed(self, enhanced_skill) and self.click_skill():
+                break
+            self.normal_attack()
+            self.sleep(0.1)
+        self.logger.info(f"blackbird witch turn end {self.now() - start:.2f}s")
+
     def _wait_for_second_ultimate(self) -> bool:
         deadline = self.now() + self.SECOND_ULTIMATE_WAIT
         while not self.ultimate_available():
@@ -302,6 +369,8 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
         if getattr(self, "is_dead", False) or self.lw_skills_disabled_for_test():
             return Step.INACTIVE
         config = self._lw_config()
+        if config_mode(config) in RU_MODES:
+            return Step.INACTIVE
         if self.is_current_char and self.round_start < 0:
             return Step.IDLE
         in_window = not self.is_current_char and self._elapsed(

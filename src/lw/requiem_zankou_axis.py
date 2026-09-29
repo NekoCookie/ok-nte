@@ -518,8 +518,14 @@ def run_zankou_opening_gold_skill(task) -> bool:
     )
     if partner is None:
         return False
-    from src.lw.blackbird_sub_dps import round_step, Step
+    from src.lw.blackbird_sub_dps import ZANKOU_OPENING_MODES, Step, round_step, team_mode
 
+    mode = team_mode(zankou)
+    if mode is not None and mode not in ZANKOU_OPENING_MODES:
+        log_info = getattr(getattr(task, "logger", None), "info", None)
+        if callable(log_info):
+            log_info(f"combat opening zankou gold skill skipped: {mode}")
+        return False
     # A Blackbird sub-DPS team leaves the rest of the opening to its Dark Star round.
     dark_star_team = round_step(zankou) is not Step.INACTIVE
 
