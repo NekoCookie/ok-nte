@@ -21,6 +21,7 @@ from src.lw.blackbird_sub_dps import (
     dark_star_setup_pending,
     opening_burst_held,
     perform_dark_star_relay,
+    preferred_reaction_target,
     round_allows_switch_in,
     sakiri_ultimate_held,
 )
@@ -620,6 +621,99 @@ class TestMainDpsRelayTheRoundSetup(unittest.TestCase):
         team.put_on_field(team.requiem)
         team.requiem.is_cycle_full = lambda: False
         self.assertTrue(dark_star_relay(team.requiem))
+
+
+class TestRequiemBanksZankouFlame(unittest.TestCase):
+    def setUp(self):
+        _Clock.now = 100.0
+        self.team = _team()
+
+    def test_full_requiem_cycle_goes_to_zankou_without_flame_outside_opening(self):
+        team = self.team
+        team.state["main_ult"] = False  # between rounds
+        self.assertIs(preferred_reaction_target(team.requiem), team.zankou)
+
+        team.zankou.lw_stored_flame = True
+        self.assertIsNone(preferred_reaction_target(team.requiem))
+
+    def test_opening_and_sakiri_steps_keep_the_default_target(self):
+        team = self.team
+        self.assertIsNone(preferred_reaction_target(team.requiem))  # SAKIRI step
+        team.sakiri.last_ultimate_time = _Clock.now
+        team.state["zankou_ult"] = False
+        self.assertIs(team.blackbird.dark_star_step(), Step.OPEN)
+        self.assertIsNone(preferred_reaction_target(team.requiem))
+
+    def test_flame_config_off_and_other_sources_have_no_preference(self):
+        team = self.team
+        team.state["main_ult"] = False
+        self.assertIsNone(preferred_reaction_target(team.zankou))
+        team.blackbird._lw_config = lambda: {ZANKOU_FLAME: False}
+        self.assertIsNone(preferred_reaction_target(team.requiem))
+
+    def test_reaction_target_follows_the_preference(self):
+        team = self.team
+        team.state["main_ult"] = False
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        task.chars = team.task.chars
+        task.element_reaction_counts = {}
+        for index, char in enumerate(task.chars):
+            char.index = index
+            char.last_switch_time = float(index)
+
+        self.assertIs(task.find_element_reaction_target(team.requiem), team.zankou)
+
+
+class TestCombatStateSurvivesRosterReload(unittest.TestCase):
+    def _task(self, chars, in_combat):
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        task.chars = chars
+        task._in_combat = in_combat
+        return task
+
+    def _reload(self, task, new_chars):
+        pool = task._lw_export_combat_state(task.chars)
+        task.chars = new_chars
+        for char in new_chars:
+            char.reset_state = lambda c=char: (
+                c._reset_dark_star_state() if isinstance(c, BlackbirdSubDps) else None
+            )
+            char.reset_state()
+            task._lw_import_combat_state(char, pool)
+
+    def test_teammate_dropped_and_readded_mid_combat_keeps_its_records(self):
+        _Clock.now = 100.0
+        team = _team()
+        team.zankou.lw_stored_flame = True
+        team.blackbird.dark_star_opened = True
+        team.blackbird.left_field_time = 90.0
+        team.sakiri.last_ultimate_time = 95.0
+        task = self._task(list(team.task.chars), in_combat=True)
+
+        without_zankou = [team.sakiri, team.blackbird, team.requiem]
+        self._reload(task, without_zankou)
+        new_zankou = _mate(ZankouMainDps, team.task, Element.RED)
+        new_zankou.lw_stored_flame = False
+        self._reload(task, without_zankou + [new_zankou])
+
+        self.assertTrue(new_zankou.lw_stored_flame)
+        self.assertTrue(team.blackbird.dark_star_opened)
+        self.assertEqual(team.blackbird.left_field_time, 90.0)
+        self.assertEqual(team.sakiri.last_ultimate_time, 95.0)
+
+    def test_new_combat_starts_from_clean_records(self):
+        team = _team()
+        team.zankou.lw_stored_flame = True
+        task = self._task(list(team.task.chars), in_combat=True)
+        task._lw_export_combat_state(task.chars)
+        task._in_combat = False
+        task.chars = []
+
+        new_zankou = _mate(ZankouMainDps, team.task, Element.RED)
+        new_zankou.lw_stored_flame = False
+        self._reload(task, [new_zankou])
+
+        self.assertFalse(new_zankou.lw_stored_flame)
 
 
 if __name__ == "__main__":

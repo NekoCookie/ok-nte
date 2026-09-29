@@ -1391,6 +1391,7 @@ class CombatExtMixin(_TaskProxy):
         self._last_team_signature_check = 0.0
         self.clear_element_reactions()  # 上游改名(原clear_element_ring_reactions)
         elements = [char.element for char in chars]
+        carried_state = self._lw_export_combat_state(getattr(self, "chars", None))
         self.chars = chars
         self.combat_planner.reset(self.chars)  # 上游planner架构要求换队后重置(record_switch等仍走planner)
         self.info_set("char elements", elements)
@@ -1399,6 +1400,7 @@ class CombatExtMixin(_TaskProxy):
         for char in self.chars:
             if char is not None:
                 char.reset_state()
+                self._lw_import_combat_state(char, carried_state)
                 char.is_current_char = char.index == current_index
                 name = char.char_name
                 conf = char.confidence
@@ -1412,6 +1414,51 @@ class CombatExtMixin(_TaskProxy):
             self._warm_up_background_mouse()
             return True
         return False
+
+    def _lw_export_combat_state(self, chars) -> dict:
+        """Keep per-character combat records across a mid-combat roster reload.
+
+        A misread portrait can drop and re-add a teammate during a fight; the reload
+        rebuilds or resets characters, which must not forget records such as Zankou's
+        stored flame. Records of characters missing from one reload stay in the pool so
+        they come back with the teammate; a new combat starts from an empty pool.
+        """
+
+        pool = getattr(self, "_lw_combat_state_pool", None)
+        if pool is None or not getattr(self, "_in_combat", False):
+            pool = {}
+        for char in chars or ():
+            if char is None:
+                continue
+            state = {"last_ultimate_time": getattr(char, "last_ultimate_time", -1)}
+            export = getattr(char, "lw_export_combat_state", None)
+            if callable(export):
+                state.update(export())
+            pool[type(char)] = state
+        self._lw_combat_state_pool = pool
+        return pool
+
+    @staticmethod
+    def _lw_import_combat_state(char, pool) -> None:
+        state = pool.get(type(char))
+        if not state:
+            return
+        char.last_ultimate_time = max(
+            getattr(char, "last_ultimate_time", -1), state.get("last_ultimate_time", -1)
+        )
+        restore = getattr(char, "lw_import_combat_state", None)
+        if callable(restore):
+            restore(state)
+
+    def lw_preferred_reaction_target(self, source_char):
+        """Character-team preference for the ring reaction target, or None for RU's pick."""
+
+        from src.lw.blackbird_sub_dps import preferred_reaction_target
+
+        target = preferred_reaction_target(source_char)
+        if target is None or getattr(target, "is_dead", False):
+            return None
+        return target if self.lw_reaction_target_allowed(target) else None
 
     def lw_char_implementation_name(self, char: "BaseChar") -> str:
         """Return a localized display name for a loaded character implementation."""

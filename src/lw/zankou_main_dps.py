@@ -48,6 +48,12 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
     def lw_can_switch_in(self):
         return round_allows_switch_in(self)
 
+    def lw_export_combat_state(self) -> dict:
+        return {"lw_stored_flame": self.lw_stored_flame}
+
+    def lw_import_combat_state(self, state: dict) -> None:
+        self.lw_stored_flame = bool(state.get("lw_stored_flame", self.lw_stored_flame))
+
     def _has_coordinated_axis_partner(self):
         return coordinated_axis_partner(
             self,

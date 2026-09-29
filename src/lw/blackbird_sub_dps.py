@@ -144,6 +144,27 @@ def sakiri_ultimate_held(char) -> bool:
     return round_step(char) not in (Step.INACTIVE, Step.SAKIRI, Step.LATE)
 
 
+def preferred_reaction_target(source):
+    """Requiem banks Zankou's stored flame with her full cycle, except when opening.
+
+    Stored flame can be gathered before Zankou's ultimate is ready and one stack is
+    enough, so a full Requiem cycle goes to Zankou whenever he has none; only while
+    Blackbird opens Dark Star does the cycle belong to Blackbird.
+    """
+
+    blackbird = team_blackbird(source)
+    if blackbird is None or source is not blackbird.team_requiem():
+        return None
+    if blackbird.dark_star_step() in (Step.INACTIVE, Step.OPEN, Step.SAKIRI):
+        return None
+    if not config_enabled(blackbird._lw_config(), ZANKOU_FLAME):
+        return None
+    zankou = blackbird.team_zankou()
+    if zankou is None or getattr(zankou, "lw_stored_flame", False):
+        return None
+    return zankou
+
+
 def round_allows_switch_in(char) -> bool:
     """Route each setup step to its character; outside a round nothing is restricted."""
 
@@ -333,6 +354,16 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
     def reset_state(self):
         super().reset_state()
         self._reset_dark_star_state()
+
+    _COMBAT_STATE_FIELDS = ("left_field_time", "round_start", "dark_star_opened", "in_ult")
+
+    def lw_export_combat_state(self) -> dict:
+        return {name: getattr(self, name) for name in self._COMBAT_STATE_FIELDS}
+
+    def lw_import_combat_state(self, state: dict) -> None:
+        for name in self._COMBAT_STATE_FIELDS:
+            if name in state:
+                setattr(self, name, state[name])
 
     def on_combat_end(self, chars):
         super().on_combat_end(chars)

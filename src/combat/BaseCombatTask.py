@@ -246,6 +246,9 @@ class BaseCombatTask(CombatExtMixin, CharElementUIMixin, CombatCheck):  # [lw]
     def find_element_reaction_target(self, source_char: "BaseChar") -> "BaseChar | None":
         if source_char is None:
             return None
+        preferred = self.lw_preferred_reaction_target(source_char)  # [lw] team rotation
+        if preferred is not None:
+            return preferred
         source_element_index = self.element_ring_index.get(source_char.element)
         if source_element_index is None:
             return None
