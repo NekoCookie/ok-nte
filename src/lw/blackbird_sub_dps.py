@@ -25,15 +25,13 @@ from src.combat.planner import FieldClaim, Planner
 from src.lw.combat_test_policy import LWCombatTestPolicyMixin
 
 DARK_STAR_HOLD = "黯星期间不回黑羽(s)"
-SKILL_WAIT = "黑羽E等主C大招最长(s)"
 ROUND_SETUP = "黯星轮准备最长(s)"
 SAKIRI_CHARGE = "早雾攒大招最长(s)"
 ZANKOU_FLAME = "残虹大招前先拿蓄焰(2觉)"
-KEYS = [DARK_STAR_HOLD, SKILL_WAIT, ROUND_SETUP, SAKIRI_CHARGE, ZANKOU_FLAME]
+KEYS = [DARK_STAR_HOLD, ROUND_SETUP, SAKIRI_CHARGE, ZANKOU_FLAME]
 # 黑羽副C配置的唯一默认值来源: 界面默认值和读不到配置时的兜底都读这里。
 DEFAULTS = {
     DARK_STAR_HOLD: 10.0,
-    SKILL_WAIT: 8.0,
     ROUND_SETUP: 12.0,
     SAKIRI_CHARGE: 8.0,
     ZANKOU_FLAME: True,
@@ -48,12 +46,8 @@ def configure_blackbird_sub_dps(task):
         DARK_STAR_HOLD: (
             "黑羽触发黯星下场后至少这么久不再切回(扣除大招时停), 让主C打满两段黯星"
         ),
-        SKILL_WAIT: (
-            "黑羽E就绪后要等安魂曲/残虹任一大招就绪才开下一轮; "
-            "等超过这么久(扣除大招时停)就不等大招直接开"
-        ),
         ROUND_SETUP: (
-            "一轮开始(黑羽E和主C大招就绪)后, 早雾Q/残虹蓄焰/黑羽开黯星这几步最多走这么久, "
+            "一轮开始(黑羽E和安魂曲/残虹任一大招就绪)后, 早雾Q/残虹蓄焰/黑羽开黯星最多走这么久, "
             "超时放开主C大招和切人限制, 按普通逻辑打"
         ),
         SAKIRI_CHARGE: (
@@ -112,9 +106,18 @@ def dark_star_setup_pending(char) -> bool:
 
 
 def dark_star_relay(char) -> bool:
-    """A main DPS on field during round setup only passes the round on, no field time."""
+    """A main DPS on field during round setup passes the round on without field time.
 
-    return getattr(char, "is_current_char", False) and dark_star_setup_pending(char)
+    While Zankou still needs stored flame, Zankou and Requiem keep their normal axis to
+    fill a cycle and only leave once theirs is full, so the swap is the Scorch.
+    """
+
+    if not getattr(char, "is_current_char", False):
+        return False
+    step = round_step(char)
+    if step not in SETUP_STEPS:
+        return False
+    return step is not Step.FLAME or bool(char.is_cycle_full())
 
 
 def perform_dark_star_relay(char) -> bool:
@@ -155,12 +158,9 @@ def round_allows_switch_in(char) -> bool:
     if char is blackbird.team_zankou():
         return step is Step.FLAME
     if char is blackbird.team_requiem():
-        current = blackbird.team_current()
         if step is Step.FLAME:
-            return current is not None and current is blackbird.team_zankou()
-        if step is Step.OPEN:
-            return current is blackbird
-        return False
+            return True
+        return step is Step.OPEN and blackbird.team_current() is blackbird
     return True
 
 
@@ -238,15 +238,8 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
         if self._elapsed(self.left_field_time) < config_seconds(config, DARK_STAR_HOLD):
             self.round_start = -1.0
             return Step.WINDOW
-        if not self.skill_available():
-            self.skill_ready_since = -1.0
-            self.round_start = -1.0
-            return Step.IDLE
-        if self.skill_ready_since < 0:
-            self.skill_ready_since = self._stamp()
-        if not self._main_dps_ultimate_ready() and self._elapsed(
-            self.skill_ready_since
-        ) < config_seconds(config, SKILL_WAIT):
+        # Both main DPS ultimates need cooldown and energy; the icon covers both.
+        if not self.skill_available() or not self._main_dps_ultimate_ready():
             self.round_start = -1.0
             return Step.IDLE
         if self.round_start < 0:
@@ -322,7 +315,6 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
 
     def switch_out(self):
         super().switch_out()
-        self.skill_ready_since = -1.0
         if self.stint_cast_skill:
             # E filled the cycle and the swap into Requiem triggered Dark Star.
             self.left_field_time = self._stamp()
@@ -343,7 +335,6 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
     def _reset_dark_star_state(self):
         self.in_ult = False
         self.left_field_time = -1.0
-        self.skill_ready_since = -1.0
         self.round_start = -1.0
         self.stint_cast_skill = False
         self.dark_star_opened = False

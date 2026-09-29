@@ -64,7 +64,7 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
     def wait_intro(self, time_out=-1, click=True):
         """Keep Zankou's coordinated-axis entry silent until its heavy attack."""
 
-        if self.has_intro and self._relays_dark_star_round():
+        if self.has_intro and dark_star_relay(self):
             self.logger.info("zankou relay entry skips intro wait")
             return
         if not self._has_coordinated_axis_partner():
@@ -82,7 +82,7 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
     def wait_switch_cd(self):
         """The game only blocks switching back to the char just left; a relay leaves now."""
 
-        if self._relays_dark_star_round():
+        if dark_star_relay(self):
             return
         super().wait_switch_cd()
 
@@ -190,7 +190,7 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
             claims.append(FieldClaim.high(source=self, reason="dark star round stored flame"))
 
         def entry():
-            if self._relays_dark_star_round():
+            if dark_star_relay(self):
                 yield relay
                 return
             if not self.lw_skills_disabled_for_test():
@@ -203,13 +203,6 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
             yield coaxis
 
         return self.plan(ultimate, coaxis, claims=claims, entry=entry)
-
-    def _relays_dark_star_round(self) -> bool:
-        """Pass the round on; for stored flame only once the cycle can swap into Requiem."""
-
-        if not dark_star_relay(self):
-            return False
-        return round_step(self) is not Step.FLAME or bool(self.is_cycle_full())
 
     def _combat_test_normal_attack_plan(self):
         normal_attack = self.planner_action(

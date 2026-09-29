@@ -13,11 +13,11 @@ from src.lw.blackbird_sub_dps import (
     DEFAULTS,
     ROUND_SETUP,
     SAKIRI_CHARGE,
-    SKILL_WAIT,
     ZANKOU_FLAME,
     BlackbirdSubDps,
     Step,
     config_seconds,
+    dark_star_relay,
     dark_star_setup_pending,
     opening_burst_held,
     perform_dark_star_relay,
@@ -242,7 +242,9 @@ class TestDarkStarRoundSteps(unittest.TestCase):
         self.team.state["skill"] = True
         self.team.state["main_ult"] = False
         self.assertIs(self.blackbird.dark_star_step(), Step.IDLE)
-        _Clock.now += DEFAULTS[SKILL_WAIT] + 0.1
+        _Clock.now += 60.0
+        self.assertIs(self.blackbird.dark_star_step(), Step.IDLE)
+        self.team.state["main_ult"] = True
         self.assertIs(self.blackbird.dark_star_step(), Step.SAKIRI)
 
     def test_steps_run_sakiri_then_flame_then_open(self):
@@ -293,10 +295,10 @@ class TestDarkStarRoundSteps(unittest.TestCase):
         self.assertIsNot(self.blackbird.dark_star_step(), Step.WINDOW)
 
     def test_config_values_fall_back_to_defaults(self):
-        self.assertEqual(config_seconds(None, SKILL_WAIT), DEFAULTS[SKILL_WAIT])
-        self.assertEqual(config_seconds({SKILL_WAIT: 6}, SKILL_WAIT), 6.0)
-        self.assertEqual(config_seconds({SKILL_WAIT: "bad"}, SKILL_WAIT), DEFAULTS[SKILL_WAIT])
-        self.assertEqual(config_seconds({SKILL_WAIT: -3}, SKILL_WAIT), 0.0)
+        self.assertEqual(config_seconds(None, ROUND_SETUP), DEFAULTS[ROUND_SETUP])
+        self.assertEqual(config_seconds({ROUND_SETUP: 6}, ROUND_SETUP), 6.0)
+        self.assertEqual(config_seconds({ROUND_SETUP: "x"}, ROUND_SETUP), DEFAULTS[ROUND_SETUP])
+        self.assertEqual(config_seconds({ROUND_SETUP: -3}, ROUND_SETUP), 0.0)
 
 
 class TestDarkStarRoundRouting(unittest.TestCase):
@@ -328,15 +330,19 @@ class TestDarkStarRoundRouting(unittest.TestCase):
             self.allowed(), {"sakiri": True, "blackbird": False, "zankou": False}
         )
 
-    def test_flame_step_sends_zankou_then_zankou_into_requiem(self):
+    def test_flame_step_lets_zankou_and_requiem_axis_until_one_cycle_is_full(self):
         self.team.sakiri.last_ultimate_time = _Clock.now
 
         self.assertEqual(
-            self.allowed(), {"blackbird": False, "requiem": False, "zankou": True}
+            self.allowed(), {"blackbird": False, "requiem": True, "zankou": True}
         )
         self.team.put_on_field(self.team.zankou)
         self.assertEqual(
             self.allowed(), {"sakiri": False, "blackbird": False, "requiem": True}
+        )
+        self.team.put_on_field(self.team.requiem)
+        self.assertEqual(
+            self.allowed(), {"sakiri": False, "blackbird": False, "zankou": True}
         )
 
     def test_open_step_sends_blackbird_then_blackbird_into_requiem(self):
@@ -591,20 +597,21 @@ class TestMainDpsRelayTheRoundSetup(unittest.TestCase):
             self.assertEqual(first.name, "Requiem_dark_star_relay")
             self.assertTrue(requiem.should_force_off_field())
 
-    def test_zankou_relays_unless_it_still_needs_a_full_cycle_for_flame(self):
-        _requiem, zankou, context = make_combat_pair(combat_enabled=True)
-        zankou.lw_skills_disabled_for_test = lambda: False
-        zankou.is_current_char = True
-        cases = [
-            (Step.OPEN, False, "ZankouMainDps_dark_star_relay"),
-            (Step.FLAME, True, "ZankouMainDps_dark_star_relay"),
-            (Step.FLAME, False, "ZankouMainDps_ultimate"),
-        ]
-        for step, cycle_full, first_action in cases:
-            with self.subTest(step=step, cycle_full=cycle_full):
-                zankou.is_cycle_full = lambda full=cycle_full: full
-                with mock.patch("src.lw.zankou_main_dps.round_step", return_value=step),                         mock.patch("src.lw.zankou_main_dps.dark_star_relay", return_value=True):
-                    self.assertEqual(next(zankou.combat_plan(context).entry()).name, first_action)
+    def test_flame_step_relays_only_with_a_full_cycle(self):
+        _Clock.now = 100.0
+        team = _team()
+        team.sakiri.last_ultimate_time = _Clock.now
+        for char in (team.zankou, team.requiem):
+            team.put_on_field(char)
+            with self.subTest(char=char):
+                char.is_cycle_full = lambda: False
+                self.assertFalse(dark_star_relay(char))
+                char.is_cycle_full = lambda: True
+                self.assertTrue(dark_star_relay(char))
+        team.zankou.lw_stored_flame = True
+        team.put_on_field(team.requiem)
+        team.requiem.is_cycle_full = lambda: False
+        self.assertTrue(dark_star_relay(team.requiem))
 
 
 if __name__ == "__main__":
