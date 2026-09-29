@@ -720,10 +720,11 @@ class TestCombatStateSurvivesRosterReload(unittest.TestCase):
     def test_new_combat_starts_from_clean_records(self):
         team = _team()
         team.zankou.lw_stored_flame = True
+        team.blackbird.dark_star_opened = True
         task = self._task(list(team.task.chars), in_combat=True)
         task._lw_export_combat_state(task.chars)
+        # The next combat reloads while the previous roster is still in task.chars.
         task._in_combat = False
-        task.chars = []
 
         new_zankou = _mate(ZankouMainDps, team.task, Element.RED)
         new_zankou.lw_stored_flame = False

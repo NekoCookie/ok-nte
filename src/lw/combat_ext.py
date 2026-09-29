@@ -1424,9 +1424,11 @@ class CombatExtMixin(_TaskProxy):
         they come back with the teammate; a new combat starts from an empty pool.
         """
 
-        pool = getattr(self, "_lw_combat_state_pool", None)
-        if pool is None or not getattr(self, "_in_combat", False):
-            pool = {}
+        if not getattr(self, "_in_combat", False):
+            # A new combat: the retained roster belongs to the previous fight.
+            self._lw_combat_state_pool = {}
+            return self._lw_combat_state_pool
+        pool = getattr(self, "_lw_combat_state_pool", None) or {}
         for char in chars or ():
             if char is None:
                 continue
