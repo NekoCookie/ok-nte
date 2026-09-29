@@ -4,16 +4,25 @@ from unittest import mock
 from src.char.core.CharRegistry import char_registry
 from src.combat.planner.types import ActionIntent
 from src.lw.blackbird_sub_dps import (
+    BURST_HOLD,
     DARK_STAR_HOLD,
     DEFAULTS,
+    SKILL_WAIT,
     BlackbirdSubDps,
-    dark_star_hold_seconds,
+    config_seconds,
+    dark_star_setup_pending,
 )
+from tests.TestRequiemZankouAxis import make_combat_pair
+
+
+class _Clock:
+    now = 0.0
 
 
 class _Task:
     def __init__(self):
         self.freeze = 0.0
+        self.chars = []
 
     def wait_until(self, *args, **kwargs):
         return False
@@ -24,22 +33,22 @@ class _Task:
     def time_elapsed_accounting_for_freeze(self, start):
         if start < 0:
             return 10000
-        return _Task.clock - start - self.freeze
+        return _Clock.now - start - self.freeze
 
 
-_Task.clock = 0.0
-
-
-def _make_char(ult_ready=True, second_ult_ready=True, skill_ready=True, config=None):
+def _make_char(ult_ready=True, second_ult_ready=True, skill_ready=True, main_ult_ready=True):
     char = object.__new__(BlackbirdSubDps)
     char.task = _Task()
     char.logger = mock.Mock()
     char.in_ult = False
     char.is_current_char = True
+    char.is_dead = False
     char.left_field_time = -1.0
+    char.skill_ready_since = -1.0
+    char.burst_hold_since = -1.0
     char.lw_skills_disabled_for_test = lambda: False
-    char._lw_config = lambda: config
-    state = {"ult": ult_ready, "skill": skill_ready}
+    char._lw_config = lambda: None
+    state = {"ult": ult_ready, "skill": skill_ready, "main_ult": main_ult_ready}
     casts = []
 
     def click_ultimate():
@@ -56,13 +65,17 @@ def _make_char(ult_ready=True, second_ult_ready=True, skill_ready=True, config=N
         state["skill"] = False
         return True
 
+    main_dps = mock.Mock(is_dead=False)
+    main_dps.ultimate_available = lambda: state["main_ult"]
+    char.get_teammates_by_role = lambda role: [main_dps]
     char.ultimate_available = lambda check_color=True: state["ult"]
     char.skill_available = lambda: state["skill"]
     char.click_ultimate = click_ultimate
     char.click_skill = lambda down_time=0.01: click_skill()
     char.normal_attack = lambda: None
-    char.now = lambda: _Task.clock
-    char.sleep = lambda duration: setattr(_Task, "clock", _Task.clock + duration)
+    char.now = lambda: _Clock.now
+    char._stamp = lambda: _Clock.now
+    char.sleep = lambda duration: setattr(_Clock, "now", _Clock.now + duration)
     return char, casts, state
 
 
@@ -71,7 +84,6 @@ def _run_entry(char):
 
     plan = char.combat_plan(None)
     flow = plan.entry()
-    result = None
     try:
         action = flow.send(None)
         while True:
@@ -85,7 +97,7 @@ def _run_entry(char):
 
 class TestBlackbirdSubDpsEntry(unittest.TestCase):
     def setUp(self):
-        _Task.clock = 0.0
+        _Clock.now = 0.0
 
     def test_entry_casts_q1_then_q2_then_skill(self):
         char, casts, _ = _make_char()
@@ -109,7 +121,7 @@ class TestBlackbirdSubDpsEntry(unittest.TestCase):
 
         self.assertEqual(casts, ["Q1", "E"])
         self.assertTrue(char.in_ult)
-        self.assertLessEqual(_Task.clock, BlackbirdSubDps.SECOND_ULTIMATE_WAIT + 0.11)
+        self.assertLessEqual(_Clock.now, BlackbirdSubDps.SECOND_ULTIMATE_WAIT + 0.11)
 
     def test_leftover_witch_state_finishes_with_q2_then_skill(self):
         char, casts, _ = _make_char()
@@ -132,35 +144,50 @@ class TestBlackbirdSubDpsEntry(unittest.TestCase):
 
 class TestBlackbirdSubDpsReturn(unittest.TestCase):
     def setUp(self):
-        _Task.clock = 100.0
+        _Clock.now = 100.0
 
-    def _off_field(self, skill_ready=True, config=None, freeze=0.0):
-        char, _, state = _make_char(skill_ready=skill_ready, config=config)
+    def _off_field(self, **kwargs):
+        char, _, state = _make_char(**kwargs)
         char.is_current_char = False
-        char.left_field_time = _Task.clock
-        char.task.freeze = freeze
+        char.left_field_time = _Clock.now
         return char, state
 
-    def test_blocked_during_dark_star_windows_even_with_skill_ready(self):
+    def test_blocked_during_dark_star_windows_even_with_everything_ready(self):
         char, _ = self._off_field()
 
-        _Task.clock += DEFAULTS[DARK_STAR_HOLD] - 0.5
+        _Clock.now += DEFAULTS[DARK_STAR_HOLD] - 0.5
         self.assertFalse(char.lw_can_switch_in())
-        _Task.clock += 1.0
+        _Clock.now += 1.0
         self.assertTrue(char.lw_can_switch_in())
 
-    def test_ultimate_animation_time_extends_the_hold(self):
-        char, _ = self._off_field(freeze=4.0)
+    def test_ultimate_time_stop_extends_the_dark_star_hold(self):
+        char, _ = self._off_field()
+        char.task.freeze = 4.0
 
-        _Task.clock += DEFAULTS[DARK_STAR_HOLD] + 1.0
+        _Clock.now += DEFAULTS[DARK_STAR_HOLD] + 1.0
         self.assertFalse(char.lw_can_switch_in())
 
-    def test_waits_for_skill_after_the_windows(self):
-        char, state = self._off_field(skill_ready=False)
+    def test_skill_waits_for_a_main_dps_ultimate_up_to_the_cap(self):
+        char, state = self._off_field(main_ult_ready=False)
+        _Clock.now += DEFAULTS[DARK_STAR_HOLD] + 1.0
 
-        _Task.clock += DEFAULTS[DARK_STAR_HOLD] + 3.0
+        self.assertFalse(char.lw_can_switch_in())
+        state["main_ult"] = True
+        self.assertTrue(char.lw_can_switch_in())
+        state["main_ult"] = False
+        _Clock.now += DEFAULTS[SKILL_WAIT] - 0.5
+        self.assertFalse(char.lw_can_switch_in())
+        _Clock.now += 1.0
+        self.assertTrue(char.lw_can_switch_in())
+
+    def test_skill_cooldown_blocks_and_restarts_the_wait(self):
+        char, state = self._off_field(skill_ready=False, main_ult_ready=False)
+        _Clock.now += 60.0
+
         self.assertFalse(char.lw_can_switch_in())
         state["skill"] = True
+        self.assertFalse(char.lw_can_switch_in())
+        _Clock.now += DEFAULTS[SKILL_WAIT] + 0.1
         self.assertTrue(char.lw_can_switch_in())
 
     def test_first_entry_and_current_field_are_never_blocked(self):
@@ -169,16 +196,16 @@ class TestBlackbirdSubDpsReturn(unittest.TestCase):
         char.is_current_char = False
         self.assertTrue(char.lw_can_switch_in())
 
-    def test_hold_reads_config_with_default_fallback(self):
+    def test_config_values_fall_back_to_defaults(self):
         cases = [
-            (None, DEFAULTS[DARK_STAR_HOLD]),
-            ({DARK_STAR_HOLD: 6}, 6.0),
-            ({DARK_STAR_HOLD: "bad"}, DEFAULTS[DARK_STAR_HOLD]),
-            ({DARK_STAR_HOLD: -3}, 0.0),
+            (None, DEFAULTS[SKILL_WAIT]),
+            ({SKILL_WAIT: 6}, 6.0),
+            ({SKILL_WAIT: "bad"}, DEFAULTS[SKILL_WAIT]),
+            ({SKILL_WAIT: -3}, 0.0),
         ]
         for config, expected in cases:
             with self.subTest(config=config):
-                self.assertEqual(dark_star_hold_seconds(config), expected)
+                self.assertEqual(config_seconds(config, SKILL_WAIT), expected)
 
     def test_template_is_registered(self):
         entry = char_registry.get("builtin:blackbird_sub_dps")
@@ -186,6 +213,86 @@ class TestBlackbirdSubDpsReturn(unittest.TestCase):
         self.assertIsNotNone(entry)
         self.assertIs(entry.char_cls, BlackbirdSubDps)
         self.assertEqual(entry.cn_name, "黑羽副C")
+
+
+class TestMainDpsBurstHold(unittest.TestCase):
+    def setUp(self):
+        _Clock.now = 100.0
+
+    def _blackbird_with_mate(self, **kwargs):
+        char, state = TestBlackbirdSubDpsReturn._off_field(self, **kwargs)
+        char.left_field_time = -1.0
+        mate = mock.Mock()
+        mate.task = char.task
+        char.task.chars = [mate, char]
+        return char, mate, state
+
+    def test_main_dps_holds_burst_while_blackbird_is_coming(self):
+        char, mate, _ = self._blackbird_with_mate()
+
+        self.assertTrue(dark_star_setup_pending(mate))
+
+    def test_hold_is_capped(self):
+        char, mate, _ = self._blackbird_with_mate()
+
+        self.assertTrue(dark_star_setup_pending(mate))
+        _Clock.now += DEFAULTS[BURST_HOLD] + 0.1
+        self.assertFalse(dark_star_setup_pending(mate))
+
+    def test_no_hold_once_dark_star_was_triggered(self):
+        char, mate, _ = self._blackbird_with_mate()
+        char.is_current_char = True
+        self.assertFalse(dark_star_setup_pending(mate))
+
+        char.is_current_char = False
+        char.left_field_time = _Clock.now
+        self.assertFalse(dark_star_setup_pending(mate))
+
+    def test_no_hold_when_blackbird_skill_is_on_cooldown(self):
+        char, mate, _ = self._blackbird_with_mate(skill_ready=False)
+
+        self.assertFalse(dark_star_setup_pending(mate))
+
+    def test_no_hold_without_blackbird_template(self):
+        mate = mock.Mock()
+        mate.task = mock.Mock(chars=[mate])
+
+        self.assertFalse(dark_star_setup_pending(mate))
+
+
+class TestMainDpsHoldWiring(unittest.TestCase):
+    def test_zankou_first_ultimate_waits_but_awakened_second_does_not(self):
+        _requiem, zankou, context = make_combat_pair(combat_enabled=True)
+        zankou.lw_skills_disabled_for_test = lambda: False
+        zankou.ultimate_available = lambda check_color=True: True
+
+        with mock.patch("src.lw.zankou_main_dps.dark_star_setup_pending", return_value=True):
+            plan = zankou.combat_plan(context)
+            entry = plan.entry()
+            first = next(entry)
+            self.assertFalse(first.is_allowed(context))
+            zankou._wait_for_awakened_second_ultimate = mock.MagicMock(return_value=True)
+            second = entry.send(True)
+            self.assertTrue(second.is_allowed(context))
+
+    def test_requiem_keeps_ultimate_and_real_skill_for_dark_star(self):
+        requiem, _zankou, context = make_combat_pair(combat_enabled=True)
+        requiem._skills_disabled_for_test = lambda *args: False
+        requiem.ultimate_available = lambda check_color=True: True
+        requiem.skill_available = lambda: True
+        requiem.is_real_skill_now = lambda: True
+
+        with mock.patch("src.char.Requiem.dark_star_setup_pending", return_value=True):
+            plan = requiem.combat_plan(context)
+            actions = {action.name: action for action in plan.actions}
+            self.assertFalse(actions["Requiem_ultimate"].is_allowed(context))
+            self.assertFalse(actions["Requiem_real_skill"].is_allowed(context))
+            self.assertFalse(requiem._skill_or_ult_ready())
+        with mock.patch("src.char.Requiem.dark_star_setup_pending", return_value=False):
+            plan = requiem.combat_plan(context)
+            actions = {action.name: action for action in plan.actions}
+            self.assertTrue(actions["Requiem_ultimate"].is_allowed(context))
+            self.assertTrue(actions["Requiem_real_skill"].is_allowed(context))
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import win32con
 
+from src.lw.blackbird_sub_dps import dark_star_setup_pending
 from src.lw.combat_templates import MainDps
 from src.combat import requiem_combo
 from src.combat.planner import ActionSlot, ActionTag, FollowupStep
@@ -207,10 +208,10 @@ class Requiem(MainDps):
             name=f"{self}_ultimate",
             reason="requiem ultimate ready",
             can_execute=lambda _: (
-                not self._skills_disabled_for_test() and self.ultimate_available()
+                not self._skills_disabled_for_test() and self._burst_ultimate_ready()
             ),
             priority_ready=lambda _: (
-                not self._skills_disabled_for_test() and self.ultimate_available()
+                not self._skills_disabled_for_test() and self._burst_ultimate_ready()
             ),
         )
         real_skill = self.planner_action(
@@ -223,9 +224,12 @@ class Requiem(MainDps):
                 not self._skills_disabled_for_test()
                 and self.skill_available()
                 and self.is_real_skill_now()
+                and not dark_star_setup_pending(self)
             ),
             priority_ready=lambda _: (
-                not self._skills_disabled_for_test() and self.skill_available()
+                not self._skills_disabled_for_test()
+                and self.skill_available()
+                and not dark_star_setup_pending(self)
             ),
         )
         free_skill = self.planner_action(
@@ -304,8 +308,10 @@ class Requiem(MainDps):
             used_ultimate = bool((yield ultimate))
             if self.skill_available():
                 if self.is_real_skill_now():
-                    yield real_skill  # 真技能是伤害大头: 放进CD才 overlap
-                    return
+                    # 真技能是伤害大头: 放进CD才 overlap
+                    if (yield real_skill) or not dark_star_setup_pending(self):
+                        return
+                    # [lw] 真技能留给黑羽黯星: 本轮只打合轴/双4a。
                 elif bool((yield free_skill)):
                     return  # 免费技: 留场接平A
             if used_ultimate:
@@ -595,12 +601,16 @@ class Requiem(MainDps):
         return self._read_jump_task_conf(
             RequiemCombatConfigTask.CONF_COMBO_BREAK_FOR_SKILL, task=task)
 
+    def _burst_ultimate_ready(self):
+        """[lw] 大招就绪且不用留给黑羽即将触发的黯星。"""
+        return self.ultimate_available() and not dark_star_setup_pending(self)
+
     def _skill_or_ult_ready(self):
         """combo 中途: 大招或技能是否已就绪(值得中断 combo 让路去开)。读缓存CD/就绪判定, 不贵。"""
         try:
-            if self.ultimate_available():
-                return True
-            return self.skill_available()
+            if self.ultimate_available() or self.skill_available():
+                return not dark_star_setup_pending(self)
+            return False
         except Exception:
             return False
 
@@ -748,7 +758,7 @@ class Requiem(MainDps):
 
     def free_skill_followup_attack(self):
         """免费技能后的后续输出: 大招好了先开、辅助有资源就让位, 否则打一轮 combo。"""
-        if self.ultimate_available():
+        if self._burst_ultimate_ready():
             if self.click_ultimate():
                 return
         if self.should_yield_to_support(include_probe=False):

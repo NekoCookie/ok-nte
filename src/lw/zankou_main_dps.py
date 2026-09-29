@@ -1,9 +1,11 @@
 """[lw] Zankou main-DPS template backed by the current RU implementation."""
 
 import time
+from dataclasses import replace
 
 from src.char.Zankou import Zankou
 from src.combat.planner import ActionSlot, ActionTag
+from src.lw.blackbird_sub_dps import dark_star_setup_pending
 from src.lw.combat_test_policy import LWCombatTestPolicyMixin
 from src.lw.requiem_zankou_axis import (
     REQUIEM_IMPL_ID,
@@ -115,9 +117,19 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
                 return self._combat_test_normal_attack_plan()
             return super().combat_plan(context)
 
+        # The first ultimate waits for Blackbird's Dark Star; the awakened second one
+        # always follows the first.
         ultimate = self.click_ultimate_action(
             reason="zankou coordinated-axis ultimate",
-            can_execute=lambda _: not self.lw_skills_disabled_for_test(),
+            can_execute=lambda _: (
+                not self.lw_skills_disabled_for_test() and not dark_star_setup_pending(self)
+            ),
+        )
+        second_ultimate = replace(
+            ultimate,
+            can_execute=lambda _: (
+                not self.lw_skills_disabled_for_test() and self.ultimate_available()
+            ),
         )
         coaxis = self.planner_action(
             tags={ActionTag.LEGACY_COMBO, ActionTag.DAMAGE, ActionTag.FIELD_TIME},
@@ -138,7 +150,7 @@ class ZankouMainDps(LWCombatTestPolicyMixin, Zankou):
                 if ultimate_result:
                     self.logger.info("zankou first ultimate complete; checking awakened second")
                     if self._wait_for_awakened_second_ultimate():
-                        yield ultimate.repeat_for_entry()
+                        yield second_ultimate.repeat_for_entry()
             yield coaxis
 
         return self.plan(ultimate, coaxis, entry=entry)
