@@ -342,8 +342,9 @@ class TestDarkStarRoundRouting(unittest.TestCase):
     def test_flame_step_lets_zankou_and_requiem_axis_until_one_cycle_is_full(self):
         self.team.sakiri.last_ultimate_time = _Clock.now
 
+        # Sakiri keeps her cycle: from her only Zankou may come in.
         self.assertEqual(
-            self.allowed(), {"blackbird": False, "requiem": True, "zankou": True}
+            self.allowed(), {"blackbird": False, "requiem": False, "zankou": True}
         )
         self.team.put_on_field(self.team.zankou)
         self.assertEqual(

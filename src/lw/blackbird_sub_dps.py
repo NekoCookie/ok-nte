@@ -179,9 +179,12 @@ def round_allows_switch_in(char) -> bool:
     if char is blackbird.team_zankou():
         return step is Step.FLAME
     if char is blackbird.team_requiem():
+        # Requiem only takes the round from its own partner: Zankou while he gathers
+        # stored flame (Sakiri keeps her cycle), Blackbird when Dark Star opens.
+        current = blackbird.team_current()
         if step is Step.FLAME:
-            return True
-        return step is Step.OPEN and blackbird.team_current() is blackbird
+            return current is not None and current is blackbird.team_zankou()
+        return step is Step.OPEN and current is blackbird
     return True
 
 
