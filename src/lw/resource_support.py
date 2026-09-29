@@ -181,16 +181,6 @@ class ResourceSupportMixin:
 
         return []
 
-    def ultimate_held(self):
-        """角色模板可覆写: 大招就绪也先不放(留给队伍的爆发轮)。"""
-
-        return False
-
-    def resource_charge_action(self):
-        """角色模板可覆写: 没放出大招时留场攒能量的动作, 没有返回 None。"""
-
-        return None
-
     def combat_plan(self, context):
         """资源型角色共用的大招→技能→资源缓存更新执行骨架。"""
 
@@ -206,9 +196,8 @@ class ResourceSupportMixin:
             execute=lambda _: self.click_ultimate(),
             name=f"{self}_ultimate",
             reason="support ultimate ready",
-            can_execute=lambda _: self.ultimate_available() and not self.ultimate_held(),
+            can_execute=lambda _: self.ultimate_available(),
             priority_ready=lambda _: self.ultimate_ready_now()
-            and not self.ultimate_held()
             and not self.recently_used_resource(),
         )
         skill = self.planner_action(
@@ -223,7 +212,6 @@ class ResourceSupportMixin:
             ),
             priority_ready=lambda _: self.skill_priority_ready(),
         )
-        charge = self.resource_charge_action()
         claims = self.resource_field_claims(needs_probe)
         self._log_resource_decision_diag(needs_probe, claims)
 
@@ -232,12 +220,9 @@ class ResourceSupportMixin:
             used_skill = bool((yield skill))
             if not used_ultimate and self.ultimate_available():
                 used_ultimate = bool((yield ultimate))
-            if not used_ultimate and charge is not None:
-                yield charge
             self.update_resource_after_perform(used_ultimate, used_skill)
 
-        actions = (ultimate, skill) if charge is None else (ultimate, skill, charge)
-        return self.plan(*actions, claims=claims, entry=entry)
+        return self.plan(ultimate, skill, claims=claims, entry=entry)
 
     def _execute_support_skill(self, context=None):
         """放招后锚定资源 CD；通用闪避打断恢复由 BaseChar.click_skill 处理。"""
