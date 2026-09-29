@@ -170,5 +170,40 @@ class TestSwitchInCdTruth(unittest.TestCase):
         self.assertIn("切早", self._report(self._task(press_at=90.0)))
 
 
+class TestUltimateTimingDiag(unittest.TestCase):
+    """大招分段计时: 按Q -> 演出开始 -> 回队伍 -> CD 恢复, 并对照实际扣除的时停。"""
+
+    def test_logs_phase_spans_and_recorded_freeze(self):
+        clock = FakeClock(now=100.0)
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        task.SKILL_CD_DIAG = False
+        task.SKILL_CD_TRUTH_DIAG = True
+        task.log_info = mock.MagicMock()
+        task.freeze_durations = [(100.0, 4.5, 0.1)]
+        with mock.patch("src.lw.combat_ext.time", clock):
+            clock.advance(0.3)
+            task.lw_note_ultimate_phase("Sakiri", "cutscene", 100.0)
+            clock.advance(3.0)
+            task.lw_note_ultimate_phase("Sakiri", "team_back", 100.0)
+            clock.advance(1.2)
+            task.lw_note_ultimate_phase("Sakiri", "unfrozen", 100.0)
+
+        message = task.log_info.call_args.args[0]
+        self.assertIn("按Q->演出开始 0.30s", message)
+        self.assertIn("演出 3.00s", message)
+        self.assertIn("回队伍->CD恢复 1.20s", message)
+        self.assertIn("总计 4.50s", message)
+        self.assertIn("扣除时停 4.50s", message)
+        self.assertIsNone(task._lw_ult_timing)
+
+    def test_disabled_diag_records_nothing(self):
+        task = BaseCombatTask.__new__(BaseCombatTask)
+        task.SKILL_CD_DIAG = False
+        task.SKILL_CD_TRUTH_DIAG = False
+        task.log_info = mock.MagicMock()
+        task.lw_note_ultimate_phase("Sakiri", "unfrozen", 100.0)
+        task.log_info.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

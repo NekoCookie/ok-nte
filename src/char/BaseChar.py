@@ -707,6 +707,7 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
         )
         with self.task.skip_sleep_checks() as skip:
             skip.all = True
+            self.task.lw_note_ultimate_phase(self, "cutscene", start)  # [lw]
             animated = self._wait_action_animation(
                 start=start,
                 timeout=7,
@@ -714,7 +715,9 @@ class BaseChar(CharExtMixin):  # [lw] 插入用户扩展基类
             )
             clicked = clicked or animated
 
+            self.task.lw_note_ultimate_phase(self, "team_back", start)  # [lw]
             duration = self._wait_ultimate_unfreeze(start)
+            self.task.lw_note_ultimate_phase(self, "unfrozen", start)  # [lw]
         self._ultimate_available = False
         self.last_ultimate_time = time.time()
         if clicked:

@@ -560,6 +560,42 @@ class CombatExtMixin(_TaskProxy):
 
     # ---------- CD 诊断(SKILL_CD_DIAG) ----------
 
+    def lw_note_ultimate_phase(self, char, phase, start):
+        """CD 对照诊断: 记录一次大招的各阶段时刻, 时停结束时打印分段耗时与实际扣除。
+
+        阶段: 按Q(start) -> cutscene(检测到离开队伍界面) -> team_back(回到队伍界面)
+        -> unfrozen(大招 CD 数字开始走, 即记录时停的终点)。用来定位时停多扣在哪一段。
+        """
+
+        if not (self.SKILL_CD_DIAG or self.SKILL_CD_TRUTH_DIAG):
+            return
+        timing = getattr(self, "_lw_ult_timing", None)
+        if timing is None or timing.get("press") != start:
+            timing = {"press": start}
+            self._lw_ult_timing = timing
+        timing.setdefault(phase, time.time())
+        if phase != "unfrozen":
+            return
+        self._lw_ult_timing = None
+
+        def span(begin, end):
+            if begin not in timing or end not in timing:
+                return "?"
+            return f"{timing[end] - timing[begin]:.2f}s"
+
+        deduct = next(
+            (duration for freeze_start, duration, _ in reversed(self.freeze_durations)
+             if freeze_start == start),
+            None,
+        )
+        deduct_text = "未记录" if deduct is None else f"{deduct:.2f}s"
+        self.log_info(
+            f"ult-timing {char}: 按Q->演出开始 {span('press', 'cutscene')} | "
+            f"演出 {span('cutscene', 'team_back')} | "
+            f"回队伍->CD恢复 {span('team_back', 'unfrozen')} | "
+            f"总计 {span('press', 'unfrozen')} | 扣除时停 {deduct_text}"
+        )
+
     def _lw_skill_press_at(self, index):
         char = next(
             (c for c in (self.chars or ()) if c is not None and c.index == index),
