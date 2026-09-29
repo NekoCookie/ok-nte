@@ -290,8 +290,45 @@ class SakiriBuffSupport(BuffSupport):
         # 长按由 SKILL_DOWN_TIME=0.25 在 skill 的 execute(_execute_support_skill)自动生效, 无需重写。
         return super().combat_plan(context)
 
+    # [lw] 黑羽副C队: 主C大招就绪而早雾buff已过时, 早雾上场放Q, Q没好就留场平A+E攒。
+    CHARGE_ATTACK_DURATION = 1.0
+
     def lw_can_switch_in(self):
-        """[lw] 黑羽副C队拿蓄焰/开黯星那几下切人期间不上场, 免得打乱安魂曲的环合。"""
         from src.lw.blackbird_sub_dps import round_allows_switch_in
 
         return round_allows_switch_in(self)
+
+    def _dark_star_round_waits_on_sakiri(self):
+        from src.lw.blackbird_sub_dps import Step, round_step
+
+        return round_step(self) is Step.SAKIRI
+
+    def resource_field_claims(self, needs_probe):
+        on_field = getattr(self, "is_current_char", False)
+        if not on_field and self._dark_star_round_waits_on_sakiri():
+            return [
+                lw_preemptive_field_claim(
+                    source=self,
+                    reason="dark star round sakiri ultimate",
+                    expected_entry=ExpectedEntry(slot=ActionSlot.ULTIMATE),
+                )
+            ]
+        return super().resource_field_claims(needs_probe)
+
+    def resource_charge_action(self):
+        on_field = getattr(self, "is_current_char", False)
+        if not on_field or not self._dark_star_round_waits_on_sakiri():
+            return None
+        return self.planner_action(
+            tags={ActionTag.LEGACY_COMBO, ActionTag.FIELD_TIME},
+            slot=ActionSlot.LEGACY_COMBO,
+            execute=lambda _: self._charge_ultimate(),
+            name=f"{self}_charge_ultimate",
+            reason="sakiri charges ultimate for the main dps ultimates",
+            priority_ready=lambda _: False,
+        )
+
+    def _charge_ultimate(self):
+        self.logger.info("sakiri stays on field to charge ultimate for the main dps ultimates")
+        self.continues_normal_attack(self.CHARGE_ATTACK_DURATION)
+        return True

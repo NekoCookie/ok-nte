@@ -12,6 +12,9 @@ from src.lw.blackbird_sub_dps import (
     DARK_STAR_HOLD,
     DEFAULTS,
     ROUND_SETUP,
+    SAKIRI_BUFF_DURATION,
+    SAKIRI_BUFF_MARGIN,
+    SAKIRI_CHARGE,
     ZANKOU_FLAME,
     BlackbirdSubDps,
     Step,
@@ -122,6 +125,7 @@ def _team():
     state["zankou_ult"] = True
     sakiri = _mate(SakiriBuffSupport, task, Element.RED)
     sakiri.is_current_char = True
+    sakiri.last_ultimate_time = _Clock.now  # her buff just started
     requiem = _mate(Requiem, task, Element.PURPLE)
     zankou = _mate(ZankouMainDps, task, Element.RED)
     zankou.lw_stored_flame = False
@@ -264,6 +268,34 @@ class TestDarkStarRoundSteps(unittest.TestCase):
         self.assertIs(self.blackbird.dark_star_step(), Step.WINDOW)
         self.assertFalse(dark_star_setup_pending(self.team.requiem))
 
+    def test_expired_sakiri_buff_calls_sakiri_before_the_ultimates(self):
+        self.team.zankou.lw_stored_flame = True
+        _Clock.now += SAKIRI_BUFF_DURATION - SAKIRI_BUFF_MARGIN + 0.1
+
+        self.assertIs(self.blackbird.dark_star_step(), Step.SAKIRI)
+        self.team.sakiri.last_ultimate_time = _Clock.now
+        self.assertIs(self.blackbird.dark_star_step(), Step.OPEN)
+
+    def test_buff_still_running_through_time_stops_needs_no_sakiri(self):
+        self.team.zankou.lw_stored_flame = True
+        self.team.task.freeze = 10.0
+        _Clock.now += SAKIRI_BUFF_DURATION + 2.0
+
+        self.assertIs(self.blackbird.dark_star_step(), Step.OPEN)
+
+    def test_sakiri_charge_is_capped(self):
+        self.team.zankou.lw_stored_flame = True
+        _Clock.now += 30.0
+
+        self.assertIs(self.blackbird.dark_star_step(), Step.SAKIRI)
+        _Clock.now += DEFAULTS[SAKIRI_CHARGE] + 0.1
+        self.assertIs(self.blackbird.dark_star_step(), Step.OPEN)
+
+    def test_flame_comes_before_sakiri(self):
+        _Clock.now += 30.0
+
+        self.assertIs(self.blackbird.dark_star_step(), Step.FLAME)
+
     def test_first_round_always_takes_flame(self):
         self.team.state["zankou_ult"] = False
 
@@ -364,6 +396,15 @@ class TestDarkStarRoundRouting(unittest.TestCase):
             self.allowed(), {"sakiri": False, "blackbird": False, "zankou": True}
         )
 
+    def test_sakiri_step_only_lets_sakiri_in(self):
+        self.team.zankou.lw_stored_flame = True
+        self.team.put_on_field(self.team.requiem)
+        _Clock.now += 30.0
+
+        self.assertEqual(
+            self.allowed(), {"sakiri": True, "blackbird": False, "zankou": False}
+        )
+
     def test_open_step_sends_blackbird_then_blackbird_into_requiem(self):
         self.team.zankou.lw_stored_flame = True
 
@@ -433,6 +474,58 @@ class TestDarkStarRoundHolds(unittest.TestCase):
         self.assertFalse(dark_star_setup_pending(mate))
         self.assertFalse(opening_burst_held(mate))
         self.assertTrue(round_allows_switch_in(mate))
+
+
+class TestSakiriChargesForTheUltimates(unittest.TestCase):
+    def _sakiri(self, step, on_field=True, ult_ready=True):
+        c = SakiriBuffSupport.__new__(SakiriBuffSupport)
+        c.index = 1
+        c.logger = mock.Mock()
+        c.is_current_char = on_field
+        c.team_has_main_dps = lambda: True
+        c.recently_used_resource = lambda: False
+        c.has_skill_resource = lambda: False
+        c.needs_resource_probe = lambda: False
+        c.skill_available = lambda: False
+        c.ultimate_available = lambda: ult_ready
+        c.ultimate_ready_now = lambda: ult_ready
+        c.lw_skills_disabled_for_test = lambda: False
+        patcher = mock.patch("src.lw.blackbird_sub_dps.round_step", return_value=step)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return c
+
+    def test_on_field_sakiri_charges_when_her_q_is_not_ready(self):
+        c = self._sakiri(Step.SAKIRI, ult_ready=False)
+
+        flow = c.combat_plan(None).entry()
+        names = []
+        try:
+            action = next(flow)
+            while True:
+                names.append(action.name)
+                action = flow.send(False)
+        except StopIteration:
+            pass
+
+        self.assertEqual(names[-1], f"{c}_charge_ultimate")
+
+    def test_off_field_sakiri_is_called_in(self):
+        c = self._sakiri(Step.SAKIRI, on_field=False, ult_ready=False)
+
+        plan = c.combat_plan(None)
+
+        self.assertEqual(
+            [claim.reason for claim in plan.claims], ["dark star round sakiri ultimate"]
+        )
+
+    def test_ready_ultimate_is_never_held(self):
+        for step in (Step.IDLE, Step.WINDOW, Step.OPEN_WAIT):
+            with self.subTest(step=step):
+                c = self._sakiri(step)
+                plan = c.combat_plan(None)
+                ultimate = next(a for a in plan.actions if a.slot == ActionSlot.ULTIMATE)
+                self.assertTrue(ultimate.is_allowed(None))
 
 
 class TestMainDpsHoldWiring(unittest.TestCase):

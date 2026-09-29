@@ -6,12 +6,14 @@ Dark Star. Dark Star pays 20% of the damage recorded in its window.
 
 Blackbird casts E whenever it is ready (Q1 -> Q2 -> E when her ultimate is up), and Sakiri
 casts her Q as soon as it is ready. Only the main DPS ultimates wait, so they land inside
-Dark Star; once one of them is ready:
+Dark Star and Sakiri's 20s ATK buff; once one of them is ready:
 
 1. FLAME: when Zankou will cast his ultimate without stored flame (awakening 2/4, +150%),
    Zankou joins a Scorch with Requiem first. The first round always takes it from
    Zankou's combat-entry cycle.
-2. Inside a Dark Star window the ultimates go right away. Otherwise OPEN: Blackbird's next
+2. SAKIRI: when Sakiri's buff is over (or about to be), Sakiri comes in and casts Q; if Q
+   is not ready yet she normal-attacks and casts E on field until it is.
+3. Inside a Dark Star window the ultimates go right away. Otherwise OPEN: Blackbird's next
    E swaps into Requiem and opens Dark Star; while that E is still cooling down
    (OPEN_WAIT) Requiem and Zankou keep their normal axis with the ultimates held.
 
@@ -28,14 +30,19 @@ from src.lw.combat_test_policy import LWCombatTestPolicyMixin
 
 DARK_STAR_HOLD = "黯星期间不回黑羽(s)"
 ROUND_SETUP = "黯星轮准备最长(s)"
+SAKIRI_CHARGE = "早雾攒大招最长(s)"
 ZANKOU_FLAME = "残虹大招前先拿蓄焰(2觉)"
-KEYS = [DARK_STAR_HOLD, ROUND_SETUP, ZANKOU_FLAME]
+KEYS = [DARK_STAR_HOLD, ROUND_SETUP, SAKIRI_CHARGE, ZANKOU_FLAME]
 # 黑羽副C配置的唯一默认值来源: 界面默认值和读不到配置时的兜底都读这里。
 DEFAULTS = {
     DARK_STAR_HOLD: 10.0,
     ROUND_SETUP: 20.0,
+    SAKIRI_CHARGE: 8.0,
     ZANKOU_FLAME: True,
 }
+SAKIRI_BUFF_DURATION = 20.0  # Sakiri Q: team ATK buff for 20s, paused by ultimate time stops
+# Switching and Blackbird's E still take a few seconds before the ultimates go out.
+SAKIRI_BUFF_MARGIN = 4.0
 
 
 def configure_blackbird_sub_dps(task):
@@ -45,8 +52,12 @@ def configure_blackbird_sub_dps(task):
             "黑羽触发黯星下场后至少这么久不再切回(扣除大招时停), 让主C打满两段黯星"
         ),
         ROUND_SETUP: (
-            "安魂曲/残虹大招就绪后, 拿蓄焰/等黑羽下一个E开黯星最多这么久(扣除大招时停), "
+            "安魂曲/残虹大招就绪后, 拿蓄焰/补早雾Q/等黑羽下一个E开黯星最多这么久(扣除大招时停), "
             "超时放开主C大招和切人限制, 按普通逻辑打"
+        ),
+        SAKIRI_CHARGE: (
+            "主C大招就绪而早雾buff已过时, 早雾上场放Q; Q没好就留场平A+E攒, 最多这么久, "
+            "超时不等早雾"
         ),
         ZANKOU_FLAME: (
             "开=残虹大招前先让残虹环合安魂曲(浊燃)拿蓄焰(2觉/4觉增伤); 没有2觉就关"
@@ -71,14 +82,15 @@ class Step(Enum):
     INACTIVE = "inactive"  # no Blackbird sub-DPS teammate, or the skill test switch is on
     IDLE = "idle"  # no main DPS ultimate ready; Blackbird casts E whenever it is ready
     FLAME = "flame"
+    SAKIRI = "sakiri"  # Sakiri's buff is over: she comes in for Q (charging it if needed)
     OPEN = "open"  # Blackbird E ready: she opens Dark Star now
     OPEN_WAIT = "open_wait"  # waiting for Blackbird's E cooldown, normal axis
     WINDOW = "window"  # inside the Dark Star windows after Blackbird's E
     LATE = "late"  # setup timed out: no holds
 
 
-SETUP_STEPS = frozenset({Step.FLAME, Step.OPEN, Step.OPEN_WAIT})
-ROUTED_STEPS = frozenset({Step.FLAME, Step.OPEN})
+SETUP_STEPS = frozenset({Step.FLAME, Step.SAKIRI, Step.OPEN, Step.OPEN_WAIT})
+ROUTED_STEPS = frozenset({Step.FLAME, Step.SAKIRI, Step.OPEN})
 
 
 def team_blackbird(char) -> "BlackbirdSubDps | None":
@@ -148,7 +160,7 @@ def preferred_reaction_target(source):
     # First round: Zankou's combat-entry cycle gives the flame, Requiem's goes to Blackbird.
     if not blackbird.dark_star_opened:
         return None
-    if blackbird.dark_star_step() in (Step.INACTIVE, Step.OPEN):
+    if blackbird.dark_star_step() in (Step.INACTIVE, Step.SAKIRI, Step.OPEN):
         return None
     if not config_enabled(blackbird._lw_config(), ZANKOU_FLAME):
         return None
@@ -168,7 +180,7 @@ def round_allows_switch_in(char) -> bool:
     if step not in ROUTED_STEPS:
         return True
     if char is blackbird.team_sakiri():
-        return False
+        return step is Step.SAKIRI
     if char is blackbird.team_zankou():
         return step is Step.FLAME
     if char is blackbird.team_requiem():
@@ -261,6 +273,7 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
         # Both main DPS ultimates need cooldown and energy; the icon covers both.
         if not self._main_dps_ultimate_ready():
             self.round_start = -1.0
+            self.sakiri_wait_start = -1.0
             return Step.WINDOW if in_window else Step.IDLE
         if self.round_start < 0:
             self.round_start = self._stamp()
@@ -269,9 +282,27 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
             return Step.LATE
         if config_enabled(config, ZANKOU_FLAME) and self._flame_needed():
             return Step.FLAME
+        if self._sakiri_buff_short():
+            if self.sakiri_wait_start < 0:
+                self.sakiri_wait_start = self._stamp()
+            if self._elapsed(self.sakiri_wait_start) < config_seconds(config, SAKIRI_CHARGE):
+                return Step.SAKIRI
+        else:
+            self.sakiri_wait_start = -1.0
         if in_window:
             return Step.WINDOW
         return Step.OPEN if self.skill_available() else Step.OPEN_WAIT
+
+    def _sakiri_buff_short(self) -> bool:
+        """Whether Sakiri's ATK buff would be gone before the ultimates go out."""
+
+        sakiri = self.team_sakiri()
+        if sakiri is None:
+            return False
+        remaining = SAKIRI_BUFF_DURATION - self._elapsed(
+            getattr(sakiri, "last_ultimate_time", -1.0)
+        )
+        return remaining < SAKIRI_BUFF_MARGIN
 
     def _flame_needed(self) -> bool:
         """Whether this round stops for Zankou's stored flame.
@@ -367,6 +398,7 @@ class BlackbirdSubDps(LWCombatTestPolicyMixin, Blackbird):
         self.in_ult = False
         self.left_field_time = -1.0
         self.round_start = -1.0
+        self.sakiri_wait_start = -1.0
         self.stint_cast_skill = False
         self.dark_star_opened = False
         self._main_ult_frame = None

@@ -181,6 +181,11 @@ class ResourceSupportMixin:
 
         return []
 
+    def resource_charge_action(self):
+        """角色模板可覆写: 没放出大招时留场攒能量的动作, 没有返回 None。"""
+
+        return None
+
     def combat_plan(self, context):
         """资源型角色共用的大招→技能→资源缓存更新执行骨架。"""
 
@@ -212,6 +217,7 @@ class ResourceSupportMixin:
             ),
             priority_ready=lambda _: self.skill_priority_ready(),
         )
+        charge = self.resource_charge_action()
         claims = self.resource_field_claims(needs_probe)
         self._log_resource_decision_diag(needs_probe, claims)
 
@@ -220,6 +226,8 @@ class ResourceSupportMixin:
             used_skill = bool((yield skill))
             if not used_ultimate and self.ultimate_available():
                 used_ultimate = bool((yield ultimate))
+            if not used_ultimate and charge is not None:
+                yield charge
             self.update_resource_after_perform(used_ultimate, used_skill)
 
         return self.plan(ultimate, skill, claims=claims, entry=entry)
